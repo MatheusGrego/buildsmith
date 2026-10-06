@@ -260,7 +260,7 @@ def test_read_bnd4_roundtrip():
 
 def test_read_bnd4_rejects_other_files():
     with pytest.raises(ds2save.SaveError):
-        ds2save.read_bnd4(b"PK\x03\x04 isto é um zip")
+        ds2save.read_bnd4(b"PK\x03\x04 isto e um zip")
 ```
 
 - [ ] **Step 2: Rodar e ver falhar**
