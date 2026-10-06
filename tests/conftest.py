@@ -40,3 +40,43 @@ def build_bnd4(entries: dict[str, bytes]) -> bytes:
         struct.pack_into("<i", headers, i * 0x20 + 0x14, name_offsets[i])
         data_blob += blob
     return bytes(header + headers + name_blob + data_blob)
+
+
+import pytest
+
+
+@pytest.fixture(scope="session")
+def names():
+    return ds2save.load_item_names()
+
+
+def id_of(names, wanted: str) -> int:
+    return next(item_id for item_id, (_, name) in names.items() if name == wanted)
+
+
+def make_slot(name="Teste", level=65, souls=1234, soul_memory=221118, stats=(9, 6, 5, 30, 10, 18, 26, 6, 8)) -> bytearray:
+    slot = bytearray(0x11000)
+    struct.pack_into("<9H", slot, ds2save.OFF_STATS, *stats)
+    struct.pack_into("<3I", slot, ds2save.OFF_LEVEL, level, souls, soul_memory)
+    encoded = name.encode("utf-16le")
+    slot[ds2save.OFF_NAME : ds2save.OFF_NAME + len(encoded)] = encoded
+    for off, count in ((ds2save.OFF_HANDS, 6), (ds2save.OFF_ARMOR, 4), (ds2save.OFF_RINGS, 4), (ds2save.OFF_SPELLS, ds2save.SPELL_SLOTS)):
+        for i in range(count):
+            struct.pack_into("<I", slot, off + 4 * i, 0xFFFFFFFF)
+    return slot
+
+
+@pytest.fixture
+def save_file(tmp_path, names):
+    slot = make_slot(name="Melatonina Vorcaro")
+    uchi, staff = id_of(names, "Uchigatana"), id_of(names, "Sorcerer's Staff")
+    struct.pack_into("<2I", slot, ds2save.OFF_HANDS, staff, uchi)  # L1, R1
+    struct.pack_into("<I", slot, ds2save.OFF_RINGS, id_of(names, "Clear Bluestone Ring"))
+    struct.pack_into("<I", slot, ds2save.OFF_SPELLS, id_of(names, "Soul Arrow"))
+    struct.pack_into("<IIfI", slot, ds2save.OFF_INVENTORY, uchi, 0, 40.0, 5)
+    struct.pack_into("<4I", slot, ds2save.OFF_INVENTORY + 16, id_of(names, "Human Effigy"), 0, 15, 0)
+    struct.pack_into("<4I", slot, ds2save.OFF_INVENTORY + 32, 12345678, 0, 1, 0)
+    struct.pack_into("<4I", slot, ds2save.OFF_KEY_ITEMS + 16, 0, id_of(names, "Soldier Key"), 0, 1)
+    path = tmp_path / "DS2SOFS0000.sl2"
+    path.write_bytes(build_bnd4({"USER_DATA000": bytes(0x100), "USER_DATA001": bytes(slot), "USER_DATA002": bytes(0x11000)}))
+    return path
