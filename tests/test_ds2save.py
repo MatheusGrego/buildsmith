@@ -28,3 +28,18 @@ def test_levels_requires_increasing_range():
 def test_cli_levels_prints_json(capsys):
     assert ds2save.main(["levels", "--from", "65", "--to", "66"]) == 0
     assert json.loads(capsys.readouterr().out)["total"] == 6657
+
+
+from conftest import build_bnd4
+
+
+def test_read_bnd4_roundtrip():
+    data = build_bnd4({"USER_DATA000": b"resumo", "USER_DATA001": bytes(range(40))})
+    entries = ds2save.read_bnd4(data)
+    assert entries["USER_DATA000"][:6] == b"resumo"
+    assert entries["USER_DATA001"][:40] == bytes(range(40))
+
+
+def test_read_bnd4_rejects_other_files():
+    with pytest.raises(ds2save.SaveError):
+        ds2save.read_bnd4(b"PK\x03\x04 isto e um zip")

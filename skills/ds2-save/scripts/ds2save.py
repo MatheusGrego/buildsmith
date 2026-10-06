@@ -2,15 +2,53 @@
 """Leitor do save de Dark Souls II: Scholar of the First Sin (PC) para o buildsmith."""
 import argparse
 import json
+import struct
 import sys
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[3]
 GAME_DIR = ROOT / "games" / "ds2"
+KEY = bytes.fromhex("599F9B699640A55236EE2D70835EC744")
 
 
 class SaveError(Exception):
     pass
+
+
+def _utf16z(data: bytes, off: int, max_chars: int) -> str:
+    chars = []
+    for i in range(max_chars):
+        pos = off + 2 * i
+        if pos + 2 > len(data):
+            break
+        code = struct.unpack_from("<H", data, pos)[0]
+        if code == 0:
+            break
+        chars.append(chr(code))
+    return "".join(chars)
+
+
+def _decrypt(blob: bytes) -> bytes:
+    from Crypto.Cipher import AES
+
+    iv, body = blob[16:32], blob[32:]
+    body = body[: len(body) // 16 * 16]
+    return AES.new(KEY, AES.MODE_CBC, iv).decrypt(body)
+
+
+def read_bnd4(data: bytes) -> dict[str, bytes]:
+    if data[:4] != b"BND4":
+        raise SaveError("o arquivo não é um save BND4 (formato inesperado)")
+    count = struct.unpack_from("<i", data, 0x0C)[0]
+    entry_size = struct.unpack_from("<q", data, 0x20)[0]
+    entries = {}
+    for i in range(count):
+        head = 0x40 + i * entry_size
+        size = struct.unpack_from("<q", data, head + 0x08)[0]
+        offset = struct.unpack_from("<i", data, head + 0x10)[0]
+        name = _utf16z(data, struct.unpack_from("<i", data, head + 0x14)[0], 64)
+        entries[name] = _decrypt(data[offset : offset + size])
+    return entries
 
 
 def level_costs() -> dict[int, int]:
