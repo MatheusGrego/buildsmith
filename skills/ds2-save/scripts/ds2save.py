@@ -32,6 +32,15 @@ OFF_INVENTORY = 0x1E30
 OFF_KEY_ITEMS = 0x10E00
 END_KEY_ITEMS = 0x11000
 RECORD = 16
+OFF_SHOP = 0x830  # histórico de compras: pares (u32 linha da ShopLineupParam, u32 quantidade) até um zero
+SHOP_MAX = 256
+
+# Flags globais no bloco de mundo do slot (USER_DATA0(10+slot)): flag N no byte
+# FLAG_BASE_OFFSET + (N - FLAG_BASE_ID) // 8, bit mais alto primeiro. Validado em 10 backups reais.
+FLAG_BASE_ID = 100944
+FLAG_BASE_OFFSET = 0x26DAA
+FLAG_MIN, FLAG_MAX = 100000, 110000
+LEARNED_DEFAULT = Path.home() / ".buildsmith" / "flags" / "ds2.json"
 
 
 class SaveError(Exception):
@@ -167,6 +176,60 @@ def parse_slot(slot: bytes, names) -> dict:
     }
 
 
+def world_flag(world: bytes, flag: int) -> bool:
+    k = flag - FLAG_BASE_ID
+    return bool((world[FLAG_BASE_OFFSET + k // 8] >> (7 - k % 8)) & 1)
+
+
+def world_flags(world: bytes) -> list[int]:
+    return [flag for flag in range(FLAG_MIN, FLAG_MAX) if world_flag(world, flag)]
+
+
+def purchases(slot: bytes) -> list[tuple[int, int]]:
+    out = []
+    for i in range(SHOP_MAX):
+        row, qty = struct.unpack_from("<II", slot, OFF_SHOP + 8 * i)
+        if row == 0:
+            break
+        out.append((row, qty))
+    return out
+
+
+def _game_json(name: str) -> dict:
+    return json.loads((GAME_DIR / name).read_text(encoding="utf-8"))
+
+
+def _shop_items(regulation) -> dict[int, int]:
+    import ds2regulation
+
+    params = ds2regulation.load_params(regulation)
+    rows = ds2regulation.param_rows(params["ShopLineupParam"], ds2regulation.LAYOUTS["ShopLineupParam"])
+    return {row_id: row["item_id"] for row_id, row in rows.items()}
+
+
+def progress(slot: bytes, world: bytes, names, shop_items: dict | None, learned: list[dict]) -> dict:
+    on = set(world_flags(world))
+    lojas = _game_json("lojas.json")["lojas"]
+    compras = []
+    for row, qty in purchases(slot):
+        item_id = shop_items.get(row) if shop_items else None
+        compras.append({"linha": row, "loja": lojas.get(str(row // 10000)), "item_id": item_id,
+                        "item": item_name(names, item_id) if item_id else None, "qtd": qty})
+    return {
+        "chefes": [{**boss, "derrotado": boss["flag"] in on} for boss in _game_json("bosses.json")["chefes"]],
+        "compras": compras,
+        "flags": sorted(on),
+        "eventos": [{"nome": e["nome"], "flags": e["flags"], "feito": all(f in on for f in e["flags"])} for e in learned],
+    }
+
+
+def load_learned(path=None) -> list[dict]:
+    path = Path(path) if path else LEARNED_DEFAULT
+    if not path.exists():
+        return []
+    return json.loads(path.read_text(encoding="utf-8")).get("eventos", [])
+
+
 def find_save(appdata: str | None = None) -> Path:
     base = Path(appdata or os.environ.get("APPDATA", "")) / "DarkSoulsII"
     files = list(base.glob("*/DS2SOFS*.sl2")) + list(base.glob("*/DS2SOFS*.co2"))
@@ -201,9 +264,11 @@ def list_slots(path) -> list[dict]:
     ]
 
 
-def snapshot(path, slot: int | None = None, names=None) -> dict:
+def snapshot(path, slot: int | None = None, names=None, regulation=None, learned=None) -> dict:
+    """regulation: None = procura o do jogo instalado; False = não usa; caminho = usa esse arquivo."""
     names = names if names is not None else load_item_names()
-    occupied = dict(_occupied(_read_entries(path)))
+    entries = _read_entries(path)
+    occupied = dict(_occupied(entries))
     if not occupied:
         raise SaveError("nenhum personagem encontrado no save")
     if slot is None:
@@ -212,6 +277,15 @@ def snapshot(path, slot: int | None = None, names=None) -> dict:
         slot = next(iter(occupied))
     if slot not in occupied:
         raise SaveError(f"slot {slot} vazio (opções: {sorted(occupied)})")
+    world_name = f"USER_DATA{10 + slot:03d}"
+    if world_name not in entries:
+        raise SaveError(f"o save não tem o bloco de mundo {world_name} do slot {slot}")
+    avisos, shop_items = [], None
+    if regulation is not False:
+        try:
+            shop_items = _shop_items(regulation)
+        except (SaveError, OSError, KeyError) as err:
+            avisos.append(f"sem nomes das compras: {err}")
     stat = Path(path).stat()
     return {
         "game": "ds2",
@@ -219,6 +293,8 @@ def snapshot(path, slot: int | None = None, names=None) -> dict:
         "save_mtime": time.strftime("%Y-%m-%dT%H:%M:%S", time.localtime(stat.st_mtime)),
         "slot": slot,
         **parse_slot(occupied[slot], names),
+        "progresso": progress(occupied[slot], entries[world_name], names, shop_items, load_learned(learned)),
+        "avisos": avisos,
     }
 
 
@@ -231,6 +307,9 @@ def main(argv=None) -> int:
     sn = sub.add_parser("snapshot", help="ficha completa do personagem em JSON")
     sn.add_argument("--save")
     sn.add_argument("--slot", type=int)
+    fd = sub.add_parser("flags-diff", help="flags globais que ligaram/desligaram entre dois snapshots")
+    fd.add_argument("--antes", required=True)
+    fd.add_argument("--depois", required=True)
     lv = sub.add_parser("levels", help="custo de cada nível entre --from e --to")
     lv.add_argument("--from", dest="frm", type=int, required=True)
     lv.add_argument("--to", type=int, required=True)
@@ -238,6 +317,10 @@ def main(argv=None) -> int:
     try:
         if args.cmd == "levels":
             out = levels_cost(args.frm, args.to)
+        elif args.cmd == "flags-diff":
+            before, after = (set(json.loads(Path(p).read_text(encoding="utf-8"))["progresso"]["flags"])
+                             for p in (args.antes, args.depois))
+            out = {"ligou": sorted(after - before), "desligou": sorted(before - after)}
         else:
             path = Path(args.save) if args.save else find_save()
             out = list_slots(path) if args.cmd == "slots" else snapshot(path, args.slot)

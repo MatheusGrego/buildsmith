@@ -85,7 +85,8 @@ def test_list_slots_skips_empty(save_file):
 
 def test_multiple_characters_require_slot(tmp_path, names):
     path = tmp_path / "multi.sl2"
-    path.write_bytes(build_bnd4({"USER_DATA001": bytes(make_slot(name="A")), "USER_DATA002": bytes(make_slot(name="B", level=10))}))
+    path.write_bytes(build_bnd4({"USER_DATA001": bytes(make_slot(name="A")), "USER_DATA002": bytes(make_slot(name="B", level=10)),
+                                 "USER_DATA011": bytes(0x30000), "USER_DATA012": bytes(0x30000)}))
     with pytest.raises(ds2save.SaveError, match="--slot"):
         ds2save.snapshot(path, names=names)
     assert ds2save.snapshot(path, slot=2, names=names)["name"] == "B"
