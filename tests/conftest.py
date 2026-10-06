@@ -79,5 +79,24 @@ def save_file(tmp_path, names):
     struct.pack_into("<4I", slot, ds2save.OFF_INVENTORY + 32, 12345678, 0, 1, 0)
     struct.pack_into("<4I", slot, ds2save.OFF_KEY_ITEMS + 16, 0, id_of(names, "Soldier Key"), 0, 1)
     path = tmp_path / "DS2SOFS0000.sl2"
-    path.write_bytes(build_bnd4({"USER_DATA000": bytes(0x100), "USER_DATA001": bytes(slot), "USER_DATA002": bytes(0x11000)}))
+    path.write_bytes(build_bnd4({"USER_DATA000": bytes(0x100), "USER_DATA001": bytes(slot), "USER_DATA002": bytes(0x11000),
+                                 "USER_DATA011": bytes(0x30000)}))
+    return path
+
+
+def set_flags(world: bytearray, flags) -> None:
+    for flag in flags:
+        k = flag - ds2save.FLAG_BASE_ID
+        world[ds2save.FLAG_BASE_OFFSET + k // 8] |= 0x80 >> (k % 8)
+
+
+@pytest.fixture
+def world_save(tmp_path, names):
+    """Save com 1 personagem, flags de mundo e histórico de compras."""
+    slot = make_slot(name="Melatonina Vorcaro")
+    struct.pack_into("<6I", slot, ds2save.OFF_SHOP, 76600301, 1, 76430000, 1, 0, 0)
+    world = bytearray(0x30000)
+    set_flags(world, [100968, 100971, 102480])  # Pursuer, Last Giant, flag sem nome
+    path = tmp_path / "DS2SOFS0000.sl2"
+    path.write_bytes(build_bnd4({"USER_DATA001": bytes(slot), "USER_DATA011": bytes(world)}))
     return path
