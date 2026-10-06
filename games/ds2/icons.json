@@ -1,0 +1,15 @@
+{
+  "_doc": "Ícones da wiki Fextralife usados em toda página do DS2 (atributos e almas). Extraídos em 2026-10-06.",
+  "stats": {
+    "VGR": "https://static0.fextralifeimages.com/file/darksouls2/f/fc/Icon-vigor.png",
+    "END": "https://static0.fextralifeimages.com/file/darksouls2/6/69/Icon-endurance.png",
+    "VIT": "https://static0.fextralifeimages.com/file/darksouls2/8/89/Icon-vitality.png",
+    "ATN": "https://static0.fextralifeimages.com/file/darksouls2/0/0f/Icon-attunement.png",
+    "STR": "https://static0.fextralifeimages.com/file/darksouls2/b/b0/Icon-strength.png",
+    "DEX": "https://static0.fextralifeimages.com/file/darksouls2/b/b8/Icon-dexterity.png",
+    "INT": "https://static0.fextralifeimages.com/file/darksouls2/1/11/Icon-intelligence.png",
+    "FTH": "https://static0.fextralifeimages.com/file/darksouls2/d/d5/Icon-faith.png",
+    "ADP": "https://static0.fextralifeimages.com/file/darksouls2/e/ea/Icon-adaptability.png"
+  },
+  "almas": "https://static0.fextralifeimages.com/file/darksouls2/a/ae/Icon-lvl.png"
+}

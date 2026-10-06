@@ -1,4 +1,3 @@
-import copy
 import json
 from pathlib import Path
 
@@ -21,10 +20,40 @@ def test_missing_key_is_reported():
     assert "falta 'fases'" in validate_plano.validate(plano)
 
 
+def test_old_version_is_rejected():
+    plano = example()
+    plano["versao"] = 1
+    assert "versao deveria ser 2" in validate_plano.validate(plano)
+
+
 def test_wrong_step_type_is_reported():
-    plano = copy.deepcopy(example())
+    plano = example()
     plano["passos"][0]["tipo"] = "dançar"
-    assert any("tipo" in p for p in validate_plano.validate(plano))
+    assert any("passos[0].tipo" in p for p in validate_plano.validate(plano))
+
+
+def test_wrong_node_type_is_reported():
+    plano = example()
+    plano["passos"][0]["fluxo"][0]["tipo"] = "arma"
+    assert any("passos[0].fluxo[0].tipo" in p for p in validate_plano.validate(plano))
+
+
+def test_wrong_sign_is_reported():
+    plano = example()
+    plano["passos"][0]["dados"][0]["sinal"] = "++"
+    assert any("sinal" in p for p in validate_plano.validate(plano))
+
+
+def test_row_without_data_name_is_reported():
+    plano = example()
+    del plano["passos"][0]["dados"][0]["dado"]
+    assert any("sem 'dado'" in p for p in validate_plano.validate(plano))
+
+
+def test_long_title_is_reported():
+    plano = example()
+    plano["passos"][0]["titulo"] = "x" * 41
+    assert any("40 caracteres" in p for p in validate_plano.validate(plano))
 
 
 def test_phase_souls_must_be_int():
