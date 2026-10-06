@@ -1,0 +1,43 @@
+{
+  "gerado_em": "2026-10-06T18:00",
+  "jogo": "Dark Souls II: Scholar of the First Sin",
+  "objetivo": "Mago INT com Uchigatana DEX; piromancia como secundária. Ajustar sem migrar a build.",
+  "personagem": {
+    "name": "Melatonina Vorcaro",
+    "level": 65,
+    "souls": 0,
+    "soul_memory": 221118,
+    "stats": {"VGR": 9, "END": 6, "VIT": 5, "ATN": 30, "STR": 10, "DEX": 18, "INT": 26, "FTH": 6, "ADP": 8},
+    "equipado": ["R1 Uchigatana +5", "L1 Sorcerer's Staff +2", "R2 Pyromancy Flame", "Anéis: Life Ring, Covetous Silver Serpent Ring+1, Clear Bluestone Ring, Old Leo Ring"]
+  },
+  "alvo_stats": {"VGR": 20, "END": 15, "VIT": 5, "ATN": 30, "STR": 10, "DEX": 25, "INT": 40, "FTH": 6, "ADP": 8},
+  "mudancas": ["Primeira leitura do save."],
+  "passos": [
+    {"titulo": "Trocar Old Leo Ring por Ring of Binding", "detalhe": "Com VGR 9, o Ring of Binding segura o PV máximo quando você morre.", "tipo": "equipar"},
+    {"titulo": "Libertar o Straid com o Fragrant Branch of Yore", "detalhe": "Topo da torre mais perto da entrada de Sinners' Rise, na Lost Bastille.", "tipo": "item"},
+    {"titulo": "Pegar a Dull Ember e entregar ao McDuff", "detalhe": "Baú de ferro perto da fogueira The Tower Apart. Libera infusões.", "tipo": "item"},
+    {"titulo": "Derrotar as Ruin Sentinels", "detalhe": "Chefe da Lost Bastille. A alma vira Heavy Homing Soul Arrow no Straid.", "tipo": "chefe"},
+    {"titulo": "Comprar Great Heavy Soul Arrow", "detalhe": "Carhillion of the Fold, 4.500 almas, INT 16.", "tipo": "compra"},
+    {"titulo": "Subir VGR até 20", "detalhe": "Nível 65 → 76.", "tipo": "nivel"},
+    {"titulo": "Comprar Ring of Knowledge", "detalhe": "Straid, 28.000 almas. +5 INT, mais barato que 5 níveis.", "tipo": "compra"}
+  ],
+  "fases": [
+    {"nome": "VGR 9 → 20", "de": 65, "ate": 76, "almas": 82736},
+    {"nome": "INT 26 → 40", "de": 76, "ate": 90, "almas": 138935},
+    {"nome": "END 6 → 15", "de": 90, "ate": 99, "almas": 112167},
+    {"nome": "DEX 18 → 25", "de": 99, "ate": 106, "almas": 99790}
+  ],
+  "itens": [
+    {"nome": "Ring of Knowledge", "por_que": "+5 INT", "onde": "Vendido pelo Straid of Olaphis (Lost Bastille) por 28.000 almas", "requisitos": "Straid libertado", "fonte": "https://darksouls2.wiki.fextralife.com/Ring+of+Knowledge"},
+    {"nome": "Dull Ember", "por_que": "Libera infusões com o McDuff", "onde": "Baú de ferro na fogueira The Tower Apart (Lost Bastille), chegando pelo ninho após o Pursuer", "requisitos": "Derrotar o Pursuer", "fonte": "https://darksouls2.wiki.fextralife.com/Dull+Ember"},
+    {"nome": "Magic Stone", "por_que": "Infusão mágica (escala com INT)", "onde": "Troca de Smooth & Silky Stone com Dyna & Tillo; drop de Gyrm Warriors", "requisitos": "", "fonte": "https://darksouls2.wiki.fextralife.com/Magic+Stone"},
+    {"nome": "Lizard Staff", "por_que": "Escala A em INT", "onde": "Drop dos Necromancers em Huntsman's Copse e Undead Purgatory", "requisitos": "INT 18", "fonte": "https://darksouls2.wiki.fextralife.com/Staves"}
+  ],
+  "comparacao": [
+    {"build": "Moonlight Battlemage", "fonte": "https://darksouls2.wiki.fextralife.com/PvE+Builds", "diferencas": ["Usa Moonlight Greatsword (FOR 18, DES 18, INT 18) em vez de katana", "Mais INT, menos DEX"], "sugestao": "Manter a Uchigatana agora; considerar a Moonlight Greatsword quando tiver a Old Paledrake Soul."}
+  ],
+  "fontes": [
+    {"titulo": "Level (custos de nível)", "url": "https://darksouls2.wiki.fextralife.com/Level", "data": "2026-10-06"},
+    {"titulo": "Pyromancies (escala INT+FTH)", "url": "https://darksouls2.wiki.fextralife.com/Pyromancies", "data": "2026-10-06"}
+  ]
+}

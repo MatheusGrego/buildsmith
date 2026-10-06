@@ -1,0 +1,223 @@
+<title>Forja de Build</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IM+Fell+English+SC&family=Alegreya+Sans:ital,wght@0,400;0,500;0,700;1,400&family=IBM+Plex+Mono:wght@400;500&display=swap">
+<style>
+/* Layout: uma coluna estreita de "livro de registro"; ficha no topo, depois o que fazer, depois o porquê. */
+:root {
+  --bg: #e8ebe8;
+  --surface: #f5f6f4;
+  --ink: #1c2220;
+  --muted: #5a6661;
+  --line: #c7cfcb;
+  --ember: #9c4a16;
+  --soul: #2f6576;
+  --ok: #3f6b3a;
+  --danger: #9b2c2c;
+  --track: #d7ddd9;
+  --display: "IM Fell English SC", "Palatino Linotype", "Book Antiqua", Georgia, serif;
+  --body: "Alegreya Sans", "Segoe UI", system-ui, sans-serif;
+  --mono: "IBM Plex Mono", ui-monospace, "Cascadia Mono", Consolas, monospace;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --bg: #131715; --surface: #1b201e; --ink: #e2e7e4; --muted: #95a19b; --line: #2f3834;
+    --ember: #e0894a; --soul: #7db4c6; --ok: #8cc084; --danger: #e48282; --track: #29312d;
+    color-scheme: dark;
+  }
+}
+:root[data-theme="dark"] {
+  --bg: #131715; --surface: #1b201e; --ink: #e2e7e4; --muted: #95a19b; --line: #2f3834;
+  --ember: #e0894a; --soul: #7db4c6; --ok: #8cc084; --danger: #e48282; --track: #29312d;
+  color-scheme: dark;
+}
+* { box-sizing: border-box; }
+body { background: var(--bg); color: var(--ink); font: 17px/1.55 var(--body); }
+.page { max-width: 58rem; margin: 0 auto; padding-inline: 16px; padding-block: 28px 56px; display: grid; gap: 40px; }
+h1, h2 { font-family: var(--display); font-weight: 400; text-wrap: balance; margin: 0; }
+h1 { font-size: clamp(2rem, 6vw, 3rem); line-height: 1.05; }
+h2 { font-size: 1.55rem; display: flex; align-items: baseline; gap: 12px; }
+h2 small { font: 500 0.78rem var(--body); letter-spacing: 0.08em; text-transform: uppercase; color: var(--muted); }
+p { margin: 0; }
+a { color: var(--soul); }
+a:focus-visible, button:focus-visible { outline: 2px solid var(--ember); outline-offset: 2px; }
+.num { font-family: var(--mono); font-variant-numeric: tabular-nums; }
+.label { font-size: 0.74rem; letter-spacing: 0.09em; text-transform: uppercase; color: var(--muted); }
+section { display: grid; gap: 16px; min-width: 0; }
+
+/* Ficha */
+.sheet { display: grid; gap: 18px; padding-bottom: 24px; border-bottom: 1px solid var(--line); }
+.game { color: var(--muted); }
+.figures { display: flex; flex-wrap: wrap; gap: 12px 36px; }
+.figure { display: grid; gap: 2px; }
+.figure .num { font-size: 1.45rem; }
+.figure .souls { color: var(--ember); }
+.goal { max-width: 65ch; }
+.equipped { display: flex; flex-wrap: wrap; gap: 6px 8px; padding: 0; margin: 0; list-style: none; }
+.equipped li { font-size: 0.92rem; padding: 2px 10px; border: 1px solid var(--line); border-radius: 999px; }
+
+/* Mudanças */
+.changes { margin: 0; padding-left: 1.2em; display: grid; gap: 4px; }
+
+/* Passos */
+.steps { list-style: none; margin: 0; padding: 0; display: grid; gap: 0; counter-reset: passo; }
+.step { counter-increment: passo; display: grid; grid-template-columns: 2.4rem 1fr; gap: 4px 12px; padding-block: 14px; border-top: 1px solid var(--line); }
+.step:first-child { border-top: 0; }
+.step::before { content: counter(passo); font: 1.5rem/1 var(--display); color: var(--ember); grid-row: span 2; padding-top: 2px; }
+.step-head { display: flex; flex-wrap: wrap; align-items: baseline; gap: 6px 10px; min-width: 0; }
+.step-title { font-weight: 700; }
+.step-detail { color: var(--muted); grid-column: 2; min-width: 0; }
+.tag { font-size: 0.72rem; letter-spacing: 0.08em; text-transform: uppercase; padding: 1px 8px; border-radius: 4px; border: 1px solid currentColor; }
+.tag-nivel { color: var(--soul); }
+.tag-item { color: var(--ember); }
+.tag-chefe { color: var(--danger); }
+.tag-compra { color: var(--muted); }
+.tag-equipar { color: var(--ok); }
+
+/* Atributos */
+.stats { display: grid; grid-template-columns: repeat(auto-fill, minmax(15rem, 1fr)); gap: 10px 28px; }
+.stat { display: grid; grid-template-columns: 3rem 1fr auto; align-items: center; gap: 10px; }
+.stat-name { font-family: var(--mono); font-size: 0.85rem; color: var(--muted); }
+.bar { position: relative; height: 8px; background: var(--track); border-radius: 4px; }
+.bar-now { position: absolute; inset: 0 auto 0 0; background: var(--soul); border-radius: 4px; }
+.bar-goal { position: absolute; top: -4px; bottom: -4px; width: 2px; background: var(--ember); }
+.stat-values { font-size: 0.9rem; white-space: nowrap; }
+.stat-values .up { color: var(--ember); }
+
+/* Tabelas */
+.table-wrap { overflow-x: auto; border: 1px solid var(--line); border-radius: 6px; background: var(--surface); }
+table { width: 100%; border-collapse: collapse; min-width: 30rem; }
+th, td { text-align: left; padding: 10px 14px; border-bottom: 1px solid var(--line); vertical-align: top; }
+th { font-weight: 500; font-size: 0.74rem; letter-spacing: 0.09em; text-transform: uppercase; color: var(--muted); }
+tbody tr:last-child td { border-bottom: 0; }
+td.right, th.right { text-align: right; }
+tfoot td { font-weight: 700; border-top: 1px solid var(--line); border-bottom: 0; }
+
+/* Itens e comparação */
+.items { display: grid; gap: 0; }
+.item { display: grid; gap: 4px; padding-block: 14px; border-top: 1px solid var(--line); min-width: 0; }
+.item:first-child { border-top: 0; padding-top: 0; }
+.item-name { font-weight: 700; }
+.item-meta { color: var(--muted); font-size: 0.95rem; }
+.builds { display: grid; gap: 16px; }
+.build { padding: 16px 18px; background: var(--surface); border: 1px solid var(--line); border-radius: 6px; display: grid; gap: 8px; min-width: 0; }
+.build ul { margin: 0; padding-left: 1.2em; }
+.build .advice { border-left: 2px solid var(--ember); padding-left: 10px; }
+.sources { margin: 0; padding-left: 1.2em; color: var(--muted); font-size: 0.92rem; display: grid; gap: 2px; }
+.empty { color: var(--muted); font-style: italic; }
+.error { padding: 18px; border: 1px solid var(--danger); color: var(--danger); border-radius: 6px; }
+@media (prefers-reduced-motion: no-preference) {
+  .bar-now { transition: width 0.4s ease-out; }
+}
+</style>
+
+<main class="page" id="app">
+  <p class="empty">Carregando o plano…</p>
+</main>
+
+<script>
+(function () {
+  const STATS = ["VGR", "END", "VIT", "ATN", "STR", "DEX", "INT", "FTH", "ADP"];
+  const TIPOS = { nivel: "nível", item: "item", chefe: "chefe", compra: "compra", equipar: "equipar" };
+  const fmt = new Intl.NumberFormat("pt-BR");
+  const esc = (v) => String(v ?? "").replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
+  const link = (url, text) => url ? `<a href="${esc(url)}" target="_blank" rel="noopener">${esc(text || url)}</a>` : esc(text);
+  const list = (arr, render, empty) => (arr && arr.length) ? arr.map(render).join("") : `<p class="empty">${esc(empty)}</p>`;
+  const date = (iso) => { const d = new Date(iso); return isNaN(d) ? esc(iso) : d.toLocaleString("pt-BR", { dateStyle: "short", timeStyle: "short" }); };
+
+  function sheet(p) {
+    const c = p.personagem;
+    return `<header class="sheet">
+      <p class="game label">${esc(p.jogo)} · atualizado ${date(p.gerado_em)}</p>
+      <h1>${esc(c.name)}</h1>
+      <div class="figures">
+        <div class="figure"><span class="label">Nível</span><span class="num">${fmt.format(c.level)}</span></div>
+        <div class="figure"><span class="label">Almas em mãos</span><span class="num souls">${fmt.format(c.souls)}</span></div>
+        <div class="figure"><span class="label">Soul memory</span><span class="num">${fmt.format(c.soul_memory)}</span></div>
+      </div>
+      <p class="goal">${esc(p.objetivo)}</p>
+      <ul class="equipped">${(c.equipado || []).map((e) => `<li>${esc(e)}</li>`).join("")}</ul>
+    </header>`;
+  }
+
+  function changes(p) {
+    return `<section><h2>Desde a última vez</h2>
+      ${p.mudancas.length ? `<ul class="changes">${p.mudancas.map((m) => `<li>${esc(m)}</li>`).join("")}</ul>` : `<p class="empty">Nada mudou desde a última leitura.</p>`}
+    </section>`;
+  }
+
+  function steps(p) {
+    return `<section><h2>Próximos passos <small>em ordem</small></h2>
+      ${p.passos.length ? `<ol class="steps">${p.passos.map((s) => `<li class="step">
+        <div class="step-head"><span class="step-title">${esc(s.titulo)}</span><span class="tag tag-${esc(s.tipo)}">${esc(TIPOS[s.tipo] || s.tipo)}</span></div>
+        ${s.detalhe ? `<p class="step-detail">${esc(s.detalhe)}</p>` : ""}
+      </li>`).join("")}</ol>` : `<p class="empty">Nenhum passo pendente.</p>`}
+    </section>`;
+  }
+
+  function stats(p) {
+    const now = p.personagem.stats, goal = p.alvo_stats;
+    return `<section><h2>Atributos <small>atual → alvo, escala 0–99</small></h2>
+      <div class="stats">${STATS.map((k) => {
+        const a = now[k], b = goal[k];
+        return `<div class="stat">
+          <span class="stat-name">${k}</span>
+          <div class="bar" role="img" aria-label="${k}: ${a} de 99, alvo ${b}">
+            <div class="bar-now" style="width:${Math.min(a, 99) / 99 * 100}%"></div>
+            <div class="bar-goal" style="left:calc(${Math.min(b, 99) / 99 * 100}% - 1px)"></div>
+          </div>
+          <span class="stat-values num">${a}${b > a ? ` <span class="up">→ ${b}</span>` : ""}</span>
+        </div>`;
+      }).join("")}</div>
+    </section>`;
+  }
+
+  function phases(p) {
+    let acc = 0;
+    const rows = p.fases.map((f) => {
+      acc += f.almas;
+      return `<tr><td>${esc(f.nome)}</td><td class="num">${f.de} → ${f.ate}</td><td class="num right">${fmt.format(f.almas)}</td><td class="num right">${fmt.format(acc)}</td></tr>`;
+    }).join("");
+    return `<section><h2>Fases de nível <small>almas</small></h2>
+      ${p.fases.length ? `<div class="table-wrap"><table>
+        <thead><tr><th>Fase</th><th>Nível</th><th class="right">Custo</th><th class="right">Acumulado</th></tr></thead>
+        <tbody>${rows}</tbody>
+        <tfoot><tr><td colspan="3">Total até o nível ${p.fases[p.fases.length - 1].ate}</td><td class="num right">${fmt.format(acc)}</td></tr></tfoot>
+      </table></div>` : `<p class="empty">Sem fases planejadas.</p>`}
+    </section>`;
+  }
+
+  function items(p) {
+    return `<section><h2>Onde pegar</h2>
+      <div class="items">${list(p.itens, (i) => `<div class="item">
+        <span class="item-name">${esc(i.nome)}</span>
+        ${i.por_que ? `<p>${esc(i.por_que)}</p>` : ""}
+        <p>${esc(i.onde)}</p>
+        <p class="item-meta">${i.requisitos ? `Requisitos: ${esc(i.requisitos)} · ` : ""}${link(i.fonte, "fonte")}</p>
+      </div>`, "Nenhum item pendente.")}</div>
+    </section>`;
+  }
+
+  function builds(p) {
+    return `<section><h2>Outras builds <small>ajustes, sem migrar</small></h2>
+      <div class="builds">${list(p.comparacao, (b) => `<article class="build">
+        <strong>${link(b.fonte, b.build)}</strong>
+        ${b.diferencas && b.diferencas.length ? `<ul>${b.diferencas.map((d) => `<li>${esc(d)}</li>`).join("")}</ul>` : ""}
+        ${b.sugestao ? `<p class="advice">${esc(b.sugestao)}</p>` : ""}
+      </article>`, "Nenhuma comparação ainda.")}</div>
+    </section>`;
+  }
+
+  function sources(p) {
+    return `<section><h2>Fontes</h2>
+      ${p.fontes.length ? `<ul class="sources">${p.fontes.map((f) => `<li>${link(f.url, f.titulo)}${f.data ? ` · ${esc(f.data)}` : ""}</li>`).join("")}</ul>` : `<p class="empty">Sem fontes.</p>`}
+    </section>`;
+  }
+
+  const app = document.getElementById("app");
+  fetch("plano.json", { cache: "no-store" })
+    .then((r) => { if (!r.ok) throw new Error(r.status); return r.json(); })
+    .then((p) => { app.innerHTML = [sheet, changes, steps, stats, phases, items, builds, sources].map((f) => f(p)).join(""); })
+    .catch(() => { app.innerHTML = `<p class="error">Não consegui ler o plano.json publicado junto com a página. Rode o /buildsmith:build de novo para republicar.</p>`; });
+})();
+</script>
