@@ -7,6 +7,8 @@ STATS = ["VGR", "END", "VIT", "ATN", "STR", "DEX", "INT", "FTH", "ADP"]
 TIPOS_PASSO = {"nivel", "item", "chefe", "compra", "equipar"}
 TIPOS_NO = {"item", "chefe", "inimigo", "npc", "local", "bau", "almas", "atributo"}
 SINAIS = {"+", "-", ""}
+ESTADOS_CHEFE = {"derrotado", "vivo"}
+ESTADOS_EVENTO = {"feito", "pendente"}
 TOP = {"versao": int, "gerado_em": str, "jogo": str, "objetivo": str, "personagem": dict, "alvo_stats": dict,
        "mudancas": list, "passos": list, "fases": list, "itens": list, "comparacao": list, "fontes": list}
 
@@ -87,7 +89,44 @@ def validate(plano: dict) -> list[str]:
             problems.append(f"comparacao[{i}] sem 'build'")
         _rows(f"comparacao[{i}].dados", build.get("dados", []), problems)
         _flow(f"comparacao[{i}].ajuste", build.get("ajuste", []), problems)
+    if "progresso" in plano:
+        _progress(plano["progresso"], problems)
+    if "dano" in plano:
+        _damage(plano["dano"], problems)
     return problems
+
+
+def _progress(prog, problems: list) -> None:
+    if not isinstance(prog, dict):
+        problems.append("'progresso' deveria ser dict")
+        return
+    for i, boss in enumerate(prog.get("chefes", [])):
+        _node(f"progresso.chefes[{i}].no", boss.get("no"), problems)
+        if boss.get("estado") not in ESTADOS_CHEFE:
+            problems.append(f"progresso.chefes[{i}].estado deveria ser um de {sorted(ESTADOS_CHEFE)}")
+    for i, buy in enumerate(prog.get("compras", [])):
+        _node(f"progresso.compras[{i}].loja", buy.get("loja"), problems)
+        _node(f"progresso.compras[{i}].item", buy.get("item"), problems)
+        if not isinstance(buy.get("qtd"), int):
+            problems.append(f"progresso.compras[{i}].qtd deveria ser número inteiro")
+    for i, event in enumerate(prog.get("eventos", [])):
+        if not event.get("nome"):
+            problems.append(f"progresso.eventos[{i}] sem 'nome'")
+        if event.get("estado") not in ESTADOS_EVENTO:
+            problems.append(f"progresso.eventos[{i}].estado deveria ser um de {sorted(ESTADOS_EVENTO)}")
+
+
+def _damage(rows, problems: list) -> None:
+    if not isinstance(rows, list):
+        problems.append("'dano' deveria ser lista")
+        return
+    for i, row in enumerate(rows):
+        _node(f"dano[{i}].arma", row.get("arma"), problems)
+        for key in ("agora", "depois"):
+            value = row.get(key)
+            if not (isinstance(value, int) or value == "—"):
+                problems.append(f"dano[{i}].{key} deveria ser número inteiro ou '—'")
+        _flow(f"dano[{i}].por_causa", row.get("por_causa", []), problems)
 
 
 def main(argv=None) -> int:

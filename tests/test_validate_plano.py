@@ -60,3 +60,33 @@ def test_phase_souls_must_be_int():
     plano = example()
     plano["fases"][0]["almas"] = "82 mil"
     assert any("almas" in p for p in validate_plano.validate(plano))
+
+
+def test_progress_and_damage_are_valid_in_example():
+    plano = example()
+    assert plano["progresso"]["chefes"] and plano["dano"]
+    assert validate_plano.validate(plano) == []
+
+
+def test_progress_and_damage_are_optional():
+    plano = example()
+    del plano["progresso"], plano["dano"]
+    assert validate_plano.validate(plano) == []
+
+
+def test_wrong_boss_state_is_reported():
+    plano = example()
+    plano["progresso"]["chefes"][0]["estado"] = "morto"
+    assert any("progresso.chefes[0].estado" in p for p in validate_plano.validate(plano))
+
+
+def test_wrong_event_state_is_reported():
+    plano = example()
+    plano["progresso"]["eventos"] = [{"nome": "Straid libertado", "estado": "talvez"}]
+    assert any("progresso.eventos[0].estado" in p for p in validate_plano.validate(plano))
+
+
+def test_damage_value_must_be_int_or_dash():
+    plano = example()
+    plano["dano"][0]["depois"] = "muito"
+    assert any("dano[0].depois" in p for p in validate_plano.validate(plano))

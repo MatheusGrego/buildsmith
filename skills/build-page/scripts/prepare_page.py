@@ -64,6 +64,15 @@ def _nodes(plano: dict):
         yield from item.get("onde", [])
     for build in plano["comparacao"]:
         yield from build.get("ajuste", [])
+    progresso = plano.get("progresso", {})
+    for boss in progresso.get("chefes", []):
+        yield boss["no"]
+    for buy in progresso.get("compras", []):
+        yield buy["loja"]
+        yield buy["item"]
+    for row in plano.get("dano", []):
+        yield row["arma"]
+        yield from row.get("por_causa", [])
 
 
 def prepare(plano_path, out_dir, jogo: str, cache_root=None, fetch=default_fetch) -> dict:

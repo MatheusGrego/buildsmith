@@ -105,6 +105,18 @@ a.node:hover .nm { text-decoration: underline; }
 .tab:focus-visible { outline: 2px solid var(--link); outline-offset: -2px; }
 .tab .count { font: 12px var(--body); color: var(--link); background: var(--th); border: 1px solid var(--line); padding: 0 6px; }
 .tab-panel { display: grid; gap: 28px; min-width: 0; }
+.tab-panel[hidden] { display: none; }
+h2 small { font: 14px var(--body); color: var(--text); margin-left: 10px; letter-spacing: 0; }
+
+/* Nós compactos dentro de tabela */
+td .node { padding: 2px 8px 2px 2px; grid-template-columns: 28px minmax(0, auto); column-gap: 8px; background: none; border: 0; }
+td .node .ic, td .node .ini { width: 28px; height: 28px; font-size: 15px; }
+td .flow { gap: 4px 6px; }
+td .arrow { font-size: 16px; }
+
+/* Estado (Progresso): selo no estilo wiki, sem ícone */
+.estado { display: inline-block; font: 13px var(--display); letter-spacing: 0.04em; padding: 1px 10px; border: 1px solid var(--line); background: var(--th); color: var(--text); white-space: nowrap; }
+.estado.feito { border-color: var(--link); color: var(--head); }
 </style>
 
 <main class="page"><div class="panel" id="app"><p class="empty">Carregando o plano…</p></div></main>
@@ -118,8 +130,9 @@ a.node:hover .nm { text-decoration: underline; }
   const ext = (url, inner, cls = "") => `<a class="${cls}" href="${esc(url)}" target="_blank" rel="noopener">${inner}</a>`;
   const cls = (sinal) => sinal === "+" ? "pos" : sinal === "-" ? "neg" : "";
   const when = (iso) => { const d = new Date(iso); return isNaN(d) ? esc(iso) : d.toLocaleString("pt-BR", { dateStyle: "short", timeStyle: "short" }); };
-  const initial = (name) => `<span class="ini" aria-hidden="true">${esc((name || "?").trim().charAt(0).toUpperCase())}</span>`;
-  const icon = (src, name) => src ? `<img class="ic" src="${esc(src)}" alt="" data-ini="${esc((name || "?").trim().charAt(0).toUpperCase())}">` : initial(name);
+  const letter = (name) => (name || "?").trim().replace(/^the\s+/i, "").charAt(0).toUpperCase();
+  const initial = (name) => `<span class="ini" aria-hidden="true">${esc(letter(name))}</span>`;
+  const icon = (src, name) => src ? `<img class="ic" src="${esc(src)}" alt="" data-ini="${esc(letter(name))}">` : initial(name);
   function fallbackIcons(root) {
     root.querySelectorAll("img.ic").forEach((img) => {
       const swap = () => { const s = document.createElement("span"); s.className = "ini"; s.setAttribute("aria-hidden", "true"); s.textContent = img.dataset.ini; img.replaceWith(s); };
@@ -218,6 +231,41 @@ a.node:hover .nm { text-decoration: underline; }
     return `<section><h2>Outras builds</h2>${list ? `<div class="blocks">${list}</div>` : '<p class="empty">Nenhuma comparação ainda.</p>'}</section>`;
   }
 
+  function grid(heads, lines, right = []) {
+    const th = heads.map((h, i) => `<th${right.includes(i) ? ' class="r"' : ""}>${h}</th>`).join("");
+    const body = lines.map((cells) => `<tr>${cells.map((c, i) => `<td${right.includes(i) ? ' class="r"' : ""}>${c}</td>`).join("")}</tr>`).join("");
+    return `<div class="tw"><table><thead><tr>${th}</tr></thead><tbody>${body}</tbody></table></div>`;
+  }
+
+  const ESTADO = { derrotado: "Derrotado", vivo: "Vivo", feito: "Feito", pendente: "Pendente" };
+  const estado = (value) => `<span class="estado${value === "derrotado" || value === "feito" ? " feito" : ""}">${esc(ESTADO[value] || value)}</span>`;
+
+  function progress(p) {
+    const pr = p.progresso;
+    if (!pr) return '<section><h2>Progresso</h2><p class="empty">Este plano não tem dados de progresso.</p></section>';
+    const killed = pr.chefes.filter((c) => c.estado === "derrotado").length;
+    const bosses = pr.chefes.length ? grid(["Chefe", "Estado"], pr.chefes.map((c) => [node(c.no), estado(c.estado)])) : '<p class="empty">Nenhum chefe listado.</p>';
+    const buys = pr.compras.length ? grid(["Loja", "Item", "Qtd"], pr.compras.map((c) => [node(c.loja), node(c.item), fmt.format(c.qtd)]), [2]) : '<p class="empty">Nenhuma compra registrada.</p>';
+    const events = pr.eventos && pr.eventos.length
+      ? grid(["Evento", "Estado"], pr.eventos.map((e) => [esc(e.nome), estado(e.estado)]))
+      : '<p class="empty">Nenhum evento aprendido. Rode /buildsmith:build ds2 antes e depois do evento, contando o que aconteceu.</p>';
+    return `<section><h2>Chefes<small>${killed} de ${pr.chefes.length} derrotados</small></h2>${bosses}</section>
+      <section><h2>Compras<small>${pr.compras.length}</small></h2>${buys}</section>
+      <section><h2>Eventos</h2>${events}</section>`;
+  }
+
+  function damage(p) {
+    const list = p.dano || [];
+    if (!list.length) return '<section><h2>Dano</h2><p class="empty">Este plano não tem cálculo de dano.</p></section>';
+    const value = (v) => typeof v === "number" ? fmt.format(v) : "—";
+    const lines = list.map((d) => {
+      const diff = typeof d.agora === "number" && typeof d.depois === "number" ? d.depois - d.agora : null;
+      const shown = diff === null ? "—" : `<span class="${diff > 0 ? "pos" : diff < 0 ? "neg" : ""}">${diff > 0 ? "+" : ""}${fmt.format(diff)}</span>`;
+      return [node(d.arma), value(d.agora), value(d.depois), shown, esc(d.detalhe || ""), flow(d.por_causa) || "—"];
+    });
+    return `<section><h2>Dano<small>AR físico pelas regras do jogo</small></h2>${grid(["Arma", "Agora", "Depois", "Diferença", "Mudança", "Por causa de"], lines, [1, 2, 3])}</section>`;
+  }
+
   function sources(p) {
     return `<section><h2>Fontes</h2>${p.fontes.length ? `<ul class="sources">${p.fontes.map((f) => `<li>${ext(f.url, esc(f.titulo))}${f.data ? ` <span class="muted">· ${esc(f.data)}</span>` : ""}</li>`).join("")}</ul>` : '<p class="empty">Sem fontes.</p>'}</section>`;
   }
@@ -229,6 +277,8 @@ a.node:hover .nm { text-decoration: underline; }
     const tabs = [
       { id: "ficha", label: "Ficha", count: p.mudancas.length || null, html: sheet(p) + changes(p) },
       { id: "passos", label: "Passos", count: p.passos.length, html: steps(p) },
+      { id: "progresso", label: "Progresso", count: p.progresso ? p.progresso.chefes.filter((c) => c.estado === "derrotado").length : null, html: progress(p) },
+      { id: "dano", label: "Dano", count: (p.dano || []).length || null, html: damage(p) },
       { id: "atributos", label: "Atributos", count: null, html: stats(p) },
       { id: "fases", label: "Fases", count: p.fases.length, html: phases(p) },
       { id: "onde", label: "Onde pegar", count: p.itens.length, html: items(p) },
