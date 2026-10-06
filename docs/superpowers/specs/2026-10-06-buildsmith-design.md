@@ -22,7 +22,7 @@ O plano responde:
 | Saída | Uma página (Artifact) com link fixo, republicada a cada `/build` |
 | Objetivo da build | Perfil salvo por personagem, editável conversando |
 | Qual save | O mais recente entre `.co2` (Seamless Co-op) e `.sl2`, sempre lido a partir de cópia |
-| Qual personagem | Slot mais recente; se houver mais de um, pergunta 1 vez e grava no perfil |
+| Qual personagem | Único slot ocupado; se houver mais de um, pergunta 1 vez e grava no perfil |
 | Dados do jogador | Fora do repositório, em `~/.buildsmith/` |
 
 ## Estrutura do repositório
@@ -41,7 +41,7 @@ buildsmith/
       template/index.html     # visual fixo; lê plano.json
   games/ds2/
     level_costs.json          # custo para alcançar cada nível
-    item_sources.md           # de onde vêm as listas de IDs e como baixá-las
+    ids/*.txt                 # listas de IDs (DS2S-META, MIT) + LICENSE-DS2S-META
   tests/
     test_ds2save.py
     fixtures/                 # save sintético gerado pelos testes, nunca um save real
@@ -53,7 +53,6 @@ Dados do jogador (fora do repo):
 ```
 ~/.buildsmith/
   config.json                 # caminho do save, slot escolhido, URL da página
-  data/ds2/ids/*.txt          # listas de IDs baixadas na 1ª execução
   profiles/ds2/<personagem>.yaml
   history/ds2/<personagem>/<timestamp>.json
   cache/ds2/<assunto>.md      # cópia resumida da wiki, com data e URL de origem
@@ -90,7 +89,7 @@ Esses offsets foram achados empiricamente; os testes com o save real (ver Testes
 
 ### Listas de IDs
 
-Vêm do repositório `Nordgaren/DS2S-META` (`Resources/Equipment/**.txt`, formato `ID Nome`). São baixadas para `~/.buildsmith/data/ds2/ids/` na primeira execução e **não são versionadas** aqui, evitando questões de licença.
+Vêm do repositório `Nordgaren/DS2S-META` (`Resources/Equipment/**.txt`, formato `ID Nome`), licença MIT. Ficam vendorizadas em `games/ds2/ids/` junto com `LICENSE-DS2S-META`.
 
 ### Interface de linha de comando
 
@@ -109,7 +108,7 @@ python ds2save.py levels --from 65 --to 90   # custo de cada nível + total
   "slot": 1, "name": "Melatonin", "level": 65,
   "souls": 0, "soul_memory": 221118,
   "stats": {"VGR": 9, "END": 6, "VIT": 5, "ATN": 30, "STR": 10, "DEX": 18, "INT": 26, "FTH": 6, "ADP": 8},
-  "equipped": {"weapons": [...], "rings": [...], "spells": [...]},
+  "equipped": {"hands": {"L1": {...}, "R1": {...}}, "armor": {...}, "rings": [...], "spells": [...]},
   "inventory": [{"id": 1234, "name": "Uchigatana", "category": "MeleeWeapons", "upgrade": 5, "quantity": 1}],
   "unknown_ids": [100000000]
 }
@@ -156,7 +155,7 @@ notas: []
 ## Testes (`pytest`)
 
 1. **Save sintético**: o teste monta um slot com valores conhecidos, empacota em BND4, cifra com a chave real e verifica que `snapshot` devolve exatamente esses valores.
-2. **Save real (opcional)**: roda só se o save existir; confere nível 65, VGR 9, INT 26, Uchigatana +5. Pulado em outras máquinas.
+2. **Save real (opcional)**: roda só se o save existir; confere invariantes (há personagem, nome não vazio, atributos entre 1 e 99, Uchigatana no inventário). Pulado em outras máquinas.
 3. **Custos de nível**: 65→66 = 6.657; soma 66–76 = 82.736.
 4. **Nomes**: `31010000` → Soul Arrow; ID inexistente → "desconhecido #ID" sem exceção.
 5. **Skills (manual)**: `/build ds2` mostra ficha e custos iguais ao jogo, e o link da página não muda entre execuções.
