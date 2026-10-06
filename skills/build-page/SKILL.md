@@ -13,7 +13,8 @@ Formato do plano: `example/plano.json` desta pasta (versão 2). Spec: `docs/supe
 - `sinal`: `"+"` = ganho (âmbar), `"-"` = perda ou falta (azul), `""` = neutro. Valor sem fonte = `"—"`.
 - `titulo` até 40 caracteres; `sub` de nó até 30.
 - Nó: `tipo` (`item, chefe, inimigo, npc, local, bau, almas, atributo`), `nome`, `link` da wiki, `icone` = URL do ícone da wiki (vem do cabeçalho `icone:` do `wiki-cache`), `sub` curto (`"×1"`, `"+ 1.500 almas"`, `"R1 · +5"`).
-- Almas e níveis sempre do `ds2save.py levels`.
+- Almas e níveis sempre do `ds2save.py levels`; dano sempre do `ds2calc.py ar`.
+- `progresso` (aba Progresso) e `dano` (aba Dano) são opcionais; estado é texto (`derrotado`/`vivo`, `feito`/`pendente`), a página desenha o selo no estilo da wiki.
 
 ## Passos
 
