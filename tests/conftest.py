@@ -19,22 +19,23 @@ def encrypt_entry(plain: bytes) -> bytes:
     return hashlib.md5(iv + body).digest() + iv + body
 
 
-def build_bnd4(entries: dict[str, bytes]) -> bytes:
+def build_bnd4(entries: dict[str, bytes], encrypt: bool = True, unicode: bool = True) -> bytes:
     names = list(entries)
     header = bytearray(0x40)
     header[:4] = b"BND4"
     struct.pack_into("<i", header, 0x0C, len(names))
     struct.pack_into("<q", header, 0x20, 0x20)
+    header[0x30] = 1 if unicode else 0
     headers = bytearray(0x20 * len(names))
     names_start = 0x40 + len(headers)
     name_blob, name_offsets = bytearray(), []
     for name in names:
         name_offsets.append(names_start + len(name_blob))
-        name_blob += name.encode("utf-16le") + b"\0\0"
+        name_blob += name.encode("utf-16le") + b"\0\0" if unicode else name.encode("ascii") + b"\0"
     data_start = names_start + len(name_blob)
     data_blob = bytearray()
     for i, name in enumerate(names):
-        blob = encrypt_entry(entries[name])
+        blob = encrypt_entry(entries[name]) if encrypt else entries[name]
         struct.pack_into("<q", headers, i * 0x20 + 0x08, len(blob))
         struct.pack_into("<i", headers, i * 0x20 + 0x10, data_start + len(data_blob))
         struct.pack_into("<i", headers, i * 0x20 + 0x14, name_offsets[i])

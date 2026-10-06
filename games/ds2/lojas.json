@@ -1,0 +1,29 @@
+{
+ "_doc": "Prefixo (id da linha de loja // 10000) → NPC vendedor. Extraído de NpcEventParam.shopLineupStartRow em 2026-10-06.",
+ "lojas": {
+  "3070": "Head of Vengarl",
+  "5060": "Grave Warden Agdayne",
+  "7040": "Laddersmith Gilligan",
+  "7211": "Chancellor Wellager",
+  "7250": "Darkdiver Grandahl",
+  "7260": "Lonesome Gavlan",
+  "7540": "Merchant Hag Melentia",
+  "7560": "The Rat King",
+  "7610": "Maughlin the Armourer",
+  "7620": "Stone Trader Chloanne",
+  "7630": "Rosabeth of Melfia",
+  "7640": "Blacksmith Lenigrast",
+  "7643": "Steady Hand McDuff",
+  "7660": "Carhillion of the Fold",
+  "7680": "Straid of Olaphis",
+  "7690": "Licia of Lindeldt",
+  "7700": "Felkin the Outcast",
+  "7710": "Royal Sorcerer Navlaan",
+  "7720": "Magerold of Lanafir",
+  "7760": "Weaponsmith Ornifex",
+  "7770": "Sweet Shalquoir",
+  "7830": "Titchy Gren",
+  "7840": "Cromwell the Pardoner",
+  "7850": "Blue Sentinel Targray"
+ }
+}

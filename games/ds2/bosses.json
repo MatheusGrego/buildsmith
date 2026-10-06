@@ -1,0 +1,251 @@
+{
+ "_doc": "Chefes do DS2 SotFS: flag global de área concluída (BossBattleParam.map_clear_global_event_flag) e área (MapObjectBonfireParam). Extraído do regulation em 2026-10-06.",
+ "chefes": [
+  {
+   "flag": 100968,
+   "nome": "The Pursuer",
+   "area": "Forest of Fallen Giants",
+   "wiki": "https://darksouls2.wiki.fextralife.com/The+Pursuer"
+  },
+  {
+   "flag": 100971,
+   "nome": "The Last Giant",
+   "area": "Forest of Fallen Giants",
+   "wiki": "https://darksouls2.wiki.fextralife.com/The+Last+Giant"
+  },
+  {
+   "flag": 100951,
+   "nome": "The Duke's Dear Freja",
+   "area": "Brightstone Cove Tseldora",
+   "wiki": "https://darksouls2.wiki.fextralife.com/The+Duke%27s+Dear+Freja"
+  },
+  {
+   "flag": 101000,
+   "nome": "Prowling Magus & Congregation",
+   "area": "Brightstone Cove Tseldora",
+   "wiki": "https://darksouls2.wiki.fextralife.com/Prowling+Magus+&+Congregation"
+  },
+  {
+   "flag": 100970,
+   "nome": "Guardian Dragon",
+   "area": "Aldia's Keep",
+   "wiki": "https://darksouls2.wiki.fextralife.com/Guardian+Dragon"
+  },
+  {
+   "flag": 100962,
+   "nome": "Ruin Sentinels",
+   "area": "The Lost Bastille",
+   "wiki": "https://darksouls2.wiki.fextralife.com/Ruin+Sentinels"
+  },
+  {
+   "flag": 100963,
+   "nome": "The Lost Sinner",
+   "area": "Sinners' Rise",
+   "wiki": "https://darksouls2.wiki.fextralife.com/The+Lost+Sinner"
+  },
+  {
+   "flag": 101001,
+   "nome": "Belfry Gargoyles",
+   "area": "Belfry Luna",
+   "wiki": "https://darksouls2.wiki.fextralife.com/Belfry+Gargoyles"
+  },
+  {
+   "flag": 100955,
+   "nome": "Covetous Demon",
+   "area": "Harvest Valley",
+   "wiki": "https://darksouls2.wiki.fextralife.com/Covetous+Demon"
+  },
+  {
+   "flag": 100956,
+   "nome": "Mytha, the Baneful Queen",
+   "area": "Earthen Peak",
+   "wiki": "https://darksouls2.wiki.fextralife.com/Mytha,+the+Baneful+Queen"
+  },
+  {
+   "flag": 100961,
+   "nome": "Flexile Sentry",
+   "area": "No-man's Wharf",
+   "wiki": "https://darksouls2.wiki.fextralife.com/Flexile+Sentry"
+  },
+  {
+   "flag": 100964,
+   "nome": "Smelter Demon",
+   "area": "Iron Keep",
+   "wiki": "https://darksouls2.wiki.fextralife.com/Smelter+Demon"
+  },
+  {
+   "flag": 100952,
+   "nome": "Old Iron King",
+   "area": "Iron Keep",
+   "wiki": "https://darksouls2.wiki.fextralife.com/Old+Iron+King"
+  },
+  {
+   "flag": 100980,
+   "nome": "Dragonriders",
+   "area": "Drangleic Castle",
+   "wiki": "https://darksouls2.wiki.fextralife.com/Dragonriders"
+  },
+  {
+   "flag": 100958,
+   "nome": "Looking Glass Knight",
+   "area": "Drangleic Castle",
+   "wiki": "https://darksouls2.wiki.fextralife.com/Looking+Glass+Knight"
+  },
+  {
+   "flag": 100974,
+   "nome": "Throne Watcher & Throne Defender",
+   "area": "Drangleic Castle",
+   "wiki": "https://darksouls2.wiki.fextralife.com/Throne+Watcher+&+Throne+Defender"
+  },
+  {
+   "flag": 100973,
+   "nome": "Nashandra",
+   "area": "Drangleic Castle",
+   "wiki": "https://darksouls2.wiki.fextralife.com/Nashandra"
+  },
+  {
+   "flag": 101080,
+   "nome": "Aldia, Scholar of the First Sin",
+   "area": "Drangleic Castle",
+   "wiki": "https://darksouls2.wiki.fextralife.com/Aldia,+Scholar+of+the+First+Sin"
+  },
+  {
+   "flag": 100954,
+   "nome": "Skeleton Lords",
+   "area": "Huntsman's Copse",
+   "wiki": "https://darksouls2.wiki.fextralife.com/Skeleton+Lords"
+  },
+  {
+   "flag": 100953,
+   "nome": "Executioner's Chariot",
+   "area": "Huntsman's Copse",
+   "wiki": "https://darksouls2.wiki.fextralife.com/Executioner%27s+Chariot"
+  },
+  {
+   "flag": 100966,
+   "nome": "The Rotten",
+   "area": "Black Gulch",
+   "wiki": "https://darksouls2.wiki.fextralife.com/The+Rotten"
+  },
+  {
+   "flag": 100977,
+   "nome": "Ancient Dragon",
+   "area": "Dragon Shrine",
+   "wiki": "https://darksouls2.wiki.fextralife.com/Ancient+Dragon"
+  },
+  {
+   "flag": 100959,
+   "nome": "Dragonrider",
+   "area": "Heide's Tower of Flame",
+   "wiki": "https://darksouls2.wiki.fextralife.com/Dragonrider"
+  },
+  {
+   "flag": 100960,
+   "nome": "Old Dragonslayer",
+   "area": "Heide's Tower of Flame",
+   "wiki": "https://darksouls2.wiki.fextralife.com/Old+Dragonslayer"
+  },
+  {
+   "flag": 100957,
+   "nome": "Scorpioness Najka",
+   "area": "Shaded Woods",
+   "wiki": "https://darksouls2.wiki.fextralife.com/Scorpioness+Najka"
+  },
+  {
+   "flag": 100967,
+   "nome": "Royal Rat Authority",
+   "area": "Doors of Pharros",
+   "wiki": "https://darksouls2.wiki.fextralife.com/Royal+Rat+Authority"
+  },
+  {
+   "flag": 100965,
+   "nome": "Royal Rat Vanguard",
+   "area": "Grave of Saints",
+   "wiki": "https://darksouls2.wiki.fextralife.com/Royal+Rat+Vanguard"
+  },
+  {
+   "flag": 100972,
+   "nome": "Giant Lord",
+   "area": "Forest of Fallen Giants",
+   "wiki": "https://darksouls2.wiki.fextralife.com/Giant+Lord"
+  },
+  {
+   "flag": 100950,
+   "nome": "Demon of Song",
+   "area": "Shrine of Amana",
+   "wiki": "https://darksouls2.wiki.fextralife.com/Demon+of+Song"
+  },
+  {
+   "flag": 100975,
+   "nome": "Velstadt, the Royal Aegis",
+   "area": "Undead Crypt",
+   "wiki": "https://darksouls2.wiki.fextralife.com/Velstadt,+the+Royal+Aegis"
+  },
+  {
+   "flag": 100978,
+   "nome": "Vendrick",
+   "area": "Undead Crypt",
+   "wiki": "https://darksouls2.wiki.fextralife.com/Vendrick"
+  },
+  {
+   "flag": 100979,
+   "nome": "Darklurker",
+   "area": "Drangleic Castle",
+   "wiki": "https://darksouls2.wiki.fextralife.com/Darklurker"
+  },
+  {
+   "flag": 101050,
+   "nome": "Elana, the Squalid Queen",
+   "area": "Dragon's Sanctum",
+   "wiki": "https://darksouls2.wiki.fextralife.com/Elana,+the+Squalid+Queen"
+  },
+  {
+   "flag": 101053,
+   "nome": "Afflicted Graverobber, Ancient Soldier Varg & Cerah, the Old Explorer",
+   "area": "Shulva, Sanctum City",
+   "wiki": "https://darksouls2.wiki.fextralife.com/Afflicted+Graverobber,+Ancient+Soldier+Varg+&+Cerah,+the+Old+Explorer"
+  },
+  {
+   "flag": 101051,
+   "nome": "Sinh, the Slumbering Dragon",
+   "area": "Dragon's Rest",
+   "wiki": "https://darksouls2.wiki.fextralife.com/Sinh,+the+Slumbering+Dragon"
+  },
+  {
+   "flag": 101061,
+   "nome": "Fume Knight",
+   "area": "Brume Tower",
+   "wiki": "https://darksouls2.wiki.fextralife.com/Fume+Knight"
+  },
+  {
+   "flag": 101062,
+   "nome": "Sir Alonne",
+   "area": "Brume Tower",
+   "wiki": "https://darksouls2.wiki.fextralife.com/Sir+Alonne"
+  },
+  {
+   "flag": 101063,
+   "nome": "Blue Smelter Demon",
+   "area": "Iron Passage",
+   "wiki": "https://darksouls2.wiki.fextralife.com/Blue+Smelter+Demon"
+  },
+  {
+   "flag": 101070,
+   "nome": "Burnt Ivory King",
+   "area": "Grand Cathedral",
+   "wiki": "https://darksouls2.wiki.fextralife.com/Burnt+Ivory+King"
+  },
+  {
+   "flag": 101072,
+   "nome": "Lud, the King's Pet & Zallen, the King's Pet",
+   "area": "Frozen Eleum Loyce",
+   "wiki": "https://darksouls2.wiki.fextralife.com/Lud,+the+King%27s+Pet+&+Zallen,+the+King%27s+Pet"
+  },
+  {
+   "flag": 101071,
+   "nome": "Aava, the King's Pet",
+   "area": "Frozen Eleum Loyce",
+   "wiki": "https://darksouls2.wiki.fextralife.com/Aava,+the+King%27s+Pet"
+  }
+ ]
+}
