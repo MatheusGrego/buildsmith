@@ -139,6 +139,8 @@ notas: []
 
 ### Página
 
+> Substituído pela v2: `2026-10-06-buildsmith-pagina-v2-design.md` (estilo wiki, fluxos de nós, tabelas de dados, ícones).
+
 `template/index.html` fixo + `plano.json` publicado como arquivo de apoio. Seções: ficha, "o que mudou", fluxograma de passos, custos por fase, onde pegar cada item, comparação com builds de players, fontes com data.
 
 ## Erros

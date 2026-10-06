@@ -24,11 +24,14 @@ Dados do usuário em `~/.buildsmith/` (crie as pastas se faltarem): `config.json
    notas: []
    ~~~
    Se o `pedido` mudar o foco ("agora quero piro"), atualize o perfil e diga o que mudou.
-4. **Plano:**
-   - Defina `alvo_stats` a partir do perfil e dos atributos atuais. Divida em fases de 1 atributo cada, na ordem de prioridade (sobrevivência primeiro quando VGR < 20).
+4. **Plano** (formato v2: `../build-page/example/plano.json`):
+   - **Sem frases.** Cada passo é `fluxo` (de onde → para onde, com nós) + `dados` (Dado | Agora | Depois | Efeito, com `sinal` + ou −). Ex.: `Ruin Sentinels ➜ Ruin Sentinel Soul ➜ Straid (+ 1.500 almas) ➜ Heavy Homing Soul Arrow`.
+   - Defina `alvo_stats` a partir do perfil e dos atributos atuais. Divida em `fases` de 1 atributo cada (com `atributo`), sobrevivência primeiro quando VGR < 20.
    - Custo de cada fase: `ds2save.py levels --from <nível inicial> --to <nível final>`. Nada de conta manual.
-   - Para cada item que falta (catalisador, anel, pedra, magia, armadura), use a skill `wiki-cache`. Só entre em `itens` o que tiver fonte.
-   - Compare com builds do mesmo arquétipo via `wiki-cache` (`builds-<arquetipo>`). Proponha ajustes que respeitem `travados` e `nao_migrar`; nunca proponha recomeçar a build.
+   - Efeitos numéricos (PV por nível de VGR, efeito de anel, escala de arma, preço) vêm da skill `wiki-cache`, junto com `link` e `icone` de cada nó. Sem fonte → `"—"`.
+   - `mudancas`: compare com o snapshot anterior e gere linhas (Dado | Antes | Agora | Efeito).
+   - `itens`: nó do item + `onde` como fluxo (ex.: `The Tower Apart ➜ Baú de ferro`) + `dados`.
+   - `comparacao`: builds do mesmo arquétipo via `wiki-cache`; `dados` com Você × Build e `ajuste` como fluxo. Respeite `travados` e `nao_migrar`; nunca proponha recomeçar a build.
    - `passos`: no máximo 7, em ordem de execução, começando pelo que dá para fazer na área atual do jogador.
 5. **Página:** siga a skill `build-page`.
 6. **Resposta no chat:** primeira linha = próximo passo concreto; depois o link da página; no máximo 5 linhas.
