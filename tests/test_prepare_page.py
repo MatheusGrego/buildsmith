@@ -87,3 +87,11 @@ def test_cli_prints_files(tmp_path, capsys, monkeypatch):
     code = prepare_page.main([str(src), str(tmp_path / "saida"), "--jogo", "ds2", "--cache", str(tmp_path / "cache")])
     assert code == 0
     assert "plano.json" in json.loads(capsys.readouterr().out)["files"]
+
+
+def test_progress_and_damage_icons_are_local(tmp_path):
+    run(tmp_path, FakeFetch())
+    plano = final_plan(tmp_path)
+    nodes = [plano["dano"][0]["arma"], *plano["dano"][0]["por_causa"]]
+    nodes += [c["loja"] for c in plano["progresso"]["compras"] if "icone" in c["loja"]]
+    assert nodes and all(n["icone"].startswith("icons/") for n in nodes if "icone" in n)

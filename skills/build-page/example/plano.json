@@ -657,5 +657,617 @@
       "url": "https://darksouls2.wiki.fextralife.com/Moonlight+Greatsword",
       "data": "2026-10-06"
     }
+  ],
+  "progresso": {
+    "chefes": [
+      {
+        "no": {
+          "tipo": "chefe",
+          "nome": "The Pursuer",
+          "link": "https://darksouls2.wiki.fextralife.com/The+Pursuer",
+          "sub": "Forest of Fallen Giants"
+        },
+        "estado": "derrotado"
+      },
+      {
+        "no": {
+          "tipo": "chefe",
+          "nome": "The Last Giant",
+          "link": "https://darksouls2.wiki.fextralife.com/The+Last+Giant",
+          "sub": "Forest of Fallen Giants"
+        },
+        "estado": "derrotado"
+      },
+      {
+        "no": {
+          "tipo": "chefe",
+          "nome": "Flexile Sentry",
+          "link": "https://darksouls2.wiki.fextralife.com/Flexile+Sentry",
+          "sub": "No-man's Wharf"
+        },
+        "estado": "derrotado"
+      },
+      {
+        "no": {
+          "tipo": "chefe",
+          "nome": "Dragonrider",
+          "link": "https://darksouls2.wiki.fextralife.com/Dragonrider",
+          "sub": "Heide's Tower of Flame"
+        },
+        "estado": "derrotado"
+      },
+      {
+        "no": {
+          "tipo": "chefe",
+          "nome": "Old Dragonslayer",
+          "link": "https://darksouls2.wiki.fextralife.com/Old+Dragonslayer",
+          "sub": "Heide's Tower of Flame"
+        },
+        "estado": "derrotado"
+      },
+      {
+        "no": {
+          "tipo": "chefe",
+          "nome": "The Duke's Dear Freja",
+          "link": "https://darksouls2.wiki.fextralife.com/The+Duke%27s+Dear+Freja",
+          "sub": "Brightstone Cove Tseldora"
+        },
+        "estado": "vivo"
+      },
+      {
+        "no": {
+          "tipo": "chefe",
+          "nome": "Prowling Magus & Congregation",
+          "link": "https://darksouls2.wiki.fextralife.com/Prowling+Magus+&+Congregation",
+          "sub": "Brightstone Cove Tseldora"
+        },
+        "estado": "vivo"
+      },
+      {
+        "no": {
+          "tipo": "chefe",
+          "nome": "Guardian Dragon",
+          "link": "https://darksouls2.wiki.fextralife.com/Guardian+Dragon",
+          "sub": "Aldia's Keep"
+        },
+        "estado": "vivo"
+      },
+      {
+        "no": {
+          "tipo": "chefe",
+          "nome": "Ruin Sentinels",
+          "link": "https://darksouls2.wiki.fextralife.com/Ruin+Sentinels",
+          "sub": "The Lost Bastille"
+        },
+        "estado": "vivo"
+      },
+      {
+        "no": {
+          "tipo": "chefe",
+          "nome": "The Lost Sinner",
+          "link": "https://darksouls2.wiki.fextralife.com/The+Lost+Sinner",
+          "sub": "Sinners' Rise"
+        },
+        "estado": "vivo"
+      },
+      {
+        "no": {
+          "tipo": "chefe",
+          "nome": "Belfry Gargoyles",
+          "link": "https://darksouls2.wiki.fextralife.com/Belfry+Gargoyles",
+          "sub": "Belfry Luna"
+        },
+        "estado": "vivo"
+      },
+      {
+        "no": {
+          "tipo": "chefe",
+          "nome": "Covetous Demon",
+          "link": "https://darksouls2.wiki.fextralife.com/Covetous+Demon",
+          "sub": "Harvest Valley"
+        },
+        "estado": "vivo"
+      },
+      {
+        "no": {
+          "tipo": "chefe",
+          "nome": "Mytha, the Baneful Queen",
+          "link": "https://darksouls2.wiki.fextralife.com/Mytha,+the+Baneful+Queen",
+          "sub": "Earthen Peak"
+        },
+        "estado": "vivo"
+      },
+      {
+        "no": {
+          "tipo": "chefe",
+          "nome": "Smelter Demon",
+          "link": "https://darksouls2.wiki.fextralife.com/Smelter+Demon",
+          "sub": "Iron Keep"
+        },
+        "estado": "vivo"
+      },
+      {
+        "no": {
+          "tipo": "chefe",
+          "nome": "Old Iron King",
+          "link": "https://darksouls2.wiki.fextralife.com/Old+Iron+King",
+          "sub": "Iron Keep"
+        },
+        "estado": "vivo"
+      },
+      {
+        "no": {
+          "tipo": "chefe",
+          "nome": "Dragonriders",
+          "link": "https://darksouls2.wiki.fextralife.com/Dragonriders",
+          "sub": "Drangleic Castle"
+        },
+        "estado": "vivo"
+      },
+      {
+        "no": {
+          "tipo": "chefe",
+          "nome": "Looking Glass Knight",
+          "link": "https://darksouls2.wiki.fextralife.com/Looking+Glass+Knight",
+          "sub": "Drangleic Castle"
+        },
+        "estado": "vivo"
+      },
+      {
+        "no": {
+          "tipo": "chefe",
+          "nome": "Throne Watcher & Throne Defender",
+          "link": "https://darksouls2.wiki.fextralife.com/Throne+Watcher+&+Throne+Defender",
+          "sub": "Drangleic Castle"
+        },
+        "estado": "vivo"
+      },
+      {
+        "no": {
+          "tipo": "chefe",
+          "nome": "Nashandra",
+          "link": "https://darksouls2.wiki.fextralife.com/Nashandra",
+          "sub": "Drangleic Castle"
+        },
+        "estado": "vivo"
+      },
+      {
+        "no": {
+          "tipo": "chefe",
+          "nome": "Aldia, Scholar of the First Sin",
+          "link": "https://darksouls2.wiki.fextralife.com/Aldia,+Scholar+of+the+First+Sin",
+          "sub": "Drangleic Castle"
+        },
+        "estado": "vivo"
+      },
+      {
+        "no": {
+          "tipo": "chefe",
+          "nome": "Skeleton Lords",
+          "link": "https://darksouls2.wiki.fextralife.com/Skeleton+Lords",
+          "sub": "Huntsman's Copse"
+        },
+        "estado": "vivo"
+      },
+      {
+        "no": {
+          "tipo": "chefe",
+          "nome": "Executioner's Chariot",
+          "link": "https://darksouls2.wiki.fextralife.com/Executioner%27s+Chariot",
+          "sub": "Huntsman's Copse"
+        },
+        "estado": "vivo"
+      },
+      {
+        "no": {
+          "tipo": "chefe",
+          "nome": "The Rotten",
+          "link": "https://darksouls2.wiki.fextralife.com/The+Rotten",
+          "sub": "Black Gulch"
+        },
+        "estado": "vivo"
+      },
+      {
+        "no": {
+          "tipo": "chefe",
+          "nome": "Ancient Dragon",
+          "link": "https://darksouls2.wiki.fextralife.com/Ancient+Dragon",
+          "sub": "Dragon Shrine"
+        },
+        "estado": "vivo"
+      },
+      {
+        "no": {
+          "tipo": "chefe",
+          "nome": "Scorpioness Najka",
+          "link": "https://darksouls2.wiki.fextralife.com/Scorpioness+Najka",
+          "sub": "Shaded Woods"
+        },
+        "estado": "vivo"
+      },
+      {
+        "no": {
+          "tipo": "chefe",
+          "nome": "Royal Rat Authority",
+          "link": "https://darksouls2.wiki.fextralife.com/Royal+Rat+Authority",
+          "sub": "Doors of Pharros"
+        },
+        "estado": "vivo"
+      },
+      {
+        "no": {
+          "tipo": "chefe",
+          "nome": "Royal Rat Vanguard",
+          "link": "https://darksouls2.wiki.fextralife.com/Royal+Rat+Vanguard",
+          "sub": "Grave of Saints"
+        },
+        "estado": "vivo"
+      },
+      {
+        "no": {
+          "tipo": "chefe",
+          "nome": "Giant Lord",
+          "link": "https://darksouls2.wiki.fextralife.com/Giant+Lord",
+          "sub": "Forest of Fallen Giants"
+        },
+        "estado": "vivo"
+      },
+      {
+        "no": {
+          "tipo": "chefe",
+          "nome": "Demon of Song",
+          "link": "https://darksouls2.wiki.fextralife.com/Demon+of+Song",
+          "sub": "Shrine of Amana"
+        },
+        "estado": "vivo"
+      },
+      {
+        "no": {
+          "tipo": "chefe",
+          "nome": "Velstadt, the Royal Aegis",
+          "link": "https://darksouls2.wiki.fextralife.com/Velstadt,+the+Royal+Aegis",
+          "sub": "Undead Crypt"
+        },
+        "estado": "vivo"
+      },
+      {
+        "no": {
+          "tipo": "chefe",
+          "nome": "Vendrick",
+          "link": "https://darksouls2.wiki.fextralife.com/Vendrick",
+          "sub": "Undead Crypt"
+        },
+        "estado": "vivo"
+      },
+      {
+        "no": {
+          "tipo": "chefe",
+          "nome": "Darklurker",
+          "link": "https://darksouls2.wiki.fextralife.com/Darklurker",
+          "sub": "Drangleic Castle"
+        },
+        "estado": "vivo"
+      },
+      {
+        "no": {
+          "tipo": "chefe",
+          "nome": "Elana, the Squalid Queen",
+          "link": "https://darksouls2.wiki.fextralife.com/Elana,+the+Squalid+Queen",
+          "sub": "Dragon's Sanctum"
+        },
+        "estado": "vivo"
+      },
+      {
+        "no": {
+          "tipo": "chefe",
+          "nome": "Afflicted Graverobber, Ancient Soldier Varg & Cerah, the Old Explorer",
+          "link": "https://darksouls2.wiki.fextralife.com/Afflicted+Graverobber,+Ancient+Soldier+Varg+&+Cerah,+the+Old+Explorer",
+          "sub": "Shulva, Sanctum City"
+        },
+        "estado": "vivo"
+      },
+      {
+        "no": {
+          "tipo": "chefe",
+          "nome": "Sinh, the Slumbering Dragon",
+          "link": "https://darksouls2.wiki.fextralife.com/Sinh,+the+Slumbering+Dragon",
+          "sub": "Dragon's Rest"
+        },
+        "estado": "vivo"
+      },
+      {
+        "no": {
+          "tipo": "chefe",
+          "nome": "Fume Knight",
+          "link": "https://darksouls2.wiki.fextralife.com/Fume+Knight",
+          "sub": "Brume Tower"
+        },
+        "estado": "vivo"
+      },
+      {
+        "no": {
+          "tipo": "chefe",
+          "nome": "Sir Alonne",
+          "link": "https://darksouls2.wiki.fextralife.com/Sir+Alonne",
+          "sub": "Brume Tower"
+        },
+        "estado": "vivo"
+      },
+      {
+        "no": {
+          "tipo": "chefe",
+          "nome": "Blue Smelter Demon",
+          "link": "https://darksouls2.wiki.fextralife.com/Blue+Smelter+Demon",
+          "sub": "Iron Passage"
+        },
+        "estado": "vivo"
+      },
+      {
+        "no": {
+          "tipo": "chefe",
+          "nome": "Burnt Ivory King",
+          "link": "https://darksouls2.wiki.fextralife.com/Burnt+Ivory+King",
+          "sub": "Grand Cathedral"
+        },
+        "estado": "vivo"
+      },
+      {
+        "no": {
+          "tipo": "chefe",
+          "nome": "Lud, the King's Pet & Zallen, the King's Pet",
+          "link": "https://darksouls2.wiki.fextralife.com/Lud,+the+King%27s+Pet+&+Zallen,+the+King%27s+Pet",
+          "sub": "Frozen Eleum Loyce"
+        },
+        "estado": "vivo"
+      },
+      {
+        "no": {
+          "tipo": "chefe",
+          "nome": "Aava, the King's Pet",
+          "link": "https://darksouls2.wiki.fextralife.com/Aava,+the+King%27s+Pet",
+          "sub": "Frozen Eleum Loyce"
+        },
+        "estado": "vivo"
+      }
+    ],
+    "compras": [
+      {
+        "loja": {
+          "tipo": "npc",
+          "nome": "Lonesome Gavlan",
+          "link": "https://darksouls2.wiki.fextralife.com/Lonesome+Gavlan"
+        },
+        "item": {
+          "tipo": "item",
+          "nome": "Poison Moss",
+          "link": "https://darksouls2.wiki.fextralife.com/Poison+Moss"
+        },
+        "qtd": 5
+      },
+      {
+        "loja": {
+          "tipo": "npc",
+          "nome": "Merchant Hag Melentia",
+          "link": "https://darksouls2.wiki.fextralife.com/Merchant+Hag+Melentia"
+        },
+        "item": {
+          "tipo": "item",
+          "nome": "Soul Arrow",
+          "link": "https://darksouls2.wiki.fextralife.com/Soul+Arrow",
+          "icone": "https://static0.fextralifeimages.com/file/darksouls2/0/0d/Soul_arrow.png"
+        },
+        "qtd": 1
+      },
+      {
+        "loja": {
+          "tipo": "npc",
+          "nome": "Merchant Hag Melentia",
+          "link": "https://darksouls2.wiki.fextralife.com/Merchant+Hag+Melentia"
+        },
+        "item": {
+          "tipo": "item",
+          "nome": "Lenigrast's Key",
+          "link": "https://darksouls2.wiki.fextralife.com/Lenigrast%27s+Key"
+        },
+        "qtd": 1
+      },
+      {
+        "loja": {
+          "tipo": "npc",
+          "nome": "Steady Hand McDuff",
+          "link": "https://darksouls2.wiki.fextralife.com/Steady+Hand+McDuff",
+          "icone": "https://static0.fextralifeimages.com/file/darksouls2/0/01/Mcduffframe.png"
+        },
+        "item": {
+          "tipo": "item",
+          "nome": "Uchigatana",
+          "link": "https://darksouls2.wiki.fextralife.com/Uchigatana",
+          "icone": "https://static0.fextralifeimages.com/file/darksouls2/thumb/d/df/Uchigatana_ds2.png/178px-Uchigatana_ds2.png"
+        },
+        "qtd": 1
+      },
+      {
+        "loja": {
+          "tipo": "npc",
+          "nome": "Carhillion of the Fold",
+          "link": "https://darksouls2.wiki.fextralife.com/Carhillion+of+the+Fold",
+          "icone": "https://static0.fextralifeimages.com/file/darksouls2/a/a1/Carhillionframe.png"
+        },
+        "item": {
+          "tipo": "item",
+          "nome": "Great Soul Arrow",
+          "link": "https://darksouls2.wiki.fextralife.com/Great+Soul+Arrow"
+        },
+        "qtd": 1
+      },
+      {
+        "loja": {
+          "tipo": "npc",
+          "nome": "Carhillion of the Fold",
+          "link": "https://darksouls2.wiki.fextralife.com/Carhillion+of+the+Fold",
+          "icone": "https://static0.fextralifeimages.com/file/darksouls2/a/a1/Carhillionframe.png"
+        },
+        "item": {
+          "tipo": "item",
+          "nome": "Shockwave",
+          "link": "https://darksouls2.wiki.fextralife.com/Shockwave"
+        },
+        "qtd": 1
+      },
+      {
+        "loja": {
+          "tipo": "npc",
+          "nome": "Carhillion of the Fold",
+          "link": "https://darksouls2.wiki.fextralife.com/Carhillion+of+the+Fold",
+          "icone": "https://static0.fextralifeimages.com/file/darksouls2/a/a1/Carhillionframe.png"
+        },
+        "item": {
+          "tipo": "item",
+          "nome": "Soul Spear Barrage",
+          "link": "https://darksouls2.wiki.fextralife.com/Soul+Spear+Barrage"
+        },
+        "qtd": 1
+      },
+      {
+        "loja": {
+          "tipo": "npc",
+          "nome": "Carhillion of the Fold",
+          "link": "https://darksouls2.wiki.fextralife.com/Carhillion+of+the+Fold",
+          "icone": "https://static0.fextralifeimages.com/file/darksouls2/a/a1/Carhillionframe.png"
+        },
+        "item": {
+          "tipo": "item",
+          "nome": "Magic Weapon",
+          "link": "https://darksouls2.wiki.fextralife.com/Magic+Weapon"
+        },
+        "qtd": 1
+      },
+      {
+        "loja": {
+          "tipo": "npc",
+          "nome": "Carhillion of the Fold",
+          "link": "https://darksouls2.wiki.fextralife.com/Carhillion+of+the+Fold",
+          "icone": "https://static0.fextralifeimages.com/file/darksouls2/a/a1/Carhillionframe.png"
+        },
+        "item": {
+          "tipo": "item",
+          "nome": "Yearn",
+          "link": "https://darksouls2.wiki.fextralife.com/Yearn"
+        },
+        "qtd": 1
+      },
+      {
+        "loja": {
+          "tipo": "npc",
+          "nome": "Carhillion of the Fold",
+          "link": "https://darksouls2.wiki.fextralife.com/Carhillion+of+the+Fold",
+          "icone": "https://static0.fextralifeimages.com/file/darksouls2/a/a1/Carhillionframe.png"
+        },
+        "item": {
+          "tipo": "item",
+          "nome": "Clear Bluestone Ring",
+          "link": "https://darksouls2.wiki.fextralife.com/Clear+Bluestone+Ring",
+          "icone": "https://static0.fextralifeimages.com/file/darksouls2/e/eb/Clear_bluestone_ring.png"
+        },
+        "qtd": 1
+      }
+    ],
+    "eventos": []
+  },
+  "dano": [
+    {
+      "arma": {
+        "tipo": "item",
+        "nome": "Uchigatana",
+        "link": "https://darksouls2.wiki.fextralife.com/Uchigatana",
+        "icone": "https://static0.fextralifeimages.com/file/darksouls2/thumb/d/df/Uchigatana_ds2.png/178px-Uchigatana_ds2.png",
+        "sub": "+5 · FOR 10"
+      },
+      "agora": 218,
+      "depois": 226,
+      "detalhe": "DES 18 → 25",
+      "por_causa": [
+        {
+          "tipo": "almas",
+          "nome": "99.790 almas",
+          "link": "https://darksouls2.wiki.fextralife.com/Level",
+          "icone": "https://static0.fextralifeimages.com/file/darksouls2/a/ae/Icon-lvl.png",
+          "sub": "nível 99 → 106"
+        },
+        {
+          "tipo": "atributo",
+          "nome": "Dexterity",
+          "link": "https://darksouls2.wiki.fextralife.com/Dexterity",
+          "icone": "https://static0.fextralifeimages.com/file/darksouls2/b/b8/Icon-dexterity.png",
+          "sub": "18 → 25"
+        }
+      ]
+    },
+    {
+      "arma": {
+        "tipo": "item",
+        "nome": "Uchigatana",
+        "link": "https://darksouls2.wiki.fextralife.com/Uchigatana",
+        "icone": "https://static0.fextralifeimages.com/file/darksouls2/thumb/d/df/Uchigatana_ds2.png/178px-Uchigatana_ds2.png",
+        "sub": "+5 → +6"
+      },
+      "agora": 218,
+      "depois": 231,
+      "detalhe": "upgrade +5 → +6",
+      "por_causa": [
+        {
+          "tipo": "item",
+          "nome": "Large Titanite Shard",
+          "link": "https://darksouls2.wiki.fextralife.com/Large+Titanite+Shard",
+          "icone": "https://static0.fextralifeimages.com/file/darksouls2/6/62/Large_Titanite_Shard.png"
+        },
+        {
+          "tipo": "npc",
+          "nome": "Steady Hand McDuff",
+          "link": "https://darksouls2.wiki.fextralife.com/Steady+Hand+McDuff",
+          "icone": "https://static0.fextralifeimages.com/file/darksouls2/0/01/Mcduffframe.png",
+          "sub": "ferreiro"
+        }
+      ]
+    },
+    {
+      "arma": {
+        "tipo": "item",
+        "nome": "Uchigatana",
+        "link": "https://darksouls2.wiki.fextralife.com/Uchigatana",
+        "icone": "https://static0.fextralifeimages.com/file/darksouls2/thumb/d/df/Uchigatana_ds2.png/178px-Uchigatana_ds2.png",
+        "sub": "+5 → +10"
+      },
+      "agora": 218,
+      "depois": 282,
+      "detalhe": "upgrade +5 → +10",
+      "por_causa": [
+        {
+          "tipo": "item",
+          "nome": "Titanite Slab",
+          "link": "https://darksouls2.wiki.fextralife.com/Titanite+Slab"
+        },
+        {
+          "tipo": "npc",
+          "nome": "Steady Hand McDuff",
+          "link": "https://darksouls2.wiki.fextralife.com/Steady+Hand+McDuff",
+          "icone": "https://static0.fextralifeimages.com/file/darksouls2/0/01/Mcduffframe.png",
+          "sub": "ferreiro"
+        }
+      ]
+    },
+    {
+      "arma": {
+        "tipo": "item",
+        "nome": "Soul Arrow",
+        "link": "https://darksouls2.wiki.fextralife.com/Soul+Arrow",
+        "icone": "https://static0.fextralifeimages.com/file/darksouls2/0/0d/Soul_arrow.png",
+        "sub": "Sorcerer's Staff +2"
+      },
+      "agora": "—",
+      "depois": "—",
+      "detalhe": "feitiço: fórmula ainda não validada",
+      "por_causa": []
+    }
   ]
 }
