@@ -1,0 +1,7 @@
+{
+  "name": "buildsmith",
+  "owner": { "name": "Matheus Grego" },
+  "plugins": [
+    { "name": "buildsmith", "source": "./", "description": "Planejador de builds a partir do save do jogo." }
+  ]
+}
