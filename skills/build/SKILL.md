@@ -12,7 +12,8 @@ Dados do usuário em `~/.buildsmith/` (crie as pastas se faltarem): `config.json
 ## Passos
 
 1. **Ficha:** rode o `snapshot` da skill `ds2-save` (`<pasta>/../ds2-save/scripts/ds2save.py`). Se `config.json` tiver `slots.ds2`, passe `--slot`. Erro de "mais de um personagem": rode `slots`, pergunte, grave a escolha em `config.json`.
-2. **Histórico:** grave a saída em `history/ds2/<personagem>/<AAAA-MM-DDTHH-MM>.json`. Compare com o arquivo anterior: níveis, atributos, itens novos, upgrades. Isso vira `mudancas` (vazio na primeira vez: "primeira leitura").
+2. **Histórico e eventos:** grave a saída em `history/ds2/<personagem>/<AAAA-MM-DDTHH-MM>.json`. Compare com o arquivo anterior: níveis, atributos, itens novos, upgrades, chefes que passaram a `derrotado`, compras novas. Isso vira `mudancas` (vazio na primeira vez).
+   - **Aprender evento:** se o `pedido` conta algo que aconteceu ("libertei o Straid", "abri a porta X"), rode `ds2save.py flags-diff --antes <snapshot anterior> --depois <atual>`. Se `ligou` tiver de 1 a 20 flags, grave `{"nome": "<evento>", "flags": <ligou>, "data": "<hoje>"}` em `~/.buildsmith/flags/ds2.json` e diga quantas flags foram associadas. Se vier vazio ou maior que 20, explique que precisa ler o save no menu **antes** e **depois** do evento.
 3. **Perfil:** leia `profiles/ds2/<personagem>.yaml`. Se não existir, pergunte (uma pergunta por vez, múltipla escolha): arquétipo, itens que não quer trocar, foco secundário. Grave no formato:
    ~~~yaml
    personagem: Melatonina Vorcaro
@@ -32,6 +33,8 @@ Dados do usuário em `~/.buildsmith/` (crie as pastas se faltarem): `config.json
    - `mudancas`: compare com o snapshot anterior e gere linhas (Dado | Antes | Agora | Efeito).
    - `itens`: nó do item + `onde` como fluxo (ex.: `The Tower Apart ➜ Baú de ferro`) + `dados`.
    - `comparacao`: builds do mesmo arquétipo via `wiki-cache`; `dados` com Você × Build e `ajuste` como fluxo. Respeite `travados` e `nao_migrar`; nunca proponha recomeçar a build.
-   - `passos`: no máximo 7, em ordem de execução, começando pelo que dá para fazer na área atual do jogador.
+   - `passos`: no máximo 7, em ordem de execução, começando pelo que dá para fazer na área atual do jogador. **Tire** do plano o que `progresso` já mostra como feito (chefe `derrotado`, compra já feita, evento `feito`).
+   - `progresso`: todos os chefes do snapshot (derrotados primeiro) como nós `chefe` com `sub` = área e `estado` `derrotado`/`vivo`; `compras` com nó da loja (`npc`) e do item; `eventos` aprendidos com `estado` `feito`/`pendente`.
+   - `dano`: para a arma da mão direita (`R1`) rode `ds2calc.py ar` com os atributos atuais (`agora`) e com cada mudança do plano que afeta AR (`depois`): fase de DEX/STR, próximo upgrade (+1) e +10. `por_causa` = fluxo do que gera a mudança (almas ➜ atributo, material ➜ ferreiro). Catalisador/feitiço: `"—"` com `detalhe` "fórmula ainda não validada".
 5. **Página:** siga a skill `build-page`.
 6. **Resposta no chat:** primeira linha = próximo passo concreto; depois o link da página; no máximo 5 linhas.
