@@ -1,43 +1,661 @@
 {
-  "gerado_em": "2026-10-06T18:00",
+  "versao": 2,
+  "gerado_em": "2026-10-06T17:26",
   "jogo": "Dark Souls II: Scholar of the First Sin",
-  "objetivo": "Mago INT com Uchigatana DEX; piromancia como secundária. Ajustar sem migrar a build.",
+  "objetivo": "Mago INT + Uchigatana DEX · piro secundária · sem migrar",
   "personagem": {
     "name": "Melatonina Vorcaro",
     "level": 65,
     "souls": 0,
     "soul_memory": 221118,
-    "stats": {"VGR": 9, "END": 6, "VIT": 5, "ATN": 30, "STR": 10, "DEX": 18, "INT": 26, "FTH": 6, "ADP": 8},
-    "equipado": ["R1 Uchigatana +5", "L1 Sorcerer's Staff +2", "R2 Pyromancy Flame", "Anéis: Life Ring, Covetous Silver Serpent Ring+1, Clear Bluestone Ring, Old Leo Ring"]
+    "stats": {
+      "VGR": 9,
+      "END": 6,
+      "VIT": 5,
+      "ATN": 30,
+      "STR": 10,
+      "DEX": 18,
+      "INT": 26,
+      "FTH": 6,
+      "ADP": 8
+    },
+    "equipado": [
+      {
+        "tipo": "item",
+        "nome": "Uchigatana",
+        "link": "https://darksouls2.wiki.fextralife.com/Uchigatana",
+        "icone": "https://static0.fextralifeimages.com/file/darksouls2/thumb/d/df/Uchigatana_ds2.png/178px-Uchigatana_ds2.png",
+        "sub": "R1 · +5"
+      },
+      {
+        "tipo": "item",
+        "nome": "Sorcerer's Staff",
+        "link": "https://darksouls2.wiki.fextralife.com/Sorcerer's+Staff",
+        "icone": "https://static0.fextralifeimages.com/file/darksouls2/thumb/6/63/Sorcerer%27s_Staff.png/50px-Sorcerer%27s_Staff.png",
+        "sub": "L1 · +2"
+      },
+      {
+        "tipo": "item",
+        "nome": "Pyromancy Flame",
+        "link": "https://darksouls2.wiki.fextralife.com/Pyromancy+Flame",
+        "icone": "https://static0.fextralifeimages.com/file/darksouls2/thumb/1/11/Pyromancy_flame_1.png/50px-Pyromancy_flame_1.png",
+        "sub": "R2"
+      },
+      {
+        "tipo": "item",
+        "nome": "Life Ring",
+        "link": "https://darksouls2.wiki.fextralife.com/Life+Ring",
+        "icone": "https://static0.fextralifeimages.com/file/darksouls2/1/1e/Tiny_beings_ring.png",
+        "sub": "anel"
+      },
+      {
+        "tipo": "item",
+        "nome": "Covetous Silver Serpent Ring+1",
+        "link": "https://darksouls2.wiki.fextralife.com/Covetous+Silver+Serpent+Ring",
+        "icone": "https://static0.fextralifeimages.com/file/darksouls2/7/7c/Covetous_silver_serpent_ring.png",
+        "sub": "anel"
+      },
+      {
+        "tipo": "item",
+        "nome": "Clear Bluestone Ring",
+        "link": "https://darksouls2.wiki.fextralife.com/Clear+Bluestone+Ring",
+        "icone": "https://static0.fextralifeimages.com/file/darksouls2/e/eb/Clear_bluestone_ring.png",
+        "sub": "anel"
+      },
+      {
+        "tipo": "item",
+        "nome": "Old Leo Ring",
+        "link": "https://darksouls2.wiki.fextralife.com/Old+Leo+Ring",
+        "icone": "https://static0.fextralifeimages.com/file/darksouls2/3/30/Old_leo_ring.png",
+        "sub": "anel"
+      }
+    ]
   },
-  "alvo_stats": {"VGR": 20, "END": 15, "VIT": 5, "ATN": 30, "STR": 10, "DEX": 25, "INT": 40, "FTH": 6, "ADP": 8},
-  "mudancas": ["Primeira leitura do save."],
+  "alvo_stats": {
+    "VGR": 20,
+    "END": 15,
+    "VIT": 5,
+    "ATN": 30,
+    "STR": 10,
+    "DEX": 25,
+    "INT": 40,
+    "FTH": 6,
+    "ADP": 8
+  },
+  "mudancas": [],
   "passos": [
-    {"titulo": "Trocar Old Leo Ring por Ring of Binding", "detalhe": "Com VGR 9, o Ring of Binding segura o PV máximo quando você morre.", "tipo": "equipar"},
-    {"titulo": "Libertar o Straid com o Fragrant Branch of Yore", "detalhe": "Topo da torre mais perto da entrada de Sinners' Rise, na Lost Bastille.", "tipo": "item"},
-    {"titulo": "Pegar a Dull Ember e entregar ao McDuff", "detalhe": "Baú de ferro perto da fogueira The Tower Apart. Libera infusões.", "tipo": "item"},
-    {"titulo": "Derrotar as Ruin Sentinels", "detalhe": "Chefe da Lost Bastille. A alma vira Heavy Homing Soul Arrow no Straid.", "tipo": "chefe"},
-    {"titulo": "Comprar Great Heavy Soul Arrow", "detalhe": "Carhillion of the Fold, 4.500 almas, INT 16.", "tipo": "compra"},
-    {"titulo": "Subir VGR até 20", "detalhe": "Nível 65 → 76.", "tipo": "nivel"},
-    {"titulo": "Comprar Ring of Knowledge", "detalhe": "Straid, 28.000 almas. +5 INT, mais barato que 5 níveis.", "tipo": "compra"}
+    {
+      "titulo": "Trocar anel",
+      "tipo": "equipar",
+      "fluxo": [
+        {
+          "tipo": "item",
+          "nome": "Old Leo Ring",
+          "link": "https://darksouls2.wiki.fextralife.com/Old+Leo+Ring",
+          "icone": "https://static0.fextralifeimages.com/file/darksouls2/3/30/Old_leo_ring.png",
+          "sub": "sai"
+        },
+        {
+          "tipo": "item",
+          "nome": "Ring of Binding",
+          "link": "https://darksouls2.wiki.fextralife.com/Ring+of+Binding",
+          "icone": "https://static0.fextralifeimages.com/file/darksouls2/4/46/Ring_of_binding.png",
+          "sub": "entra"
+        }
+      ],
+      "dados": [
+        {
+          "dado": "PV máx. em Hollow",
+          "agora": "50%",
+          "depois": "75%",
+          "efeito": "+25 p.p.",
+          "sinal": "+"
+        },
+        {
+          "dado": "Contra-ataque de estocada",
+          "agora": "+12,5%",
+          "depois": "0%",
+          "efeito": "−12,5%",
+          "sinal": "-"
+        },
+        {
+          "dado": "VGR",
+          "agora": "9",
+          "depois": "9",
+          "efeito": "alvo 20",
+          "sinal": "-"
+        }
+      ]
+    },
+    {
+      "titulo": "Libertar o Straid",
+      "tipo": "item",
+      "fluxo": [
+        {
+          "tipo": "item",
+          "nome": "Fragrant Branch of Yore",
+          "link": "https://darksouls2.wiki.fextralife.com/Fragrant+Branch+of+Yore",
+          "icone": "https://static0.fextralifeimages.com/file/darksouls2/a/a5/Fragrant_branch_of_yore.png",
+          "sub": "×1"
+        },
+        {
+          "tipo": "npc",
+          "nome": "Straid of Olaphis",
+          "link": "https://darksouls2.wiki.fextralife.com/Straid+of+Olaphis",
+          "icone": "https://static0.fextralifeimages.com/file/darksouls2/4/4b/Straidframe.png",
+          "sub": "Lost Bastille"
+        }
+      ],
+      "dados": [
+        {
+          "dado": "Fragrant Branch of Yore",
+          "agora": "1",
+          "depois": "0",
+          "efeito": "−1",
+          "sinal": "-"
+        },
+        {
+          "dado": "Loja: Ring of Knowledge",
+          "agora": "—",
+          "depois": "28.000",
+          "efeito": "+5 INT",
+          "sinal": "+"
+        },
+        {
+          "dado": "Loja: Homing Soul Arrow",
+          "agora": "—",
+          "depois": "6.500",
+          "efeito": "exige INT 25",
+          "sinal": ""
+        }
+      ]
+    },
+    {
+      "titulo": "Dull Ember para o McDuff",
+      "tipo": "item",
+      "fluxo": [
+        {
+          "tipo": "local",
+          "nome": "The Tower Apart",
+          "link": "https://darksouls2.wiki.fextralife.com/Lost+Bastille",
+          "sub": "fogueira"
+        },
+        {
+          "tipo": "bau",
+          "nome": "Baú de ferro"
+        },
+        {
+          "tipo": "item",
+          "nome": "Dull Ember",
+          "link": "https://darksouls2.wiki.fextralife.com/Dull+Ember",
+          "icone": "https://static0.fextralifeimages.com/file/darksouls2/2/2c/Dull_Ember.png"
+        },
+        {
+          "tipo": "npc",
+          "nome": "Steady Hand McDuff",
+          "link": "https://darksouls2.wiki.fextralife.com/Steady+Hand+McDuff",
+          "icone": "https://static0.fextralifeimages.com/file/darksouls2/0/01/Mcduffframe.png",
+          "sub": "ferreiro"
+        }
+      ],
+      "dados": [
+        {
+          "dado": "Infusão de armas",
+          "agora": "não",
+          "depois": "sim",
+          "efeito": "libera",
+          "sinal": "+"
+        }
+      ]
+    },
+    {
+      "titulo": "Ruin Sentinels",
+      "tipo": "chefe",
+      "fluxo": [
+        {
+          "tipo": "chefe",
+          "nome": "Ruin Sentinels",
+          "link": "https://darksouls2.wiki.fextralife.com/Ruin+Sentinels",
+          "sub": "Lost Bastille"
+        },
+        {
+          "tipo": "item",
+          "nome": "Ruin Sentinel Soul",
+          "link": "https://darksouls2.wiki.fextralife.com/Ruin+Sentinel+Soul",
+          "icone": "https://static0.fextralifeimages.com/file/darksouls2/f/fb/Boss_soul.png",
+          "sub": "×1"
+        },
+        {
+          "tipo": "npc",
+          "nome": "Straid of Olaphis",
+          "link": "https://darksouls2.wiki.fextralife.com/Straid+of+Olaphis",
+          "icone": "https://static0.fextralifeimages.com/file/darksouls2/4/4b/Straidframe.png",
+          "sub": "+ 1.500 almas"
+        },
+        {
+          "tipo": "item",
+          "nome": "Heavy Homing Soul Arrow",
+          "link": "https://darksouls2.wiki.fextralife.com/Heavy+Homing+Soul+Arrow",
+          "icone": "https://static0.fextralifeimages.com/file/darksouls2/2/23/Heavy_homing_soul_arrow.png",
+          "sub": "feitiço"
+        }
+      ],
+      "dados": [
+        {
+          "dado": "Almas em mãos",
+          "agora": "0",
+          "depois": "−1.500",
+          "efeito": "faltam 1.500",
+          "sinal": "-"
+        }
+      ]
+    },
+    {
+      "titulo": "Great Heavy Soul Arrow",
+      "tipo": "compra",
+      "fluxo": [
+        {
+          "tipo": "npc",
+          "nome": "Carhillion of the Fold",
+          "link": "https://darksouls2.wiki.fextralife.com/Carhillion+of+the+Fold",
+          "icone": "https://static0.fextralifeimages.com/file/darksouls2/a/a1/Carhillionframe.png",
+          "sub": "4.500 almas"
+        },
+        {
+          "tipo": "item",
+          "nome": "Great Heavy Soul Arrow",
+          "link": "https://darksouls2.wiki.fextralife.com/Great+Heavy+Soul+Arrow",
+          "icone": "https://static0.fextralifeimages.com/file/darksouls2/e/e6/Great_heavy_soul_arrow.png",
+          "sub": "feitiço"
+        }
+      ],
+      "dados": [
+        {
+          "dado": "INT",
+          "agora": "26",
+          "depois": "26",
+          "efeito": "exige 16",
+          "sinal": "+"
+        },
+        {
+          "dado": "Almas em mãos",
+          "agora": "0",
+          "depois": "−4.500",
+          "efeito": "faltam 4.500",
+          "sinal": "-"
+        }
+      ]
+    },
+    {
+      "titulo": "VGR 9 → 20",
+      "tipo": "nivel",
+      "fluxo": [
+        {
+          "tipo": "almas",
+          "nome": "82.736 almas",
+          "link": "https://darksouls2.wiki.fextralife.com/Level",
+          "icone": "https://static0.fextralifeimages.com/file/darksouls2/a/ae/Icon-lvl.png",
+          "sub": "nível 65 → 76"
+        },
+        {
+          "tipo": "atributo",
+          "nome": "Vigor",
+          "link": "https://darksouls2.wiki.fextralife.com/Vigor",
+          "icone": "https://static0.fextralifeimages.com/file/darksouls2/f/fc/Icon-vigor.png",
+          "sub": "9 → 20"
+        }
+      ],
+      "dados": [
+        {
+          "dado": "PV",
+          "agora": "1.020",
+          "depois": "1.340",
+          "efeito": "+320",
+          "sinal": "+"
+        },
+        {
+          "dado": "Almas em mãos",
+          "agora": "0",
+          "depois": "—",
+          "efeito": "faltam 82.736",
+          "sinal": "-"
+        }
+      ]
+    },
+    {
+      "titulo": "Ring of Knowledge",
+      "tipo": "compra",
+      "fluxo": [
+        {
+          "tipo": "npc",
+          "nome": "Straid of Olaphis",
+          "link": "https://darksouls2.wiki.fextralife.com/Straid+of+Olaphis",
+          "icone": "https://static0.fextralifeimages.com/file/darksouls2/4/4b/Straidframe.png",
+          "sub": "28.000 almas"
+        },
+        {
+          "tipo": "item",
+          "nome": "Ring of Knowledge",
+          "link": "https://darksouls2.wiki.fextralife.com/Ring+of+Knowledge",
+          "icone": "https://static0.fextralifeimages.com/file/darksouls2/2/20/Ring_of_knowledge.png",
+          "sub": "anel"
+        }
+      ],
+      "dados": [
+        {
+          "dado": "INT",
+          "agora": "26",
+          "depois": "31",
+          "efeito": "+5",
+          "sinal": "+"
+        },
+        {
+          "dado": "Custo vs. 5 níveis (77–81)",
+          "agora": "44.840",
+          "depois": "28.000",
+          "efeito": "economia 16.840",
+          "sinal": "+"
+        }
+      ]
+    }
   ],
   "fases": [
-    {"nome": "VGR 9 → 20", "de": 65, "ate": 76, "almas": 82736},
-    {"nome": "INT 26 → 40", "de": 76, "ate": 90, "almas": 138935},
-    {"nome": "END 6 → 15", "de": 90, "ate": 99, "almas": 112167},
-    {"nome": "DEX 18 → 25", "de": 99, "ate": 106, "almas": 99790}
+    {
+      "nome": "VGR 9 → 20",
+      "atributo": "VGR",
+      "de": 65,
+      "ate": 76,
+      "almas": 82736
+    },
+    {
+      "nome": "INT 26 → 40",
+      "atributo": "INT",
+      "de": 76,
+      "ate": 90,
+      "almas": 138935
+    },
+    {
+      "nome": "END 6 → 15",
+      "atributo": "END",
+      "de": 90,
+      "ate": 99,
+      "almas": 112167
+    },
+    {
+      "nome": "DEX 18 → 25",
+      "atributo": "DEX",
+      "de": 99,
+      "ate": 106,
+      "almas": 99790
+    }
   ],
   "itens": [
-    {"nome": "Ring of Knowledge", "por_que": "+5 INT", "onde": "Vendido pelo Straid of Olaphis (Lost Bastille) por 28.000 almas", "requisitos": "Straid libertado", "fonte": "https://darksouls2.wiki.fextralife.com/Ring+of+Knowledge"},
-    {"nome": "Dull Ember", "por_que": "Libera infusões com o McDuff", "onde": "Baú de ferro na fogueira The Tower Apart (Lost Bastille), chegando pelo ninho após o Pursuer", "requisitos": "Derrotar o Pursuer", "fonte": "https://darksouls2.wiki.fextralife.com/Dull+Ember"},
-    {"nome": "Magic Stone", "por_que": "Infusão mágica (escala com INT)", "onde": "Troca de Smooth & Silky Stone com Dyna & Tillo; drop de Gyrm Warriors", "requisitos": "", "fonte": "https://darksouls2.wiki.fextralife.com/Magic+Stone"},
-    {"nome": "Lizard Staff", "por_que": "Escala A em INT", "onde": "Drop dos Necromancers em Huntsman's Copse e Undead Purgatory", "requisitos": "INT 18", "fonte": "https://darksouls2.wiki.fextralife.com/Staves"}
+    {
+      "item": {
+        "tipo": "item",
+        "nome": "Ring of Knowledge",
+        "link": "https://darksouls2.wiki.fextralife.com/Ring+of+Knowledge",
+        "icone": "https://static0.fextralifeimages.com/file/darksouls2/2/20/Ring_of_knowledge.png"
+      },
+      "onde": [
+        {
+          "tipo": "local",
+          "nome": "Lost Bastille",
+          "link": "https://darksouls2.wiki.fextralife.com/Lost+Bastille"
+        },
+        {
+          "tipo": "npc",
+          "nome": "Straid of Olaphis",
+          "link": "https://darksouls2.wiki.fextralife.com/Straid+of+Olaphis",
+          "icone": "https://static0.fextralifeimages.com/file/darksouls2/4/4b/Straidframe.png",
+          "sub": "28.000 almas"
+        }
+      ],
+      "dados": [
+        {
+          "dado": "INT",
+          "agora": "26",
+          "depois": "31",
+          "efeito": "+5",
+          "sinal": "+"
+        },
+        {
+          "dado": "Requisito",
+          "agora": "—",
+          "depois": "Straid livre",
+          "efeito": "Fragrant Branch",
+          "sinal": ""
+        }
+      ],
+      "fonte": "https://darksouls2.wiki.fextralife.com/Ring+of+Knowledge"
+    },
+    {
+      "item": {
+        "tipo": "item",
+        "nome": "Dull Ember",
+        "link": "https://darksouls2.wiki.fextralife.com/Dull+Ember",
+        "icone": "https://static0.fextralifeimages.com/file/darksouls2/2/2c/Dull_Ember.png"
+      },
+      "onde": [
+        {
+          "tipo": "chefe",
+          "nome": "The Pursuer",
+          "link": "https://darksouls2.wiki.fextralife.com/The+Pursuer",
+          "sub": "derrotado"
+        },
+        {
+          "tipo": "local",
+          "nome": "Ninho",
+          "sub": "após o Pursuer"
+        },
+        {
+          "tipo": "local",
+          "nome": "The Tower Apart",
+          "link": "https://darksouls2.wiki.fextralife.com/Lost+Bastille",
+          "sub": "fogueira"
+        },
+        {
+          "tipo": "bau",
+          "nome": "Baú de ferro"
+        }
+      ],
+      "dados": [
+        {
+          "dado": "Infusão de armas",
+          "agora": "não",
+          "depois": "sim",
+          "efeito": "libera no McDuff",
+          "sinal": "+"
+        }
+      ],
+      "fonte": "https://darksouls2.wiki.fextralife.com/Dull+Ember"
+    },
+    {
+      "item": {
+        "tipo": "item",
+        "nome": "Magic Stone",
+        "link": "https://darksouls2.wiki.fextralife.com/Magic+Stone",
+        "icone": "https://static0.fextralifeimages.com/file/darksouls2/6/63/Magic_Stone.png"
+      },
+      "onde": [
+        {
+          "tipo": "item",
+          "nome": "Smooth & Silky Stone",
+          "link": "https://darksouls2.wiki.fextralife.com/Smooth+&+Silky+Stone",
+          "icone": "https://static0.fextralifeimages.com/file/darksouls2/7/7e/Smooth_and_silky_stone.png"
+        },
+        {
+          "tipo": "npc",
+          "nome": "Dyna & Tillo",
+          "link": "https://darksouls2.wiki.fextralife.com/Dyna+&+Tillo",
+          "sub": "Things Betwixt"
+        },
+        {
+          "tipo": "item",
+          "nome": "Magic Stone",
+          "link": "https://darksouls2.wiki.fextralife.com/Magic+Stone",
+          "icone": "https://static0.fextralifeimages.com/file/darksouls2/6/63/Magic_Stone.png",
+          "sub": "chance"
+        }
+      ],
+      "dados": [
+        {
+          "dado": "Uchigatana: escala DEX",
+          "agora": "A",
+          "depois": "B",
+          "efeito": "cai",
+          "sinal": "-"
+        },
+        {
+          "dado": "Uchigatana: escala INT",
+          "agora": "—",
+          "depois": "B",
+          "efeito": "ganha",
+          "sinal": "+"
+        },
+        {
+          "dado": "Uchigatana +10: dano mágico",
+          "agora": "0",
+          "depois": "161",
+          "efeito": "+161",
+          "sinal": "+"
+        }
+      ],
+      "fonte": "https://darksouls2.wiki.fextralife.com/Magic+Stone"
+    },
+    {
+      "item": {
+        "tipo": "item",
+        "nome": "Lizard Staff",
+        "link": "https://darksouls2.wiki.fextralife.com/Lizard+Staff",
+        "icone": "https://static0.fextralifeimages.com/file/darksouls2/1/1d/Lizard_Staff.png"
+      },
+      "onde": [
+        {
+          "tipo": "local",
+          "nome": "Huntsman's Copse",
+          "link": "https://darksouls2.wiki.fextralife.com/Huntsman's+Copse"
+        },
+        {
+          "tipo": "inimigo",
+          "nome": "Necromancer",
+          "link": "https://darksouls2.wiki.fextralife.com/Necromancer",
+          "sub": "drop"
+        }
+      ],
+      "dados": [
+        {
+          "dado": "Escala INT",
+          "agora": "—",
+          "depois": "A",
+          "efeito": "",
+          "sinal": "+"
+        },
+        {
+          "dado": "INT exigida",
+          "agora": "26",
+          "depois": "18",
+          "efeito": "ok",
+          "sinal": "+"
+        }
+      ],
+      "fonte": "https://darksouls2.wiki.fextralife.com/Staves"
+    }
   ],
   "comparacao": [
-    {"build": "Moonlight Battlemage", "fonte": "https://darksouls2.wiki.fextralife.com/PvE+Builds", "diferencas": ["Usa Moonlight Greatsword (FOR 18, DES 18, INT 18) em vez de katana", "Mais INT, menos DEX"], "sugestao": "Manter a Uchigatana agora; considerar a Moonlight Greatsword quando tiver a Old Paledrake Soul."}
+    {
+      "build": "Moonlight Battlemage",
+      "link": "https://darksouls2.wiki.fextralife.com/PvE+Builds",
+      "dados": [
+        {
+          "dado": "Arma principal",
+          "agora": "Uchigatana",
+          "depois": "Moonlight Greatsword",
+          "efeito": "troca",
+          "sinal": ""
+        },
+        {
+          "dado": "STR",
+          "agora": "10",
+          "depois": "18",
+          "efeito": "faltam 8",
+          "sinal": "-"
+        },
+        {
+          "dado": "DEX",
+          "agora": "18",
+          "depois": "18",
+          "efeito": "ok",
+          "sinal": "+"
+        },
+        {
+          "dado": "INT",
+          "agora": "26",
+          "depois": "18+",
+          "efeito": "ok",
+          "sinal": "+"
+        }
+      ],
+      "ajuste": [
+        {
+          "tipo": "item",
+          "nome": "Uchigatana",
+          "link": "https://darksouls2.wiki.fextralife.com/Uchigatana",
+          "icone": "https://static0.fextralifeimages.com/file/darksouls2/thumb/d/df/Uchigatana_ds2.png/178px-Uchigatana_ds2.png",
+          "sub": "agora"
+        },
+        {
+          "tipo": "item",
+          "nome": "Old Paledrake Soul",
+          "link": "https://darksouls2.wiki.fextralife.com/Old+Paledrake+Soul",
+          "icone": "https://static0.fextralifeimages.com/file/darksouls2/7/7b/Old_one_soul.png",
+          "sub": "+ 10.000 almas"
+        },
+        {
+          "tipo": "item",
+          "nome": "Moonlight Greatsword",
+          "link": "https://darksouls2.wiki.fextralife.com/Moonlight+Greatsword",
+          "icone": "https://static0.fextralifeimages.com/file/darksouls2/d/dd/Moonlight_Greatsword.png",
+          "sub": "depois"
+        }
+      ]
+    }
   ],
   "fontes": [
-    {"titulo": "Level (custos de nível)", "url": "https://darksouls2.wiki.fextralife.com/Level", "data": "2026-10-06"},
-    {"titulo": "Pyromancies (escala INT+FTH)", "url": "https://darksouls2.wiki.fextralife.com/Pyromancies", "data": "2026-10-06"}
+    {
+      "titulo": "Level (custos de nível)",
+      "url": "https://darksouls2.wiki.fextralife.com/Level",
+      "data": "2026-10-06"
+    },
+    {
+      "titulo": "Vigor (PV por nível)",
+      "url": "https://darksouls2.wiki.fextralife.com/Vigor",
+      "data": "2026-10-06"
+    },
+    {
+      "titulo": "Ring of Binding",
+      "url": "https://darksouls2.wiki.fextralife.com/Ring+of+Binding",
+      "data": "2026-10-06"
+    },
+    {
+      "titulo": "Old Leo Ring",
+      "url": "https://darksouls2.wiki.fextralife.com/Old+Leo+Ring",
+      "data": "2026-10-06"
+    },
+    {
+      "titulo": "Straid of Olaphis",
+      "url": "https://darksouls2.wiki.fextralife.com/Straid+of+Olaphis",
+      "data": "2026-10-06"
+    },
+    {
+      "titulo": "Uchigatana (infusão mágica)",
+      "url": "https://darksouls2.wiki.fextralife.com/Uchigatana",
+      "data": "2026-10-06"
+    },
+    {
+      "titulo": "Moonlight Greatsword",
+      "url": "https://darksouls2.wiki.fextralife.com/Moonlight+Greatsword",
+      "data": "2026-10-06"
+    }
   ]
 }
