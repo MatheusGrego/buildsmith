@@ -96,6 +96,15 @@ a.node:hover .nm { text-decoration: underline; }
 .sources { margin: 0; padding-left: 1.2em; display: grid; gap: 2px; }
 .empty { color: var(--text); font-style: italic; }
 .error { padding: 16px; border: 1px solid var(--neg); color: var(--neg); }
+
+/* Abas: uma seção por vez */
+.tabs { position: sticky; top: env(safe-area-inset-top, 0px); z-index: 2; display: flex; gap: 0; overflow-x: auto; background: var(--panel); border-bottom: 1px solid var(--line); margin-inline: calc(-1 * clamp(14px, 3vw, 28px)); padding-inline: clamp(14px, 3vw, 28px); scrollbar-width: thin; }
+.tab { flex: none; display: flex; align-items: center; gap: 6px; padding: 10px 14px; background: none; border: 0; border-bottom: 2px solid transparent; color: var(--text); font: 15px var(--display); letter-spacing: 0.03em; cursor: pointer; }
+.tab:hover { color: var(--head); }
+.tab[aria-selected="true"] { color: var(--head); border-bottom-color: var(--link); }
+.tab:focus-visible { outline: 2px solid var(--link); outline-offset: -2px; }
+.tab .count { font: 12px var(--body); color: var(--link); background: var(--th); border: 1px solid var(--line); padding: 0 6px; }
+.tab-panel { display: grid; gap: 28px; min-width: 0; }
 </style>
 
 <main class="page"><div class="panel" id="app"><p class="empty">Carregando o plano…</p></div></main>
@@ -137,10 +146,16 @@ a.node:hover .nm { text-decoration: underline; }
       <p class="meta">${esc(p.jogo)} · atualizado ${when(p.gerado_em)}</p>
       <h1>${esc(c.name)}</h1>
       <div class="legend"><span class="l-pos">ganho</span><span class="l-neg">perda / falta</span><span class="l-link">link da wiki</span></div>
+    </header>`;
+  }
+
+  function sheet(p) {
+    const c = p.personagem;
+    return `<section><h2>Ficha</h2>
       <div class="tw"><table><thead><tr><th>Nível</th><th class="r">Almas em mãos</th><th class="r">Soul memory</th><th>Objetivo</th></tr></thead>
         <tbody><tr><td><span class="cell-ic"><img src="icons/almas.png" alt="" onerror="this.remove()">${fmt.format(c.level)}</span></td><td class="r">${fmt.format(c.souls)}</td><td class="r">${fmt.format(c.soul_memory)}</td><td>${esc(p.objetivo)}</td></tr></tbody></table></div>
       <div class="equipped">${(c.equipado || []).map(node).join("")}</div>
-    </header>`;
+    </section>`;
   }
 
   function changes(p) {
@@ -208,9 +223,49 @@ a.node:hover .nm { text-decoration: underline; }
   }
 
   const app = document.getElementById("app");
+  const KEY = "buildsmith-aba";
+
+  function render(p) {
+    const tabs = [
+      { id: "ficha", label: "Ficha", count: p.mudancas.length || null, html: sheet(p) + changes(p) },
+      { id: "passos", label: "Passos", count: p.passos.length, html: steps(p) },
+      { id: "atributos", label: "Atributos", count: null, html: stats(p) },
+      { id: "fases", label: "Fases", count: p.fases.length, html: phases(p) },
+      { id: "onde", label: "Onde pegar", count: p.itens.length, html: items(p) },
+      { id: "builds", label: "Builds", count: p.comparacao.length, html: builds(p) },
+      { id: "fontes", label: "Fontes", count: p.fontes.length, html: sources(p) },
+    ];
+    let saved = null;
+    try { saved = localStorage.getItem(KEY); } catch (e) { saved = null; }
+    const fromHash = location.hash.slice(1);
+    const start = [fromHash, saved, "passos"].find((id) => tabs.some((t) => t.id === id));
+    app.innerHTML = top(p)
+      + `<nav class="tabs" role="tablist" aria-label="Seções">${tabs.map((t) => `<button class="tab" role="tab" id="aba-${t.id}" aria-controls="painel-${t.id}" aria-selected="${t.id === start}" data-tab="${t.id}">${t.label}${t.count ? `<span class="count">${t.count}</span>` : ""}</button>`).join("")}</nav>`
+      + tabs.map((t) => `<div class="tab-panel" role="tabpanel" id="painel-${t.id}" aria-labelledby="aba-${t.id}"${t.id === start ? "" : " hidden"}>${t.html}</div>`).join("");
+    app.querySelector(".tabs").addEventListener("click", (ev) => {
+      const btn = ev.target.closest(".tab");
+      if (!btn) return;
+      select(btn.dataset.tab);
+    });
+    app.querySelector(".tabs").addEventListener("keydown", (ev) => {
+      if (ev.key !== "ArrowRight" && ev.key !== "ArrowLeft") return;
+      const list = [...app.querySelectorAll(".tab")];
+      const i = list.indexOf(document.activeElement);
+      const next = list[(i + (ev.key === "ArrowRight" ? 1 : list.length - 1)) % list.length];
+      next.focus();
+      select(next.dataset.tab);
+    });
+  }
+
+  function select(id) {
+    app.querySelectorAll(".tab").forEach((b) => b.setAttribute("aria-selected", String(b.dataset.tab === id)));
+    app.querySelectorAll(".tab-panel").forEach((panel) => { panel.hidden = panel.id !== `painel-${id}`; });
+    try { localStorage.setItem(KEY, id); } catch (e) { /* armazenamento bloqueado: só não lembra a aba */ }
+    if (history.replaceState) history.replaceState(null, "", `#${id}`);
+  }
   fetch("plano.json", { cache: "no-store" })
     .then((r) => { if (!r.ok) throw new Error(r.status); return r.json(); })
-    .then((p) => { app.innerHTML = [top, changes, steps, stats, phases, items, builds, sources].map((f) => f(p)).join(""); fallbackIcons(app); })
+    .then((p) => { render(p); fallbackIcons(app); })
     .catch(() => { app.innerHTML = '<p class="error">Não consegui ler o plano.json publicado junto com a página. Rode o /buildsmith:build de novo para republicar.</p>'; });
 })();
 </script>
