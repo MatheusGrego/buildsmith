@@ -1,0 +1,10 @@
+# Saves e dados do jogador nunca vão pro repo
+*.sl2
+*.co2
+*.bak
+profiles/
+cache/
+
+__pycache__/
+*.pyc
+.venv/
