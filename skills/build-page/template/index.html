@@ -117,6 +117,13 @@ td .arrow { font-size: 16px; }
 /* Estado (Progresso): selo no estilo wiki, sem ícone */
 .estado { display: inline-block; font: 13px var(--display); letter-spacing: 0.04em; padding: 1px 10px; border: 1px solid var(--line); background: var(--th); color: var(--text); white-space: nowrap; }
 .estado.feito { border-color: var(--link); color: var(--head); }
+.estado.destaque { border-color: var(--pos); color: var(--pos); }
+.estado.apagado { color: #7a7875; }
+.grupo { display: grid; gap: 4px; }
+.grupo h3 { font: 20px var(--display); color: var(--head); margin: 0; display: flex; align-items: baseline; gap: 10px; }
+.grupo h3 small { font: 13px var(--body); color: var(--text); }
+td.selos { white-space: nowrap; }
+td.selos .estado + .estado { margin-left: 4px; }
 </style>
 
 <main class="page"><div class="panel" id="app"><p class="empty">Carregando o plano…</p></div></main>
@@ -124,7 +131,10 @@ td .arrow { font-size: 16px; }
 <script>
 (function () {
   const STATS = ["VGR", "END", "VIT", "ATN", "STR", "DEX", "INT", "FTH", "ADP"];
-  const PASSO = { nivel: "Nível", item: "Item", chefe: "Chefe", compra: "Compra", equipar: "Equipar" };
+  const GRUPOS = [["equipar", "Equipar"], ["explorar", "Explorar"], ["chefe", "Chefes"], ["troca", "Trocas de alma"],
+                  ["compra", "Compras"], ["upgrade", "Upgrades"], ["farm", "Farms"], ["nivel", "Nível"]];
+  const ACESSO = { agora: "Agora", em_breve: "Em breve", tarde: "Tarde" };
+  const DESTAQUE = { mais_cedo: "Mais cedo", mais_rentavel: "Mais rentável" };
   const fmt = new Intl.NumberFormat("pt-BR");
   const esc = (v) => String(v ?? "").replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
   const ext = (url, inner, cls = "") => `<a class="${cls}" href="${esc(url)}" target="_blank" rel="noopener">${inner}</a>`;
@@ -176,12 +186,16 @@ td .arrow { font-size: 16px; }
   }
 
   function steps(p) {
-    const items = p.passos.map((s, i) => `<li class="step">
-      <div class="step-head"><span class="step-no">${i + 1}</span><span class="badge">${esc(PASSO[s.tipo] || s.tipo)}</span><span class="step-title">${esc(s.titulo)}</span></div>
-      ${flow(s.fluxo)}
-      ${rows(s.dados, ["Dado", "Agora", "Depois", "Efeito"])}
-    </li>`).join("");
-    return `<section><h2>Próximos passos</h2>${items ? `<ol class="steps">${items}</ol>` : '<p class="empty">Nenhum passo pendente.</p>'}</section>`;
+    const groups = GRUPOS.map(([tipo, titulo]) => [titulo, p.passos.filter((s) => s.tipo === tipo)]).filter(([, list]) => list.length);
+    if (!groups.length) return '<section><h2>Próximos passos</h2><p class="empty">Nenhum passo pendente.</p></section>';
+    return `<section><h2>Próximos passos</h2>${groups.map(([titulo, list]) => `<div class="grupo">
+      <h3>${titulo}<small>${list.length}</small></h3>
+      <ol class="steps">${list.map((s, i) => `<li class="step">
+        <div class="step-head"><span class="step-no">${i + 1}</span><span class="step-title">${esc(s.titulo)}</span></div>
+        ${flow(s.fluxo)}
+        ${rows(s.dados, ["Dado", "Agora", "Depois", "Efeito"])}
+      </li>`).join("")}</ol>
+    </div>`).join("")}</section>`;
   }
 
   function stats(p) {
@@ -214,12 +228,24 @@ td .arrow { font-size: 16px; }
   }
 
   function items(p) {
-    const list = p.itens.map((it) => `<div class="block">
-      <div class="block-head">${node(it.item)}${it.fonte ? ext(it.fonte, "fonte", "muted") : ""}</div>
-      ${it.onde && it.onde.length ? `<span class="label">Onde</span>${flow(it.onde)}` : ""}
-      ${rows(it.dados, ["Dado", "Agora", "Com o item", "Efeito"])}
-    </div>`).join("");
-    return `<section><h2>Onde pegar</h2>${list ? `<div class="blocks">${list}</div>` : '<p class="empty">Nenhum item pendente.</p>'}</section>`;
+    const selo = (text, cls) => `<span class="estado ${cls}">${esc(text)}</span>`;
+    const list = p.itens.map((it) => {
+      const lines = (it.fontes || []).map((f, i) => [
+        String(i + 1),
+        flow(f.fluxo),
+        esc(f.requisito || "—"),
+        selo(ACESSO[f.acesso] || f.acesso, f.acesso === "agora" ? "feito" : f.acesso === "tarde" ? "apagado" : ""),
+        esc(f.rendimento || "—"),
+        (f.destaques || []).map((d) => selo(DESTAQUE[d] || d, "destaque")).join("") || "",
+      ]);
+      const table = grid(["#", "Como", "Requisito", "Acesso", "Rendimento", "Destaque"], lines).replace(/<td>(<span class="estado)/g, '<td class="selos">$1');
+      return `<div class="block">
+        <div class="block-head">${node(it.item)}${it.fonte ? ext(it.fonte, "fonte", "muted") : ""}</div>
+        ${table}
+        ${rows(it.dados, ["Dado", "Agora", "Com o item", "Efeito"])}
+      </div>`;
+    }).join("");
+    return `<section><h2>Onde pegar<small>mais cedo e mais rentável a partir de onde você está</small></h2>${list ? `<div class="blocks">${list}</div>` : '<p class="empty">Nenhum item pendente.</p>'}</section>`;
   }
 
   function builds(p) {
@@ -267,7 +293,7 @@ td .arrow { font-size: 16px; }
   }
 
   function sources(p) {
-    return `<section><h2>Fontes</h2>${p.fontes.length ? `<ul class="sources">${p.fontes.map((f) => `<li>${ext(f.url, esc(f.titulo))}${f.data ? ` <span class="muted">· ${esc(f.data)}</span>` : ""}</li>`).join("")}</ul>` : '<p class="empty">Sem fontes.</p>'}</section>`;
+    return `<section><h2>Fontes</h2>${p.fontes.length ? `<ul class="sources">${p.fontes.map((f) => `<li>${f.url ? ext(f.url, esc(f.titulo)) : esc(f.titulo)}${f.data ? ` <span class="muted">· ${esc(f.data)}</span>` : ""}</li>`).join("")}</ul>` : '<p class="empty">Sem fontes.</p>'}</section>`;
   }
 
   const app = document.getElementById("app");

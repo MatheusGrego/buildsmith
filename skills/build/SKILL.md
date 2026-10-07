@@ -25,16 +25,21 @@ Dados do usuário em `~/.buildsmith/` (crie as pastas se faltarem): `config.json
    notas: []
    ~~~
    Se o `pedido` mudar o foco ("agora quero piro"), atualize o perfil e diga o que mudou.
-4. **Plano** (formato v2: `../build-page/example/plano.json`):
-   - **Sem frases.** Cada passo é `fluxo` (de onde → para onde, com nós) + `dados` (Dado | Agora | Depois | Efeito, com `sinal` + ou −). Ex.: `Ruin Sentinels ➜ Ruin Sentinel Soul ➜ Straid (+ 1.500 almas) ➜ Heavy Homing Soul Arrow`.
-   - Defina `alvo_stats` a partir do perfil e dos atributos atuais. Divida em `fases` de 1 atributo cada (com `atributo`), sobrevivência primeiro quando VGR < 20.
-   - Custo de cada fase: `ds2save.py levels --from <nível inicial> --to <nível final>`. Nada de conta manual.
-   - Efeitos numéricos (PV por nível de VGR, efeito de anel, escala de arma, preço) vêm da skill `wiki-cache`, junto com `link` e `icone` de cada nó. Sem fonte → `"—"`.
-   - `mudancas`: compare com o snapshot anterior e gere linhas (Dado | Antes | Agora | Efeito).
-   - `itens`: nó do item + `onde` como fluxo (ex.: `The Tower Apart ➜ Baú de ferro`) + `dados`.
-   - `comparacao`: builds do mesmo arquétipo via `wiki-cache`; `dados` com Você × Build e `ajuste` como fluxo. Respeite `travados` e `nao_migrar`; nunca proponha recomeçar a build.
-   - `passos`: no máximo 7, em ordem de execução, começando pelo que dá para fazer na área atual do jogador. **Tire** do plano o que `progresso` já mostra como feito (chefe `derrotado`, compra já feita, evento `feito`).
-   - `progresso`: todos os chefes do snapshot (derrotados primeiro) como nós `chefe` com `sub` = área e `estado` `derrotado`/`vivo`; `compras` com nó da loja (`npc`) e do item; `eventos` aprendidos com `estado` `feito`/`pendente`.
-   - `dano`: para a arma da mão direita (`R1`) rode `ds2calc.py ar` com os atributos atuais (`agora`) e com cada mudança do plano que afeta AR (`depois`): fase de DEX/STR, próximo upgrade (+1) e +10. `por_causa` = fluxo do que gera a mudança (almas ➜ atributo, material ➜ ferreiro). Catalisador/feitiço: `"—"` com `detalhe` "fórmula ainda não validada".
+4. **Plano** (formato v3: `../build-page/example/plano.json`):
+   - **Sem frases.** Cada passo é `fluxo` (nós) + `dados` (Dado | Agora | Depois | Efeito, com `sinal` + ou −).
+   - **Onde o jogador está:** rode `ds2data.py acesso --snapshot <snapshot>`; o status de cada área (`agora`, `em_breve`, `tarde`) vem da área mais avançada pelos chefes derrotados.
+   - **Passos por tipo** (`equipar`, `explorar`, `chefe`, `troca`, `compra`, `upgrade`, `farm`, `nivel`), no máximo 3 por tipo, cada grupo em **ordem cronológica** (primeiro o que dá para fazer na área atual). Tire o que `progresso` já mostra como feito.
+   - **Números do jogo, nunca de cabeça:**
+     - almas por nível: `ds2save.py levels`;
+     - AR: `ds2calc.py ar`;
+     - quem vende e preço: `ds2data.py onde-comprar --item X`;
+     - alma de chefe ➜ item: `ds2data.py trocas --item X` (ou `--alma X`);
+     - custo de upgrade: `ds2data.py custo-upgrade --arma X --de A --ate B` (compare com o inventário: quantos materiais faltam).
+   - **Onde pegar sem buraco:** todo nó `item` citado em `passos`, `dano` ou `comparacao.ajuste` precisa de entrada em `itens`; marque `"tem": true` no nó se o jogador já possui (veja o inventário do snapshot). O validador bloqueia se faltar.
+   - **Fontes de cada item** (`itens[].fontes`): junte loja/troca (`ds2data`) + baús, drops, farms e recompensas (`wiki-cache`). Para cada fonte: `tipo`, `fluxo`, `requisito`, `acesso` (pela área da fonte, usando `ds2data acesso`), `rendimento` (quanto rende e se repete: "ilimitado", "1 por Bonfire Ascetic", "~1 a cada 4"). Ordene `agora → em_breve → tarde`. Marque **uma** `mais_cedo` (a primeira que o jogador consegue pegar) e no máximo **uma** `mais_rentavel` (a melhor repetível: estoque ilimitado, farm infinito, respawn com Bonfire Ascetic). Item que é ingrediente de outro (ex.: Smooth & Silky Stone para a Magic Stone via Dyna & Tillo) ganha entrada própria.
+   - Defina `alvo_stats` a partir do perfil; `fases` de 1 atributo cada (com `atributo`), sobrevivência primeiro quando VGR < 20.
+   - `progresso`: chefes (derrotados primeiro), compras e eventos aprendidos.
+   - `dano`: arma da mão direita com atributos atuais (`agora`) × cada mudança que afeta AR (fase de DEX/STR, próximo upgrade, +10), com `por_causa` mostrando materiais e ferreiro. Catalisador/feitiço: `"—"`.
+   - `comparacao`: builds do mesmo arquétipo via `wiki-cache`; respeite `travados` e `nao_migrar`.
 5. **Página:** siga a skill `build-page`.
 6. **Resposta no chat:** primeira linha = próximo passo concreto; depois o link da página; no máximo 5 linhas.
