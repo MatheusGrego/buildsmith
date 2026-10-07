@@ -5,6 +5,18 @@ description: Planeja a evolução da build a partir do save real do jogo e publi
 
 # build
 
+## Regra de credibilidade (obrigatória, vale para tudo)
+
+Nenhum fato de jogo vem da memória. Todo fato que aparece no plano, na página ou na resposta do chat precisa de **fonte verificada**:
+
+- **O que conta como fato:** onde fica um item, NPC, chefe, baú ou fogueira; como chegar lá; requisito (atributo, chave, chefe, evento); quem vende, troca ou recebe o item; preço; efeito; drop, chance e quantidade; rota e ordem das áreas.
+- **Fontes aceitas, nesta ordem:**
+  1. **Tabelas do jogo e o save**, pelos scripts (`ds2save`, `ds2data`, `ds2calc`): números, lojas, trocas, requisitos, custos, progresso.
+  2. **Wiki**, pela skill `wiki-cache` (URL + data, cache de até 30 dias): locais, rotas, baús, drops e efeitos que as tabelas não descrevem.
+- **Sem fonte, não entra:** escreva `"—"` ou "não confirmado" e diga no chat o que faltou. Nunca complete com o que "deve ser".
+- **Antes de publicar**, confira cada local, requisito e efeito do plano contra a fonte. Fonte e plano têm que dizer a mesma coisa.
+- **Se o jogador contestar um fato**, verifique na fonte antes de responder. Se estava errado, diga isso claramente, corrija o cache e o plano.
+
 Argumentos: `<jogo> [pedido livre]`. Hoje só `ds2`; outro jogo → diga que ainda não há leitor de save para ele.
 
 Dados do usuário em `~/.buildsmith/` (crie as pastas se faltarem): `config.json`, `profiles/<jogo>/`, `history/<jogo>/<personagem>/`, `cache/<jogo>/`.
@@ -34,7 +46,7 @@ Dados do usuário em `~/.buildsmith/` (crie as pastas se faltarem): `config.json
    - **Sem frases.** Cada passo é `fluxo` (nós) + `dados` (Dado | Agora | Depois | Efeito, com `sinal` + ou −).
    - **Onde o jogador está:** rode `ds2data.py acesso --snapshot <snapshot>`; o status de cada área (`agora`, `em_breve`, `tarde`) vem da área mais avançada pelos chefes derrotados.
    - **Passos por tipo** (`equipar`, `explorar`, `chefe`, `troca`, `compra`, `upgrade`, `farm`, `nivel`), no máximo 3 por tipo, cada grupo em **ordem cronológica** (primeiro o que dá para fazer na área atual). Tire o que `progresso` já mostra como feito.
-   - **Efeito de item e quem recebe o item: só com fonte da wiki-cache, nunca de memória.** Ex.: Estus Flask Shard ➜ Emerald Herald (+1 gole, até 12); Sublime Bone Dust ➜ Far Fire de Majula (+1 de cura, até +5).
+   - **Credibilidade:** siga a regra do topo para cada local, requisito, efeito e NPC do plano. Exemplo do erro que ela evita: Estus Flask Shard vai para a **Emerald Herald** (não para o Lenigrast), Sublime Bone Dust se queima na **Far Fire** de Majula.
    - **Números do jogo, nunca de cabeça:**
      - almas por nível: `ds2save.py levels`;
      - AR: `ds2calc.py ar`;

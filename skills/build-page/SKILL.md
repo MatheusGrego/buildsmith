@@ -5,6 +5,18 @@ description: Publica ou atualiza a página fixa do plano de build do buildsmith 
 
 # build-page
 
+## Regra de credibilidade (obrigatória, vale para tudo)
+
+Nenhum fato de jogo vem da memória. Todo fato que aparece no plano, na página ou na resposta do chat precisa de **fonte verificada**:
+
+- **O que conta como fato:** onde fica um item, NPC, chefe, baú ou fogueira; como chegar lá; requisito (atributo, chave, chefe, evento); quem vende, troca ou recebe o item; preço; efeito; drop, chance e quantidade; rota e ordem das áreas.
+- **Fontes aceitas, nesta ordem:**
+  1. **Tabelas do jogo e o save**, pelos scripts (`ds2save`, `ds2data`, `ds2calc`): números, lojas, trocas, requisitos, custos, progresso.
+  2. **Wiki**, pela skill `wiki-cache` (URL + data, cache de até 30 dias): locais, rotas, baús, drops e efeitos que as tabelas não descrevem.
+- **Sem fonte, não entra:** escreva `"—"` ou "não confirmado" e diga no chat o que faltou. Nunca complete com o que "deve ser".
+- **Antes de publicar**, confira cada local, requisito e efeito do plano contra a fonte. Fonte e plano têm que dizer a mesma coisa.
+- **Se o jogador contestar um fato**, verifique na fonte antes de responder. Se estava errado, diga isso claramente, corrija o cache e o plano.
+
 Formato do plano: `example/plano.json` desta pasta (versão 2). Spec: `docs/superpowers/specs/2026-10-06-buildsmith-pagina-v2-design.md`.
 
 ## Regras do conteúdo
