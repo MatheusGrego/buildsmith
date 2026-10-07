@@ -5,19 +5,40 @@ import json
 import re
 import shutil
 import sys
+import urllib.error
 import urllib.request
 from pathlib import Path
+from urllib.parse import urlsplit
 
 import validate_plano
 
 SKILL_DIR = Path(__file__).resolve().parents[1]
 ROOT = SKILL_DIR.parents[1]
 HEADERS = {"User-Agent": "Mozilla/5.0 (buildsmith)"}
+# Ícone só baixa da wiki: o plano é escrito pelo modelo, e uma URL qualquer viraria um jeito de mandar dados para fora.
+ICON_HOSTS = ("fextralifeimages.com", "fextralife.com")
+LOCAL_ICON = re.compile(r"^icons/[A-Za-z0-9._-]+$")
+
+
+def wiki_icon(url) -> bool:
+    parts = urlsplit(url) if isinstance(url, str) else None
+    host = (parts.hostname or "").lower() if parts else ""
+    return (parts is not None and parts.scheme == "https" and not parts.username and parts.port in (None, 443)
+            and any(host == h or host.endswith("." + h) for h in ICON_HOSTS))
+
+
+class WikiRedirects(urllib.request.HTTPRedirectHandler):
+    """Redirecionamento só para a wiki: um redirect aberto levaria a URL (e o que vai nela) para fora."""
+
+    def redirect_request(self, req, fp, code, msg, headers, newurl):
+        if not wiki_icon(newurl):
+            raise urllib.error.HTTPError(newurl, code, "redirecionamento para fora da wiki", headers, fp)
+        return super().redirect_request(req, fp, code, msg, headers, newurl)
 
 
 def default_fetch(url: str) -> bytes:
     request = urllib.request.Request(url, headers=HEADERS)
-    with urllib.request.urlopen(request, timeout=20) as response:
+    with urllib.request.build_opener(WikiRedirects).open(request, timeout=20) as response:
         return response.read()
 
 
@@ -37,6 +58,9 @@ class IconStore:
         self.avisos: list[str] = []
 
     def get(self, url: str, name: str | None = None) -> str | None:
+        if not wiki_icon(url):
+            self.avisos.append(f"ícone fora da wiki ignorado: {url}")
+            return None
         cached = self.cache_dir / icon_name(url)
         name = name or cached.name
         if not cached.exists():
@@ -93,13 +117,14 @@ def prepare(plano_path, out_dir, jogo: str, cache_root=None, fetch=default_fetch
     store = IconStore(cache_root / jogo / "icons", out_dir, fetch)
 
     for node in _nodes(plano):
-        url = node.get("icone", "")
-        if url.startswith("https://"):
-            rel = store.get(url)
-            if rel:
-                node["icone"] = rel
-            else:
-                node.pop("icone")
+        url = node.get("icone")
+        if not url or LOCAL_ICON.match(str(url)):
+            continue
+        rel = store.get(url)
+        if rel:
+            node["icone"] = rel
+        else:
+            node.pop("icone")  # a página só mostra ícone local (icons/...)
 
     extras = json.loads((ROOT / "games" / jogo / "icons.json").read_text(encoding="utf-8"))
     for stat, url in extras["stats"].items():

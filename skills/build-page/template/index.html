@@ -253,12 +253,16 @@ details.mais[open] summary { margin-bottom: 6px; }
   }
   const fmt = new Intl.NumberFormat("pt-BR");
   const esc = (v) => String(v ?? "").replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
-  const ext = (url, inner, cls = "") => `<a class="${cls}" href="${esc(url)}" target="_blank" rel="noopener">${inner}</a>`;
+  // Link só http(s) absoluto: javascript:, data: e afins viram texto sem link.
+  const safeUrl = (url) => { try { const u = new URL(String(url ?? "")); return u.protocol === "https:" || u.protocol === "http:" ? u.href : ""; } catch (e) { return ""; } };
+  const ext = (url, inner, cls = "") => { const href = safeUrl(url); return href ? `<a class="${cls}" href="${esc(href)}" target="_blank" rel="noopener noreferrer">${inner}</a>` : `<span class="${cls}">${inner}</span>`; };
   const cls = (sinal) => sinal === "+" ? "pos" : sinal === "-" ? "neg" : "";
   const when = (iso) => { const d = new Date(iso); return isNaN(d) ? esc(iso) : d.toLocaleString("pt-BR", { dateStyle: "short", timeStyle: "short" }); };
   const letter = (name) => (name || "?").trim().replace(/^the\s+/i, "").charAt(0).toUpperCase();
   const initial = (name) => `<span class="ini" aria-hidden="true">${esc(letter(name))}</span>`;
-  const icon = (src, name) => src ? `<img class="ic" src="${esc(src)}" alt="" data-ini="${esc(letter(name))}">` : initial(name);
+  // Ícone só local (o prepare_page baixa para icons/): imagem de fora avisaria um terceiro que a página abriu.
+  const localIcon = (src) => typeof src === "string" && /^icons\/[A-Za-z0-9._-]+$/.test(src);
+  const icon = (src, name) => localIcon(src) ? `<img class="ic" src="${esc(src)}" alt="" data-ini="${esc(letter(name))}">` : initial(name);
   function fallbackIcons(root) {
     root.querySelectorAll("img.ic").forEach((img) => {
       const swap = () => { const s = document.createElement("span"); s.className = "ini"; s.setAttribute("aria-hidden", "true"); s.textContent = img.dataset.ini; img.replaceWith(s); };

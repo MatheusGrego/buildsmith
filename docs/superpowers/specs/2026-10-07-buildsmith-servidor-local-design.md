@@ -45,6 +45,20 @@ O modelo escolhe o armazenamento: `claude.use("db")` (Artifact) → senão a API
 
 Continua disponível: `/buildsmith:build ds2 publicar` (para ver no celular).
 
+## Segurança da execução sem janela (0.7.1)
+
+Os botões rodam `claude -p` lendo a wiki, que qualquer um edita, sem ninguém olhando. Um texto plantado numa página (prompt injection) não pode virar código rodando na máquina nem dado vazando.
+
+| Camada | O que faz |
+|---|---|
+| `app/guard.py` (hook `PreToolUse`, via `--settings`) | decide cada ferramenta por código: Bash só com os scripts do buildsmith (sem `&&`, `|`, `;`, `$()`, crase, variável, coringa), `mkdir`/`ls`/`date`; Write/Edit só em `~/.buildsmith/{config.json,profiles,history,cache,flags,tmp}` e no scratchpad; WebFetch só `https` na Fextralife; Read/Glob/Grep só no repositório, em `~/.buildsmith`, no scratchpad e na pasta da sessão; o resto (MCP, Agent, PowerShell) negado |
+| `--permission-mode dontAsk`, sem `--allowedTools` | nada roda sem o "sim" do guarda; se o hook não carregar, tudo é negado |
+| `--setting-sources project`, `--strict-mcp-config`, `--plugin-dir <repo>` | regras de permissão, MCP e plugins do usuário não valem nessa execução; o plugin vem do repositório que o guarda confere |
+| `runner.check_guard` | antes de cada execução, testa o guarda (nega `python -c`, nega `example.com`, libera `ds2save levels`); falhou → não roda |
+| `prepare_page` e página | ícone só baixa da Fextralife; a página só mostra ícone local (`icons/...`) e link `http(s)` (`javascript:`/`data:` viram texto) |
+
+Bloqueios aparecem na barra de progresso ("Bloqueado: ..."). Validado de ponta a ponta com `claude -p` real: `python -c`, `&&`, WebFetch fora da wiki, gravação em `.claude/settings.json` e leitura de `/etc` negados; script do buildsmith, wiki e `~/.buildsmith/tmp` liberados.
+
 ## Testes
 
 `tests/test_serve.py`: servidor em porta livre com `BUILDSMITH_HOME` temporário — página com charset, `plano.json`, gravação e leitura de estado, bloqueio de `..`, ping; CLI `estado`/`responder`.
