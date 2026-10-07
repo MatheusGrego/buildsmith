@@ -5,7 +5,11 @@ AR físico (validado contra o menu do jogo: Uchigatana +5 = 218, Cleric's Parma 
   base(L) = dano + (dano_max − dano) × L / nivel_max
   bônus   = escala_FOR(L) × bônus_FOR(FOR) + escala_DES(L) × bônus_DES(DES)
   AR      = floor((base + bônus) × mult_fisico / 100)
-Catalisadores (cajado, chama) usam outra fórmula e não são calculados aqui.
+Catalisador (validado: Sorcerer's Staff +2 = 356, Pyromancy Flame = 204 com INT 26 / FÉ 6):
+  bônus por elemento: mágico = linha INT, fogo = linha ⌊(INT+FÉ)/2⌋, raio = linha FÉ, sombrio = linha min(INT, FÉ)
+  AR por elemento = floor((base + escala × bônus) × mult / 100); o menu mostra a soma dos elementos.
+Feitiço: AR = floor(AR do catalisador no elemento × damage_mult do PlayerDamageParam). O menu não mostra esse
+número, então ele é "calculado" (não conferido no jogo). damage_mult 0 (teleguiados) = sem cálculo.
 """
 import argparse
 import json
@@ -17,6 +21,18 @@ import ds2regulation
 from ds2save import SaveError, load_item_names
 
 
+ELEMENTOS = {"magico": 2, "raio": 3, "fogo": 4, "sombrio": 5}  # elemento → índice de escala na WeaponStatsAffectParam
+TIPO_DANO = {1: "magico", 2: "raio", 3: "fogo", 4: "sombrio"}  # PlayerDamageParam.damage_type_0
+
+
+def bonus_rows(stats: dict) -> dict[str, int]:
+    """Linha da PhysicalStatsPerLevelStatValuesParam usada para o bônus de cada elemento."""
+    def clamp(value):
+        return max(1, min(99, value))
+    return {"magico": clamp(stats["INT"]), "fogo": clamp((stats["INT"] + stats["FTH"]) // 2),
+            "raio": clamp(stats["FTH"]), "sombrio": clamp(min(stats["INT"], stats["FTH"]))}
+
+
 class Calc:
     def __init__(self, params: dict[str, bytes]):
         rows = ds2regulation.param_rows
@@ -24,6 +40,8 @@ class Calc:
         self.weapons = rows(params["WeaponParam"], layouts["WeaponParam"])
         self.reinforce = rows(params["WeaponReinforceParam"], layouts["WeaponReinforceParam"])
         self.stat_bonus = rows(params["PhysicalStatsPerLevelStatValuesParam"], layouts["PhysicalStatsPerLevelStatValuesParam"])
+        self.spells = rows(params["SpellParam"], layouts["SpellParam"]) if "SpellParam" in params else {}
+        self.damage = rows(params["PlayerDamageParam"], layouts["PlayerDamageParam"]) if "PlayerDamageParam" in params else {}
         self._affect_raw = params["WeaponStatsAffectParam"]
         self._affect_index = {
             row_id: offset for row_id, offset, _ in
@@ -49,6 +67,42 @@ class Calc:
         return math.floor((base + bonus) * row["mult_fisico"] / 100)
 
 
+    def catalyst_ar(self, item_id: int, level: int, stats: dict) -> dict[str, int]:
+        """AR por elemento de um catalisador (só os elementos que ele tem)."""
+        if item_id not in self.weapons:
+            raise SaveError(f"catalisador {item_id} não está na WeaponParam")
+        row = self.reinforce[self.weapons[item_id]["reinforce_id"]]
+        if not 0 <= level <= row["nivel_max"]:
+            raise SaveError(f"nível +{level} fora do limite (+{row['nivel_max']})")
+        lines = bonus_rows(stats)
+        out = {}
+        for element, kind in ELEMENTOS.items():
+            mult = row[f"mult_{element}"]
+            if not mult:
+                continue
+            low, high = row[f"dano_{element}"], row[f"dano_{element}_max"]
+            base = low + (high - low) * level / max(row["nivel_max"], 1)
+            bonus = self.stat_bonus[lines[element]][f"bonus_{element}"]
+            out[element] = math.floor((base + self._scaling(row["stats_affect_id"], level, kind) * bonus) * mult / 100)
+        return out
+
+    def attunement(self, atn: int) -> dict:
+        row = self.stat_bonus[max(1, min(99, atn))]
+        return {"slots": row["slots"], "faixa": max(1, row["faixa"])}
+
+    def spell(self, spell_id: int, catalyst: dict[str, int], stats: dict) -> dict:
+        if spell_id not in self.spells:
+            raise SaveError(f"feitiço {spell_id} não está na SpellParam")
+        row = self.spells[spell_id]
+        dmg = self.damage.get(row["damage_id"], {"tipo": 0, "mult": 0.0})
+        element = TIPO_DANO.get(dmg["tipo"])
+        ar = math.floor(catalyst[element] * dmg["mult"]) if element in catalyst and dmg["mult"] > 0 else None
+        faixa = self.attunement(stats["ATN"])["faixa"]
+        return {"id": spell_id, "elemento": element, "mult": round(dmg["mult"], 3), "ar": ar,
+                "slots": row["slots"], "usos": row[f"usos_{faixa}"], "req_int": row["req_int"], "req_fth": row["req_fth"],
+                "requisito_ok": stats["INT"] >= row["req_int"] and stats["FTH"] >= row["req_fth"]}
+
+
 def load(path=None) -> Calc:
     return Calc(ds2regulation.load_params(path))
 
@@ -72,7 +126,32 @@ def main(argv=None) -> int:
     ar.add_argument("--str", type=int, required=True)
     ar.add_argument("--dex", type=int, required=True)
     ar.add_argument("--jogo", help="pasta Game do DS2 (padrão: Steam)")
+    cat = sub.add_parser("catalisador", help="AR por elemento de um catalisador (o menu mostra a soma)")
+    spell = sub.add_parser("feitico", help="AR calculado, usos e slots de um feitiço com um catalisador")
+    spell.add_argument("--feitico", required=True)
+    spell.add_argument("--atn", type=int, required=True)
+    for p in (cat, spell):
+        p.add_argument("--catalisador", required=True)
+        p.add_argument("--nivel", type=int, default=0)
+        p.add_argument("--int", dest="int_", type=int, required=True)
+        p.add_argument("--fth", type=int, required=True)
+        p.add_argument("--jogo")
     args = parser.parse_args(argv)
+    if args.cmd in ("catalisador", "feitico"):
+        try:
+            calc = load(ds2regulation.find_regulation(args.jogo))
+            cat_id, cat_name = _item_id(args.catalisador)
+            stats = {"INT": args.int_, "FTH": args.fth, "ATN": getattr(args, "atn", 1)}
+            elements = calc.catalyst_ar(cat_id, args.nivel, stats)
+            out = {"catalisador": cat_name, "nivel": args.nivel, "ar": elements, "menu": sum(elements.values())}
+            if args.cmd == "feitico":
+                spell_id, spell_name = _item_id(args.feitico)
+                out = {"feitico": spell_name, **calc.spell(spell_id, elements, stats), "catalisador": out}
+        except SaveError as err:
+            print(json.dumps({"error": str(err)}, ensure_ascii=False))
+            return 1
+        print(json.dumps(out, ensure_ascii=False, indent=2))
+        return 0
     try:
         item_id, name = _item_id(args.arma)
         calc = load(ds2regulation.find_regulation(args.jogo))

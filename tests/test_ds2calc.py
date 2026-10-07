@@ -21,7 +21,7 @@ def synthetic_params():
     struct.pack_into("<f", affect, ds2regulation.scaling_offset(4, 1), 0.5)
     stats = {}
     for value, (b_str, b_dex) in {10: (50, 60), 20: (70, 80)}.items():
-        row = bytearray(20)
+        row = bytearray(40)
         struct.pack_into("<II", row, 12, b_str, b_dex)
         stats[value] = bytes(row)
     return {
@@ -68,3 +68,27 @@ def test_cli_ar_by_name(capsys):
     assert ds2calc.main(["ar", "--arma", "Uchigatana", "--nivel", "5", "--str", "10", "--dex", "18"]) == 0
     out = json.loads(capsys.readouterr().out)
     assert out["ar_fisico"] == 218 and out["arma"] == "Uchigatana"
+
+
+def test_stat_bonus_rows_by_element():
+    assert ds2calc.bonus_rows({"INT": 26, "FTH": 6}) == {"magico": 26, "fogo": 16, "raio": 6, "sombrio": 6}
+
+
+@pytest.mark.skipif(_real() is None, reason="DS2 não instalado nesta máquina")
+@pytest.mark.parametrize("item_id, level, expected", [(3800000, 2, 356), (5400000, 0, 204)])
+def test_real_catalyst_matches_game_menu(item_id, level, expected):
+    """Menu Status com INT 26 / FÉ 6: Sorcerer's Staff +2 = 356, Pyromancy Flame = 204."""
+    ar = ds2calc.load().catalyst_ar(item_id, level, {"INT": 26, "FTH": 6})
+    assert sum(ar.values()) == expected
+
+
+@pytest.mark.skipif(_real() is None, reason="DS2 não instalado nesta máquina")
+def test_real_spell_damage_and_attunement():
+    calc = ds2calc.load()
+    ar = calc.catalyst_ar(3800000, 2, {"INT": 26, "FTH": 6})
+    soul_arrow = calc.spell(31010000, ar, {"INT": 26, "FTH": 6, "ATN": 30})
+    assert soul_arrow["elemento"] == "magico" and soul_arrow["ar"] == 161 and soul_arrow["slots"] == 1
+    assert soul_arrow["usos"] == 32 and soul_arrow["requisito_ok"]
+    homing = calc.spell(31060000, ar, {"INT": 26, "FTH": 6, "ATN": 30})
+    assert homing["ar"] is None and not homing["requisito_ok"]  # pede INT 35
+    assert calc.attunement(30) == {"slots": 6, "faixa": 3}
