@@ -74,6 +74,12 @@ def _nodes(plano: dict):
     for row in plano.get("dano", []):
         yield row["arma"]
         yield from row.get("por_causa", [])
+    yield from plano.get("agora", {}).get("faltam", [])
+    spells = plano.get("feiticos")
+    if spells:
+        yield spells["catalisador"]
+        for spell in spells.get("lista", []):
+            yield spell["no"]
 
 
 def prepare(plano_path, out_dir, jogo: str, cache_root=None, fetch=default_fetch) -> dict:
@@ -99,6 +105,7 @@ def prepare(plano_path, out_dir, jogo: str, cache_root=None, fetch=default_fetch
     for stat, url in extras["stats"].items():
         store.get(url, f"stat-{stat}.png")
     store.get(extras["almas"], "almas.png")
+    store.get(extras["fogueira"], "fogueira.png")
 
     shutil.copyfile(SKILL_DIR / "template" / "index.html", out_dir / "index.html")
     (out_dir / "plano.json").write_text(json.dumps(plano, ensure_ascii=False, indent=2), encoding="utf-8")

@@ -95,3 +95,11 @@ def test_progress_and_damage_icons_are_local(tmp_path):
     nodes = [plano["dano"][0]["arma"], *plano["dano"][0]["por_causa"]]
     nodes += [c["loja"] for c in plano["progresso"]["compras"] if "icone" in c["loja"]]
     assert nodes and all(n["icone"].startswith("icons/") for n in nodes if "icone" in n)
+
+
+def test_bonfire_checkbox_and_new_sections_get_icons(tmp_path):
+    out = run(tmp_path, FakeFetch())
+    assert "icons/fogueira.png" in out["files"]
+    plano = final_plan(tmp_path)
+    nodes = [plano["feiticos"]["catalisador"], *[s["no"] for s in plano["feiticos"]["lista"]], *plano["agora"]["faltam"]]
+    assert all(n["icone"].startswith("icons/") for n in nodes if "icone" in n)

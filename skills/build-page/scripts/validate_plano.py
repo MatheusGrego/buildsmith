@@ -10,6 +10,7 @@ TIPOS_PASSO = set(GRUPOS)
 TIPOS_FONTE = {"compra", "troca", "drop", "bau", "farm", "recompensa"}
 ACESSOS = ["agora", "em_breve", "tarde"]
 DESTAQUES = {"mais_cedo", "mais_rentavel"}
+ESTADOS_FEITICO = {"equipado", "tem", "sugerido"}
 TIPOS_NO = {"item", "chefe", "inimigo", "npc", "local", "bau", "almas", "atributo"}
 SINAIS = {"+", "-", ""}
 ESTADOS_CHEFE = {"derrotado", "vivo"}
@@ -70,6 +71,8 @@ def validate(plano: dict) -> list[str]:
             if not isinstance(stats.get(stat), int):
                 problems.append(f"'{where}.{stat}' deveria ser número inteiro")
     _rows("mudancas", plano["mudancas"], problems)
+    _ids("passos", plano["passos"], problems)
+    _ids("itens", plano["itens"], problems)
     for i, step in enumerate(plano["passos"]):
         if not step.get("titulo"):
             problems.append(f"passos[{i}] sem 'titulo'")
@@ -98,9 +101,75 @@ def validate(plano: dict) -> list[str]:
         _progress(plano["progresso"], problems)
     if "dano" in plano:
         _damage(plano["dano"], problems)
+    if "agora" in plano:
+        _now(plano, problems)
+    if "feiticos" in plano:
+        _spells(plano["feiticos"], problems)
+    _requirement_links(plano, problems)
     if not problems:
         _closure(plano, problems)
     return problems
+
+
+def _ids(where: str, entries: list, problems: list) -> None:
+    seen = set()
+    for i, entry in enumerate(entries):
+        ident = entry.get("id")
+        if not isinstance(ident, str) or not ident:
+            problems.append(f"{where}[{i}] sem 'id'")
+        elif ident in seen:
+            problems.append(f"{where}[{i}].id repetido: {ident}")
+        seen.add(ident)
+
+
+def _requirement_links(plano: dict, problems: list) -> None:
+    item_ids = {item.get("id") for item in plano["itens"]}
+    for i, item in enumerate(plano["itens"]):
+        for j, src in enumerate(item.get("fontes") or []):
+            req = src.get("requisito")
+            if isinstance(req, dict):
+                if not req.get("texto"):
+                    problems.append(f"itens[{i}].fontes[{j}].requisito sem 'texto'")
+                if req.get("item") and req["item"] not in item_ids:
+                    problems.append(f"itens[{i}].fontes[{j}].requisito aponta para item inexistente: {req['item']}")
+            elif req is not None and not isinstance(req, str):
+                problems.append(f"itens[{i}].fontes[{j}].requisito deveria ser texto ou {{texto, item}}")
+
+
+def _now(plano: dict, problems: list) -> None:
+    now = plano["agora"]
+    step_ids = {step.get("id") for step in plano["passos"]}
+    acoes = now.get("acoes", [])
+    if not isinstance(acoes, list) or len(acoes) > 3:
+        problems.append("agora.acoes deveria ser lista com até 3 ids de passo")
+        acoes = []
+    for ident in acoes:
+        if ident not in step_ids:
+            problems.append(f"agora.acoes cita passo inexistente: {ident}")
+    if "almas" in now and not isinstance(now["almas"], int):
+        problems.append("agora.almas deveria ser número inteiro")
+    _flow("agora.faltam", now.get("faltam", []), problems)
+
+
+def _spells(block, problems: list) -> None:
+    if not isinstance(block, dict):
+        problems.append("'feiticos' deveria ser dict")
+        return
+    _node("feiticos.catalisador", block.get("catalisador"), problems)
+    if not isinstance(block.get("slots", {}).get("total"), int):
+        problems.append("feiticos.slots.total deveria ser número inteiro")
+    for i, spell in enumerate(block.get("lista", [])):
+        at = f"feiticos.lista[{i}]"
+        _node(f"{at}.no", spell.get("no"), problems)
+        if spell.get("estado") not in ESTADOS_FEITICO:
+            problems.append(f"{at}.estado deveria ser um de {sorted(ESTADOS_FEITICO)}")
+        if not (isinstance(spell.get("ar"), int) or spell.get("ar") == "—"):
+            problems.append(f"{at}.ar deveria ser número inteiro ou '—'")
+        for key in ("usos", "slots"):
+            if not isinstance(spell.get(key), int):
+                problems.append(f"{at}.{key} deveria ser número inteiro")
+        if not isinstance(spell.get("requisito_ok"), bool):
+            problems.append(f"{at}.requisito_ok deveria ser true/false")
 
 
 def _sources(where: str, sources, problems: list) -> None:
@@ -138,6 +207,10 @@ def _cited_items(plano: dict):
         yield from row.get("por_causa", [])
     for build in plano["comparacao"]:
         yield from build.get("ajuste", [])
+    yield from plano.get("agora", {}).get("faltam", [])
+    for spell in plano.get("feiticos", {}).get("lista", []):
+        if spell.get("estado") == "sugerido":
+            yield spell["no"]
 
 
 def _closure(plano: dict, problems: list) -> None:
