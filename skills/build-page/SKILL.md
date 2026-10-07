@@ -15,6 +15,7 @@ Formato do plano: `example/plano.json` desta pasta (versão 2). Spec: `docs/supe
 - Nó: `tipo` (`item, chefe, inimigo, npc, local, bau, almas, atributo`), `nome`, `link` da wiki, `icone` = URL do ícone da wiki (vem do cabeçalho `icone:` do `wiki-cache`), `sub` curto (`"×1"`, `"+ 1.500 almas"`, `"R1 · +5"`).
 - Almas e níveis sempre do `ds2save.py levels`; dano sempre do `ds2calc.py ar`.
 - `progresso` (aba Progresso) e `dano` (aba Dano) são opcionais; estado é texto (`derrotado`/`vivo`, `feito`/`pendente`), a página desenha o selo no estilo da wiki.
+- `feiticos` (aba Feitiços), `agora` (painel no topo), `id` em passos e itens, e requisito `{"texto", "item"}` estão em `example/plano.json` e no spec `2026-10-07-buildsmith-feiticos-fila-ux-design.md`.
 
 ## Passos
 
@@ -25,4 +26,6 @@ Formato do plano: `example/plano.json` desta pasta (versão 2). Spec: `docs/supe
 3. Leia `~/.buildsmith/config.json`, chave `paginas.<jogo>.<personagem>`.
    - **Tem URL:** `Artifact` com `action: "read"` nessa URL, depois publique com `url`, `file_path` = `index` e `files` = o objeto `files` da saída, sem mudar nada.
    - **Sem URL:** publique sem `url`, com `icon: "sword"` e `description` de uma frase; grave a URL em `config.json`.
-4. Responda com o link e as 2–3 linhas de `mudancas` mais importantes.
+   - **Banco da página:** a página usa `capabilities: {"db": {}}` (fila de pesquisa, fogueiras de feito, seleção de feitiços). Declare no primeiro publish de cada página, ou quando a leitura mostrar "no runtime capabilities declared"; nos seguintes, omita `capabilities` para manter.
+4. Responda a fila: com `ArtifactData`, `update` de cada pedido pesquisado (`estado: "respondido"`, `item_id`, `respondido_em`) e de cada `feitos/<id>` conferido (`confirmado`).
+5. Responda com o link e as 2–3 linhas de `mudancas` mais importantes.
