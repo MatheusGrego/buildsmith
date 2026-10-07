@@ -1,0 +1,41 @@
+{
+ "_doc": "Ordem das áreas da história principal segundo https://darksouls2.wiki.fextralife.com/Game+Progress+Route (2026-10-07). Majula e Things Betwixt são hubs sempre acessíveis.",
+ "hubs": [
+  "Majula",
+  "Things Betwixt"
+ ],
+ "rota": [
+  "Things Betwixt",
+  "Forest of Fallen Giants",
+  "Heide's Tower of Flame",
+  "Cathedral of Blue",
+  "No-Man's Wharf",
+  "The Lost Bastille",
+  "Belfry Luna",
+  "Sinners' Rise",
+  "Huntsman's Copse",
+  "Undead Purgatory",
+  "Harvest Valley",
+  "Earthen Peak",
+  "The Grave of Saints",
+  "The Gutter",
+  "Black Gulch",
+  "Shaded Woods",
+  "Doors of Pharros",
+  "Brightstone Cove Tseldora",
+  "Lord's Private Chamber",
+  "Iron Keep",
+  "Belfry Sol",
+  "Shrine of Winter",
+  "Drangleic Castle",
+  "King's Passage",
+  "Shrine of Amana",
+  "Undead Crypt",
+  "Aldia's Keep",
+  "Dragon Aerie",
+  "Dragon Shrine",
+  "Dark Chasm of Old",
+  "Memories of the Ancients",
+  "Throne of Want"
+ ]
+}

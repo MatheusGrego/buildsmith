@@ -1,17 +1,12 @@
 #!/usr/bin/env python3
 """Lê as tabelas de regras (params) do DS2 SotFS direto do enc_regulation.bnd.dcx instalado."""
-import os
 import struct
 import zlib
 from pathlib import Path
 
-from ds2save import SaveError, bnd4_entries
+from ds2save import SaveError, bnd4_entries, game_dirs
 
 KEY = bytes.fromhex("40178130DF0A94543309E171ECBF254C")
-GAME_DIRS = [
-    Path(r"C:\Program Files (x86)\Steam\steamapps\common\Dark Souls II Scholar of the First Sin\Game"),
-    Path(r"C:\Program Files\Steam\steamapps\common\Dark Souls II Scholar of the First Sin\Game"),
-]
 FILE_NAME = "enc_regulation.bnd.dcx"
 
 # Só os campos usados pelo buildsmith: nome → (formato struct, offset na linha).
@@ -20,7 +15,9 @@ LAYOUTS = {
     "WeaponReinforceParam": {"dano_fisico": ("f", 0), "dano_fisico_max": ("f", 36), "nivel_max": ("i", 72),
                              "stats_affect_id": ("i", 76), "mult_fisico": ("f", 160)},
     "PhysicalStatsPerLevelStatValuesParam": {"bonus_str": ("I", 12), "bonus_dex": ("I", 16)},
-    "ShopLineupParam": {"item_id": ("i", 0), "quantidade": ("i", 32)},
+    "ShopLineupParam": {"item_id": ("i", 0), "material_id": ("i", 16), "price_rate": ("f", 28), "quantidade": ("i", 32)},
+    "ItemParam": {"base_price": ("i", 48)},
+    "WeaponReinforceCost": {"reinforce_cost_id": ("i", 240)},
 }
 
 
@@ -30,12 +27,7 @@ def scaling_offset(level: int, kind: int) -> int:
 
 
 def find_regulation(game_dir=None) -> Path:
-    candidates = [Path(game_dir)] if game_dir else []
-    if os.environ.get("BUILDSMITH_DS2_GAME"):
-        candidates.append(Path(os.environ["BUILDSMITH_DS2_GAME"]))
-    if not game_dir:
-        candidates += GAME_DIRS
-    for folder in candidates:
+    for folder in game_dirs(game_dir):
         if (folder / FILE_NAME).exists():
             return folder / FILE_NAME
     raise SaveError(f"não achei {FILE_NAME}; defina BUILDSMITH_DS2_GAME com a pasta Game do DS2")
