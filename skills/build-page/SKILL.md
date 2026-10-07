@@ -19,13 +19,18 @@ Formato do plano: `example/plano.json` desta pasta (versão 2). Spec: `docs/supe
 
 ## Passos
 
+Padrão: **página local** (sem Artifact, mais barata). Só publique no Artifact quando o pedido tiver `publicar`.
+
 1. Grave o `plano.json` em `<scratchpad>/buildsmith-plano.json`.
-2. Rode `python "<pasta>/scripts/prepare_page.py" <scratchpad>/buildsmith-plano.json <scratchpad>/buildsmith-page/<jogo> --jogo <jogo>`.
+2. Rode `python "<pasta>/scripts/prepare_page.py" <scratchpad>/buildsmith-plano.json ~/.buildsmith/paginas/<jogo>/<slug-do-personagem> --jogo <jogo>`.
    - Ele valida o plano, baixa os ícones (cache em `~/.buildsmith/cache/<jogo>/icons/`), copia o modelo e imprime `{"index", "files", "avisos"}`.
    - `{"error": ...}` → corrija o plano e rode de novo. `avisos` → ícones que não baixaram; o nó mostra a inicial do nome.
-3. Leia `~/.buildsmith/config.json`, chave `paginas.<jogo>.<personagem>`.
-   - **Tem URL:** `Artifact` com `action: "read"` nessa URL, depois publique com `url`, `file_path` = `index` e `files` = o objeto `files` da saída, sem mudar nada.
-   - **Sem URL:** publique sem `url`, com `icon: "sword"` e `description` de uma frase; grave a URL em `config.json`.
-   - **Banco da página:** a página usa `capabilities: {"db": {}}` (fila de pesquisa, fogueiras de feito, seleção de feitiços). Declare no primeiro publish de cada página, ou quando a leitura mostrar "no runtime capabilities declared"; nos seguintes, omita `capabilities` para manter.
-4. Responda a fila: com `ArtifactData`, `update` de cada pedido pesquisado (`estado: "respondido"`, `item_id`, `respondido_em`) e de cada `feitos/<id>` conferido (`confirmado`).
-5. Responda com o link e as 2–3 linhas de `mudancas` mais importantes.
+3. Servidor local (`<pasta>/../../app/serve.py`, porta 8642): se `http://127.0.0.1:8642/api/ping` não responder, suba em segundo plano com `pythonw "<app>/serve.py"` (Windows: `Start-Process pythonw -ArgumentList '"<app>\serve.py"'`). O jogador também pode abrir pelo atalho **Forja de Build** da área de trabalho (`app/instalar_atalho.py` cria).
+4. Responda a fila com `serve.py responder` / `serve.py confirmar` (veja a skill `build`).
+5. Responda com o link `http://127.0.0.1:8642/p/<jogo>/<slug-do-personagem>/` e as 2–3 linhas de `mudancas` mais importantes.
+
+### Modo `publicar` (Artifact, para ver no celular)
+
+- Prepare a página em `<scratchpad>/buildsmith-page/<jogo>/` (o Artifact só publica arquivos do diretório de trabalho ou do scratchpad).
+- `~/.buildsmith/config.json`, chave `paginas.<jogo>.<personagem>`: **com URL** → `Artifact` `action: "read"` e depois publique com `url`, `file_path` = `index` e `files` da saída; **sem URL** → publique com `icon: "sword"`, `description` de uma frase e `capabilities: {"db": {}}`, e grave a URL.
+- Nesse modo a fila fica no banco da página: leia e responda com `ArtifactData` (`pedidos`, `feitos`, `config/feiticos`).

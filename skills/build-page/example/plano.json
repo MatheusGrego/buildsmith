@@ -341,6 +341,51 @@
       "id": "compra-ring-of-knowledge"
     },
     {
+      "id": "upgrade-queimar-sublime-bone-dust",
+      "titulo": "Queimar Sublime Bone Dust",
+      "tipo": "upgrade",
+      "fluxo": [
+        {
+          "tipo": "item",
+          "nome": "Sublime Bone Dust",
+          "link": "https://darksouls2.wiki.fextralife.com/Sublime+Bone+Dust",
+          "icone": "https://static0.fextralifeimages.com/file/darksouls2/6/62/Sublime_bone_dust.png",
+          "sub": "tem 1",
+          "tem": true
+        },
+        {
+          "tipo": "local",
+          "nome": "Far Fire",
+          "link": "https://darksouls2.wiki.fextralife.com/Majula",
+          "sub": "fogueira de Majula"
+        },
+        {
+          "tipo": "item",
+          "nome": "Estus Flask",
+          "link": "https://darksouls2.wiki.fextralife.com/Estus+Flask",
+          "icone": "https://static0.fextralifeimages.com/file/darksouls2/3/3a/Estus_flask.png",
+          "sub": "+1 de cura",
+          "tem": true
+        }
+      ],
+      "dados": [
+        {
+          "dado": "Cura por gole do Estus",
+          "agora": "—",
+          "depois": "+1 nível",
+          "efeito": "máximo +5",
+          "sinal": "+"
+        },
+        {
+          "dado": "Sublime Bone Dust",
+          "agora": "1",
+          "depois": "0",
+          "efeito": "usada",
+          "sinal": "-"
+        }
+      ]
+    },
+    {
       "titulo": "Uchigatana +5 → +6",
       "tipo": "upgrade",
       "fluxo": [
@@ -1484,6 +1529,11 @@
       "titulo": "Tabelas do jogo (SpellParam, PlayerDamageParam, PhysicalStatsPerLevelStatValuesParam)",
       "url": "",
       "data": "2026-10-07"
+    },
+    {
+      "titulo": "Sublime Bone Dust / Estus Flask Shard",
+      "url": "https://darksouls2.wiki.fextralife.com/Sublime+Bone+Dust",
+      "data": "2026-10-07"
     }
   ],
   "progresso": {
@@ -2122,10 +2172,10 @@
   "agora": {
     "acoes": [
       "equipar-trocar-anel",
-      "explorar-libertar-o-straid",
-      "compra-large-titanite-shard-1"
+      "upgrade-queimar-sublime-bone-dust",
+      "explorar-libertar-o-straid"
     ],
-    "almas": 2500,
+    "almas": 0,
     "faltam": [
       {
         "tipo": "item",
