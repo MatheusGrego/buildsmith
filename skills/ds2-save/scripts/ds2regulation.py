@@ -13,8 +13,15 @@ FILE_NAME = "enc_regulation.bnd.dcx"
 LAYOUTS = {
     "WeaponParam": {"reinforce_id": ("i", 8), "req_str": ("h", 24), "req_dex": ("h", 26), "req_int": ("h", 28), "req_fth": ("h", 30)},
     "WeaponReinforceParam": {"dano_fisico": ("f", 0), "dano_fisico_max": ("f", 36), "nivel_max": ("i", 72),
-                             "stats_affect_id": ("i", 76), "mult_fisico": ("f", 160)},
-    "PhysicalStatsPerLevelStatValuesParam": {"bonus_str": ("I", 12), "bonus_dex": ("I", 16)},
+                             "stats_affect_id": ("i", 76), "mult_fisico": ("f", 160),
+                             "dano_magico": ("f", 4), "dano_raio": ("f", 8), "dano_fogo": ("f", 12), "dano_sombrio": ("f", 16),
+                             "dano_magico_max": ("f", 40), "dano_raio_max": ("f", 44), "dano_fogo_max": ("f", 48), "dano_sombrio_max": ("f", 52),
+                             "mult_magico": ("f", 164), "mult_raio": ("f", 168), "mult_fogo": ("f", 172), "mult_sombrio": ("f", 176)},
+    "PhysicalStatsPerLevelStatValuesParam": {"slots": ("B", 2), "faixa": ("B", 3), "bonus_str": ("I", 12), "bonus_dex": ("I", 16),
+                                             "bonus_magico": ("I", 20), "bonus_fogo": ("I", 24), "bonus_raio": ("I", 28), "bonus_sombrio": ("I", 32)},
+    "SpellParam": {"req_int": ("H", 8), "req_fth": ("H", 10), "damage_id": ("i", 16), "slots": ("B", 240),
+                   **{f"usos_{tier}": ("B", 240 + tier) for tier in range(1, 11)}},
+    "PlayerDamageParam": {"tipo": ("B", 25), "mult": ("f", 28)},
     "ShopLineupParam": {"item_id": ("i", 0), "material_id": ("i", 16), "price_rate": ("f", 28), "quantidade": ("i", 32)},
     "ItemParam": {"base_price": ("i", 48)},
     "WeaponReinforceCost": {"reinforce_cost_id": ("i", 240)},
@@ -22,7 +29,8 @@ LAYOUTS = {
 
 
 def scaling_offset(level: int, kind: int) -> int:
-    """WeaponStatsAffectParam: 2 floats de cabeçalho e 9 escalas por nível (0 = FOR, 1 = DES)."""
+    """WeaponStatsAffectParam: 2 floats de cabeçalho e 9 escalas por nível
+    (0 = FOR, 1 = DES, 2 = mágico, 3 = raio, 4 = fogo, 5 = sombrio)."""
     return 8 + (level * 9 + kind) * 4
 
 
