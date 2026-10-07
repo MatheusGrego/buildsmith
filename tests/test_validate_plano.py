@@ -28,7 +28,7 @@ def test_old_version_is_rejected():
 
 def test_wrong_step_type_is_reported():
     plano = example()
-    plano["passos"][0]["tipo"] = "dançar"
+    plano["passos"][0]["tipo"] = "item"
     assert any("passos[0].tipo" in p for p in validate_plano.validate(plano))
 
 
@@ -90,3 +90,41 @@ def test_damage_value_must_be_int_or_dash():
     plano = example()
     plano["dano"][0]["depois"] = "muito"
     assert any("dano[0].depois" in p for p in validate_plano.validate(plano))
+
+
+def test_new_step_types_are_accepted():
+    plano = example()
+    assert {p["tipo"] for p in plano["passos"]} >= {"equipar", "explorar", "chefe", "troca", "compra", "upgrade", "farm", "nivel"}
+    assert validate_plano.validate(plano) == []
+
+
+def test_item_sources_need_valid_access():
+    plano = example()
+    plano["itens"][0]["fontes"][0]["acesso"] = "logo"
+    assert any("acesso" in p for p in validate_plano.validate(plano))
+
+
+def test_each_item_has_exactly_one_earliest_source():
+    plano = example()
+    for fonte in plano["itens"][0]["fontes"]:
+        fonte["destaques"] = [d for d in fonte.get("destaques", []) if d != "mais_cedo"]
+    assert any("mais_cedo" in p for p in validate_plano.validate(plano))
+
+
+def test_sources_are_sorted_by_access():
+    plano = example()
+    fontes = next(i["fontes"] for i in plano["itens"] if len({f["acesso"] for f in i["fontes"]}) > 1)
+    fontes.reverse()
+    assert any("ordem" in p for p in validate_plano.validate(plano))
+
+
+def test_every_cited_item_needs_a_source():
+    plano = example()
+    plano["passos"][0]["fluxo"].append({"tipo": "item", "nome": "Item Sem Fonte"})
+    assert any("Item Sem Fonte" in p for p in validate_plano.validate(plano))
+
+
+def test_owned_items_are_exempt_from_sources():
+    plano = example()
+    plano["passos"][0]["fluxo"].append({"tipo": "item", "nome": "Item Que Já Tenho", "tem": True})
+    assert validate_plano.validate(plano) == []

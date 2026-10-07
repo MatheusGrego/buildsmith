@@ -27,6 +27,7 @@ Cache em `~/.buildsmith/cache/<jogo>/<slug>.md` (no Windows, `C:\Users\<usuário
    - Peso: 0,2 · Durabilidade: 130
    - Onde: (fluxo) Lost Bastille ➜ ...
    ~~~
+4b. **Fontes de item:** guarde cada fonte em uma linha com tipo (baú, drop, farm, recompensa), local, requisito e **rendimento** (quantidade, chance, se repete com Bonfire Ascetic ou é infinito). Seções úteis da wiki: "Location", "Drops from", "Sold by", "Notes and Tips" (onde costumam estar os farms).
 5. **Wiki fora do ar:** use o cache mesmo vencido e marque "dados de DD/MM". Sem cache e sem wiki: escreva `"—"` no dado; nunca chute.
 
 ## Builds de outros players

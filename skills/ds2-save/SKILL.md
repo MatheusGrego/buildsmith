@@ -16,8 +16,12 @@ Script: `scripts/ds2save.py` nesta pasta. Precisa de Python 3 e `pycryptodome` (
 | `python "<pasta>/scripts/ds2save.py" levels --from A --to B` | custo de cada nível de A+1 até B e o total |
 | `python "<pasta>/scripts/ds2save.py" flags-diff --antes A.json --depois B.json` | flags globais que ligaram/desligaram entre dois snapshots |
 | `python "<pasta>/scripts/ds2calc.py" ar --arma Uchigatana --nivel 5 --str 10 --dex 18` | AR físico da arma pelas regras do jogo (bate com o menu) |
+| `python "<pasta>/scripts/ds2data.py" onde-comprar --item "Large Titanite Shard"` | lojas que vendem, preço e estoque (`null` = ilimitado) |
+| `python "<pasta>/scripts/ds2data.py" trocas --item "Moonlight Greatsword"` (ou `--alma`) | trocas de alma de chefe: NPC, alma e preço |
+| `python "<pasta>/scripts/ds2data.py" custo-upgrade --arma Uchigatana --de 5 --ate 6` | almas e materiais por nível e no total |
+| `python "<pasta>/scripts/ds2data.py" acesso --snapshot S.json` | acesso de cada área: `agora`, `em_breve`, `tarde` |
 
-`<pasta>` é o diretório base desta skill. Sem `--save`, o script usa o arquivo mais recente entre `DS2SOFS*.sl2` e `DS2SOFS*.co2` (Seamless Co-op) em `%APPDATA%\DarkSoulsII\*\`. O save nunca é alterado.
+`<pasta>` é o diretório base desta skill. Sem `--save`, o script usa o save ativo: a extensão do `SeamlessCoop\ds2sc_settings.ini` (`save_file_extension`, ex.: `teste`) quando existir; senão o mais recente entre `DS2SOFS*.sl2` e `DS2SOFS*.co2` em `%APPDATA%\DarkSoulsII\*\`. O save nunca é alterado.
 
 ## Regras
 

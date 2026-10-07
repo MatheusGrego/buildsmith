@@ -61,7 +61,8 @@ def _nodes(plano: dict):
         yield from step.get("fluxo", [])
     for item in plano["itens"]:
         yield item["item"]
-        yield from item.get("onde", [])
+        for source in item.get("fontes", []):
+            yield from source.get("fluxo", [])
     for build in plano["comparacao"]:
         yield from build.get("ajuste", [])
     progresso = plano.get("progresso", {})

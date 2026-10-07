@@ -4,7 +4,12 @@ import json
 import sys
 
 STATS = ["VGR", "END", "VIT", "ATN", "STR", "DEX", "INT", "FTH", "ADP"]
-TIPOS_PASSO = {"nivel", "item", "chefe", "compra", "equipar"}
+# Ordem dos grupos na aba Passos.
+GRUPOS = ["equipar", "explorar", "chefe", "troca", "compra", "upgrade", "farm", "nivel"]
+TIPOS_PASSO = set(GRUPOS)
+TIPOS_FONTE = {"compra", "troca", "drop", "bau", "farm", "recompensa"}
+ACESSOS = ["agora", "em_breve", "tarde"]
+DESTAQUES = {"mais_cedo", "mais_rentavel"}
 TIPOS_NO = {"item", "chefe", "inimigo", "npc", "local", "bau", "almas", "atributo"}
 SINAIS = {"+", "-", ""}
 ESTADOS_CHEFE = {"derrotado", "vivo"}
@@ -82,7 +87,7 @@ def validate(plano: dict) -> list[str]:
             problems.append(f"fases[{i}].atributo deveria ser um de {STATS}")
     for i, item in enumerate(plano["itens"]):
         _node(f"itens[{i}].item", item.get("item"), problems)
-        _flow(f"itens[{i}].onde", item.get("onde"), problems)
+        _sources(f"itens[{i}]", item.get("fontes"), problems)
         _rows(f"itens[{i}].dados", item.get("dados", []), problems)
     for i, build in enumerate(plano["comparacao"]):
         if not build.get("build"):
@@ -93,7 +98,55 @@ def validate(plano: dict) -> list[str]:
         _progress(plano["progresso"], problems)
     if "dano" in plano:
         _damage(plano["dano"], problems)
+    if not problems:
+        _closure(plano, problems)
     return problems
+
+
+def _sources(where: str, sources, problems: list) -> None:
+    if not isinstance(sources, list) or not sources:
+        problems.append(f"{where}.fontes deveria ser lista com pelo menos uma fonte")
+        return
+    earliest = 0
+    for j, src in enumerate(sources):
+        at = f"{where}.fontes[{j}]"
+        if src.get("tipo") not in TIPOS_FONTE:
+            problems.append(f"{at}.tipo deveria ser um de {sorted(TIPOS_FONTE)}")
+        if src.get("acesso") not in ACESSOS:
+            problems.append(f"{at}.acesso deveria ser um de {ACESSOS}")
+        _flow(f"{at}.fluxo", src.get("fluxo"), problems)
+        if not src.get("fluxo"):
+            problems.append(f"{at}.fluxo vazio")
+        marks = src.get("destaques", [])
+        if not set(marks) <= DESTAQUES:
+            problems.append(f"{at}.destaques deveria usar só {sorted(DESTAQUES)}")
+        earliest += "mais_cedo" in marks
+    if earliest != 1:
+        problems.append(f"{where} precisa de exatamente uma fonte com destaque 'mais_cedo' (tem {earliest})")
+    if sum("mais_rentavel" in s.get("destaques", []) for s in sources) > 1:
+        problems.append(f"{where} tem mais de uma fonte 'mais_rentavel'")
+    ranks = [ACESSOS.index(s["acesso"]) for s in sources if s.get("acesso") in ACESSOS]
+    if ranks != sorted(ranks):
+        problems.append(f"{where}.fontes fora de ordem: agora → em_breve → tarde")
+
+
+def _cited_items(plano: dict):
+    for step in plano["passos"]:
+        yield from step.get("fluxo", [])
+    for row in plano.get("dano", []):
+        yield row["arma"]
+        yield from row.get("por_causa", [])
+    for build in plano["comparacao"]:
+        yield from build.get("ajuste", [])
+
+
+def _closure(plano: dict, problems: list) -> None:
+    """Todo item citado precisa de 'Onde pegar', salvo os que o jogador já tem."""
+    known = {item["item"]["nome"] for item in plano["itens"]}
+    missing = sorted({n["nome"] for n in _cited_items(plano)
+                      if n.get("tipo") == "item" and not n.get("tem") and n["nome"] not in known})
+    for name in missing:
+        problems.append(f"'{name}' é citado no plano mas não tem fonte em 'itens' (ou marque \"tem\": true)")
 
 
 def _progress(prog, problems: list) -> None:
