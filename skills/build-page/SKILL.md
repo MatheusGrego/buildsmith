@@ -33,12 +33,13 @@ Formato do plano: `example/plano.json` desta pasta (versão 2). Spec: `docs/supe
 
 Padrão: **página local** (sem Artifact, mais barata). Só publique no Artifact quando o pedido tiver `publicar`.
 
-1. Grave o `plano.json` em `<scratchpad>/buildsmith-plano.json`.
+1. Grave o `plano.json` em `<scratchpad>/buildsmith-plano.json` (sem scratchpad, rodando pela página: `~/.buildsmith/tmp/buildsmith-plano.json`).
 2. Rode `python "<pasta>/scripts/prepare_page.py" <scratchpad>/buildsmith-plano.json ~/.buildsmith/paginas/<jogo>/<slug-do-personagem> --jogo <jogo>`.
    - Ele valida o plano, baixa os ícones (cache em `~/.buildsmith/cache/<jogo>/icons/`), copia o modelo e imprime `{"index", "files", "avisos"}`.
    - `{"error": ...}` → corrija o plano e rode de novo. `avisos` → ícones que não baixaram; o nó mostra a inicial do nome.
-3. Servidor local (`<pasta>/../../app/serve.py`, porta 8642): se `http://127.0.0.1:8642/api/ping` não responder, suba em segundo plano com `pythonw "<app>/serve.py"` (Windows: `Start-Process pythonw -ArgumentList '"<app>\serve.py"'`). O jogador também pode abrir pelo atalho **Forja de Build** da área de trabalho (`app/instalar_atalho.py` cria).
+3. Servidor local (`<pasta>/../../app/serve.py`, porta 8642; rodando pela página ele já está de pé): se `http://127.0.0.1:8642/api/ping` não responder, suba em segundo plano com `pythonw "<app>/serve.py"` (Windows: `Start-Process pythonw -ArgumentList '"<app>\serve.py"'`). O jogador também pode abrir pelo atalho **Forja de Build** da área de trabalho (`app/instalar_atalho.py` cria).
 4. Responda a fila com `serve.py responder` / `serve.py confirmar` (veja a skill `build`).
+   - Aberta pelo servidor, a página tem os botões **Atualizar plano** e **Responder fila**: rodam esta skill sem janela (`app/runner.py`, `claude -p`) e mostram etapas + microtexto. Visual: `docs/design-system.md`.
 5. Responda com o link `http://127.0.0.1:8642/p/<jogo>/<slug-do-personagem>/` e as 2–3 linhas de `mudancas` mais importantes.
 
 ### Modo `publicar` (Artifact, para ver no celular)

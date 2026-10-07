@@ -1,6 +1,7 @@
 import json
 import sys
 import threading
+import time
 import urllib.error
 import urllib.request
 from pathlib import Path
@@ -10,6 +11,12 @@ import pytest
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "app"))
 import serve  # noqa: E402
 
+FAKE = r'''
+import json
+print(json.dumps({"type": "assistant", "message": {"content": [{"type": "text", "text": "[etapa:fila] Lendo a fila"}]}}), flush=True)
+print(json.dumps({"type": "result", "is_error": False, "result": "ok", "total_cost_usd": 0.1}), flush=True)
+'''
+
 
 @pytest.fixture
 def server(tmp_path):
@@ -18,7 +25,16 @@ def server(tmp_path):
     (page / "index.html").write_text("<title>Forja de Build</title><p>olá</p>", encoding="utf-8")
     (page / "plano.json").write_text(json.dumps({"personagem": {"name": "Melatonina Vorcaro"}}), encoding="utf-8")
     (page / "icons" / "a.png").write_bytes(b"\x89PNG")
-    httpd = serve.make_server(tmp_path, port=0)
+    fake = tmp_path / "fake_claude.py"
+    fake.write_text(FAKE, encoding="utf-8")
+    seen = []
+
+    def command(prompt):
+        seen.append(prompt)
+        return [sys.executable, str(fake)]
+
+    httpd = serve.make_server(tmp_path, port=0, runner=serve.Runner(command=command, cwd=tmp_path))
+    httpd.prompts = seen
     thread = threading.Thread(target=httpd.serve_forever, daemon=True)
     thread.start()
     yield f"http://127.0.0.1:{httpd.server_address[1]}", tmp_path
@@ -30,8 +46,9 @@ def get(url):
         return resp.status, resp.headers.get("Content-Type"), resp.read()
 
 
-def post(url, body):
-    req = urllib.request.Request(url, data=json.dumps(body).encode(), method="POST", headers={"Content-Type": "application/json"})
+def post(url, body, headers=None):
+    headers = {"Content-Type": "application/json", "X-Buildsmith": "1", **(headers or {})}
+    req = urllib.request.Request(url, data=json.dumps(body).encode(), method="POST", headers=headers)
     with urllib.request.urlopen(req, timeout=5) as resp:
         return json.loads(resp.read())
 
@@ -89,3 +106,36 @@ def test_cli_answers_a_request(tmp_path, capsys):
     state = json.loads(capsys.readouterr().out)
     assert state["pedidos"]["bonfire-ascetic"]["estado"] == "respondido"
     assert state["pedidos"]["bonfire-ascetic"]["item_id"] == "bonfire-ascetic"
+
+
+def test_post_needs_own_header_and_local_origin(server):
+    base, _ = server
+    api = f"{base}/api/ds2/melatonina-vorcaro/pedidos/x"
+    for headers in ({"X-Buildsmith": ""}, {"Origin": "https://evil.example"}, {"Host": "evil.example"}):
+        with pytest.raises(urllib.error.HTTPError) as err:
+            post(api, {"texto": "x"}, headers)
+        assert err.value.code == 403
+
+
+def test_run_button_starts_skill_and_reports_stages(server):
+    base, _ = server
+    api = f"{base}/api/ds2/melatonina-vorcaro"
+    with pytest.raises(urllib.error.HTTPError) as err:
+        post(f"{api}/rodar", {"modo": "apagar"})
+    assert err.value.code == 400
+    post(f"{api}/rodar", {"modo": "fila"})
+    for _ in range(100):
+        st = json.loads(get(f"{api}/execucao?desde=-1")[2])
+        if st["estado"] != "rodando":
+            break
+        time.sleep(0.05)
+    assert st["estado"] == "ok" and st["alvo"] == {"jogo": "ds2", "personagem": "melatonina-vorcaro"}
+    assert [e["texto"] for e in st["eventos"]][:2] == ["Fila", "Lendo a fila"]
+
+
+def test_prompt_uses_character_name_from_plan(tmp_path):
+    page = tmp_path / "paginas" / "ds2" / "melatonina-vorcaro"
+    page.mkdir(parents=True)
+    (page / "plano.json").write_text(json.dumps({"personagem": {"name": "Melatonina Vorcaro"}}), encoding="utf-8")
+    assert serve.build_prompt(tmp_path, "ds2", "melatonina-vorcaro", "fila") == "/buildsmith:build ds2 fila (pela página, personagem: Melatonina Vorcaro)"
+    assert serve.build_prompt(tmp_path, "ds2", "outro", "plano") == "/buildsmith:build ds2 (pela página, personagem: outro)"
