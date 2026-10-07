@@ -123,3 +123,17 @@ def test_real_save_invariants():
     assert snap["name"]
     assert all(1 <= v <= 99 for v in snap["stats"].values())
     assert any(i["name"] == "Uchigatana" for i in snap["inventory"])
+
+
+def test_find_save_prefers_seamless_extension(tmp_path):
+    folder = tmp_path / "DarkSoulsII" / "0110000100000000"
+    folder.mkdir(parents=True)
+    test_save, main_save = folder / "DS2SOFS0000.teste", folder / "DS2SOFS0000.co2"
+    test_save.write_bytes(b"t")
+    main_save.write_bytes(b"m")
+    os.utime(test_save, (1, 1))  # o principal é mais novo, mas o ini manda usar .teste
+    game = tmp_path / "Game"
+    (game / "SeamlessCoop").mkdir(parents=True)
+    (game / "SeamlessCoop" / "ds2sc_settings.ini").write_text("[SAVE]\nsave_file_extension = teste\n", encoding="utf-8")
+    assert ds2save.find_save(str(tmp_path), game_dir=game) == test_save
+    assert ds2save.seamless_extension(game) == "teste"

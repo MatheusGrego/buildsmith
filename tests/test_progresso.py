@@ -62,6 +62,7 @@ def _real():
 def test_real_save_progress():
     snap = ds2save.snapshot(_real(), slot=1)
     chefes = {c["nome"]: c["derrotado"] for c in snap["progresso"]["chefes"]}
-    assert chefes["The Pursuer"] and chefes["Flexile Sentry"] and not chefes["Ruin Sentinels"]
+    # o save real muda conforme o jogador avança: só checa o que já aconteceu e não volta atrás
+    assert chefes["The Pursuer"] and chefes["Flexile Sentry"] and len(chefes) == 41
     compras = {c["item"] for c in snap["progresso"]["compras"]}
     assert "Great Soul Arrow" in compras or None in compras

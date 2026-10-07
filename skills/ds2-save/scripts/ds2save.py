@@ -41,6 +41,10 @@ FLAG_BASE_ID = 100944
 FLAG_BASE_OFFSET = 0x26DAA
 FLAG_MIN, FLAG_MAX = 100000, 110000
 LEARNED_DEFAULT = Path.home() / ".buildsmith" / "flags" / "ds2.json"
+GAME_DIRS = [
+    Path(r"C:\Program Files (x86)\Steam\steamapps\common\Dark Souls II Scholar of the First Sin\Game"),
+    Path(r"C:\Program Files\Steam\steamapps\common\Dark Souls II Scholar of the First Sin\Game"),
+]
 
 
 class SaveError(Exception):
@@ -230,9 +234,29 @@ def load_learned(path=None) -> list[dict]:
     return json.loads(path.read_text(encoding="utf-8")).get("eventos", [])
 
 
-def find_save(appdata: str | None = None) -> Path:
+def game_dirs(game_dir=None) -> list[Path]:
+    if game_dir:
+        return [Path(game_dir)]
+    extra = [Path(os.environ["BUILDSMITH_DS2_GAME"])] if os.environ.get("BUILDSMITH_DS2_GAME") else []
+    return extra + GAME_DIRS
+
+
+def seamless_extension(game_dir=None) -> str | None:
+    """Extensão de save configurada no Seamless Co-op (save_file_extension), se o mod estiver instalado."""
+    for folder in game_dirs(game_dir):
+        ini = folder / "SeamlessCoop" / "ds2sc_settings.ini"
+        if ini.exists():
+            match = re.search(r"^\s*save_file_extension\s*=\s*([A-Za-z0-9]+)", ini.read_text(encoding="utf-8", errors="replace"), re.M)
+            if match:
+                return match.group(1)
+    return None
+
+
+def find_save(appdata: str | None = None, game_dir=None) -> Path:
     base = Path(appdata or os.environ.get("APPDATA", "")) / "DarkSoulsII"
-    files = list(base.glob("*/DS2SOFS*.sl2")) + list(base.glob("*/DS2SOFS*.co2"))
+    ext = seamless_extension(game_dir)
+    active = list(base.glob(f"*/DS2SOFS*.{ext}")) if ext else []
+    files = active or list(base.glob("*/DS2SOFS*.sl2")) + list(base.glob("*/DS2SOFS*.co2"))
     if not files:
         raise SaveError(f"nenhum save do DS2 encontrado em {base}")
     return max(files, key=lambda p: p.stat().st_mtime)
