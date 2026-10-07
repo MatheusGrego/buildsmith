@@ -1,6 +1,6 @@
 {
   "name": "buildsmith",
-  "version": "0.5.0",
+  "version": "0.5.1",
   "description": "Lê o save do jogo e monta um plano de build numa página fixa. Primeiro jogo: Dark Souls II SotFS.",
   "author": { "name": "Matheus Grego" }
 }
