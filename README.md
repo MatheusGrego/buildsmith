@@ -16,6 +16,15 @@ claude plugin install buildsmith@buildsmith
 
 No Claude Code: `/buildsmith:build ds2` ou `/buildsmith:build ds2 quero focar piromancia`.
 
+A página abre em `http://127.0.0.1:8642/p/ds2/<personagem>/`, servida por `app/serve.py` (só Python padrão). Para ter um ícone na área de trabalho que sobe o servidor e abre a página:
+
+```bash
+pip install pillow
+python app/instalar_atalho.py
+```
+
+Para ver no celular, publique no Artifact: `/buildsmith:build ds2 publicar`.
+
 Seus dados (perfil, histórico, cache da wiki, link da página) ficam em `~/.buildsmith/`, fora do repositório.
 
 ## Testes

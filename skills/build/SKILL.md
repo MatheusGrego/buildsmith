@@ -11,10 +11,11 @@ Dados do usuário em `~/.buildsmith/` (crie as pastas se faltarem): `config.json
 
 ## Passos
 
-0. **Fila da página** (antes de tudo, se `config.json` tiver `paginas.<jogo>.<personagem>`): carregue a ferramenta `ArtifactData` (ToolSearch) e, com a URL da página, faça `list` de `pedidos`, `feitos` e `get` de `config/feiticos`. Esse banco fica no servidor junto da página: qualquer chat vê a mesma fila.
-   - `pedidos` com `estado: "na_fila"`: pesquise cada `texto` (wiki-cache + ds2data), crie/atualize a entrada em `itens` (com `id` = slug do item) e, **depois de publicar**, faça `update` do pedido com `estado: "respondido"`, `item_id` e `respondido_em`. Pedido sem resposta com fonte: `estado: "respondido"`, `item_id: null` e diga no chat.
-   - `feitos` com `marcado: true`: confirme pelo save quando der (chefe `derrotado`, compra registrada, item no inventário, upgrade feito) e grave `confirmado: true/false`. Passo marcado sai do plano mesmo sem confirmação.
-   - `config/feiticos.selecionados`: é a sintonia que o jogador quer; use nas sugestões e marque esses feitiços.
+0. **Fila da página** (antes de tudo). Servidor local é o padrão; o app fica em `<pasta>/../../app/serve.py`.
+   - Leia o estado: `python "<app>/serve.py" estado --personagem "<nome>"` → `{"feitos", "pedidos", "config"}` (arquivo `~/.buildsmith/estado/<jogo>/<slug>.json`; não precisa do servidor rodando). Só se a página do personagem estiver publicada no Artifact (modo `publicar`), use `ArtifactData` na URL de `config.json`.
+   - `pedidos` com `estado: "na_fila"`: pesquise cada `texto` (wiki-cache + ds2data), crie/atualize a entrada em `itens` (`id` = slug do item) e, **depois de gerar a página**, rode `serve.py responder --personagem "<nome>" --pedido <id> --item <id do item>` (sem `--item` quando não achar fonte; diga no chat).
+   - `feitos` com `marcado: true`: confirme pelo save quando der (chefe `derrotado`, compra registrada, item no inventário, upgrade feito) com `serve.py confirmar --personagem "<nome>" --passo <id> --resultado sim|nao`. Passo marcado sai do plano mesmo sem confirmação.
+   - `config.feiticos.selecionados`: é a sintonia que o jogador quer; use nas sugestões e marque esses feitiços.
 1. **Ficha:** rode o `snapshot` da skill `ds2-save` (`<pasta>/../ds2-save/scripts/ds2save.py`). Se `config.json` tiver `slots.ds2`, passe `--slot`. Erro de "mais de um personagem": rode `slots`, pergunte, grave a escolha em `config.json`.
 2. **Histórico e eventos:** grave a saída em `history/ds2/<personagem>/<AAAA-MM-DDTHH-MM>.json`. Compare com o arquivo anterior: níveis, atributos, itens novos, upgrades, chefes que passaram a `derrotado`, compras novas. Isso vira `mudancas` (vazio na primeira vez).
    - **Aprender evento:** se o `pedido` conta algo que aconteceu ("libertei o Straid", "abri a porta X"), rode `ds2save.py flags-diff --antes <snapshot anterior> --depois <atual>`. Se `ligou` tiver de 1 a 20 flags, grave `{"nome": "<evento>", "flags": <ligou>, "data": "<hoje>"}` em `~/.buildsmith/flags/ds2.json` e diga quantas flags foram associadas. Se vier vazio ou maior que 20, explique que precisa ler o save no menu **antes** e **depois** do evento.
@@ -33,6 +34,7 @@ Dados do usuário em `~/.buildsmith/` (crie as pastas se faltarem): `config.json
    - **Sem frases.** Cada passo é `fluxo` (nós) + `dados` (Dado | Agora | Depois | Efeito, com `sinal` + ou −).
    - **Onde o jogador está:** rode `ds2data.py acesso --snapshot <snapshot>`; o status de cada área (`agora`, `em_breve`, `tarde`) vem da área mais avançada pelos chefes derrotados.
    - **Passos por tipo** (`equipar`, `explorar`, `chefe`, `troca`, `compra`, `upgrade`, `farm`, `nivel`), no máximo 3 por tipo, cada grupo em **ordem cronológica** (primeiro o que dá para fazer na área atual). Tire o que `progresso` já mostra como feito.
+   - **Efeito de item e quem recebe o item: só com fonte da wiki-cache, nunca de memória.** Ex.: Estus Flask Shard ➜ Emerald Herald (+1 gole, até 12); Sublime Bone Dust ➜ Far Fire de Majula (+1 de cura, até +5).
    - **Números do jogo, nunca de cabeça:**
      - almas por nível: `ds2save.py levels`;
      - AR: `ds2calc.py ar`;
