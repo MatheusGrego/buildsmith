@@ -120,7 +120,8 @@
           "efeito": "−12,5%",
           "sinal": "-"
         }
-      ]
+      ],
+      "id": "equipar-trocar-anel"
     },
     {
       "titulo": "Libertar o Straid",
@@ -157,7 +158,8 @@
           "efeito": "+5 INT",
           "sinal": "+"
         }
-      ]
+      ],
+      "id": "explorar-libertar-o-straid"
     },
     {
       "titulo": "Dull Ember para o McDuff",
@@ -195,7 +197,8 @@
           "efeito": "libera",
           "sinal": "+"
         }
-      ]
+      ],
+      "id": "explorar-dull-ember-para-o-mcduff"
     },
     {
       "titulo": "Ruin Sentinels",
@@ -223,43 +226,8 @@
           "efeito": "+1 troca",
           "sinal": "+"
         }
-      ]
-    },
-    {
-      "titulo": "Heavy Homing Soul Arrow",
-      "tipo": "troca",
-      "fluxo": [
-        {
-          "tipo": "item",
-          "nome": "Ruin Sentinel Soul",
-          "link": "https://darksouls2.wiki.fextralife.com/Ruin+Sentinel+Soul",
-          "icone": "https://static0.fextralifeimages.com/file/darksouls2/f/fb/Boss_soul.png",
-          "sub": "×1"
-        },
-        {
-          "tipo": "npc",
-          "nome": "Straid of Olaphis",
-          "link": "https://darksouls2.wiki.fextralife.com/Straid+of+Olaphis",
-          "icone": "https://static0.fextralifeimages.com/file/darksouls2/4/4b/Straidframe.png",
-          "sub": "+ 1.500 almas"
-        },
-        {
-          "tipo": "item",
-          "nome": "Heavy Homing Soul Arrow",
-          "link": "https://darksouls2.wiki.fextralife.com/Heavy+Homing+Soul+Arrow",
-          "icone": "https://static0.fextralifeimages.com/file/darksouls2/2/23/Heavy_homing_soul_arrow.png",
-          "sub": "feitiço"
-        }
       ],
-      "dados": [
-        {
-          "dado": "Almas",
-          "agora": "0",
-          "depois": "−1.500",
-          "efeito": "faltam 1.500",
-          "sinal": "-"
-        }
-      ]
+      "id": "chefe-ruin-sentinels"
     },
     {
       "titulo": "Large Titanite Shard ×1",
@@ -295,7 +263,8 @@
           "efeito": "faltam 2.500",
           "sinal": "-"
         }
-      ]
+      ],
+      "id": "compra-large-titanite-shard-1"
     },
     {
       "titulo": "Great Heavy Soul Arrow",
@@ -331,7 +300,8 @@
           "efeito": "faltam 4.500",
           "sinal": "-"
         }
-      ]
+      ],
+      "id": "compra-great-heavy-soul-arrow"
     },
     {
       "titulo": "Ring of Knowledge",
@@ -367,7 +337,8 @@
           "efeito": "economia 16.840",
           "sinal": "+"
         }
-      ]
+      ],
+      "id": "compra-ring-of-knowledge"
     },
     {
       "titulo": "Uchigatana +5 → +6",
@@ -411,7 +382,8 @@
           "efeito": "faltam 1.320",
           "sinal": "-"
         }
-      ]
+      ],
+      "id": "upgrade-uchigatana-5-6"
     },
     {
       "titulo": "Smooth & Silky Stone",
@@ -447,7 +419,8 @@
           "efeito": "Magic Stone, Twinkling Titanite, Titanite Slab…",
           "sinal": "+"
         }
-      ]
+      ],
+      "id": "farm-smooth-silky-stone"
     },
     {
       "titulo": "VGR 9 → 20",
@@ -483,7 +456,8 @@
           "efeito": "faltam 82.736",
           "sinal": "-"
         }
-      ]
+      ],
+      "id": "nivel-vgr-9-20"
     }
   ],
   "fases": [
@@ -567,7 +541,10 @@
             }
           ],
           "acesso": "agora",
-          "requisito": "Dull Ember entregue",
+          "requisito": {
+            "texto": "Dull Ember entregue",
+            "item": "dull-ember"
+          },
           "rendimento": "ilimitado · 2.500 almas cada",
           "destaques": [
             "mais_rentavel"
@@ -610,7 +587,8 @@
           "efeito": "3 por nível de +4 a +6",
           "sinal": ""
         }
-      ]
+      ],
+      "id": "large-titanite-shard"
     },
     {
       "item": {
@@ -686,7 +664,8 @@
           "efeito": "6 no total (+7 a +9)",
           "sinal": ""
         }
-      ]
+      ],
+      "id": "titanite-chunk"
     },
     {
       "item": {
@@ -774,7 +753,8 @@
           "efeito": "1",
           "sinal": ""
         }
-      ]
+      ],
+      "id": "titanite-slab"
     },
     {
       "item": {
@@ -870,7 +850,8 @@
           "efeito": "1 sorteada entre 22",
           "sinal": ""
         }
-      ]
+      ],
+      "id": "smooth-silky-stone"
     },
     {
       "item": {
@@ -899,7 +880,10 @@
             }
           ],
           "acesso": "agora",
-          "requisito": "ter Smooth & Silky Stone",
+          "requisito": {
+            "texto": "ter Smooth & Silky Stone",
+            "item": "smooth-silky-stone"
+          },
           "rendimento": "sorteio: 1 de 22 recompensas",
           "destaques": [
             "mais_cedo",
@@ -943,7 +927,8 @@
           "efeito": "+161 mágico no +10",
           "sinal": "+"
         }
-      ]
+      ],
+      "id": "magic-stone"
     },
     {
       "item": {
@@ -995,7 +980,8 @@
           "efeito": "libera no McDuff",
           "sinal": "+"
         }
-      ]
+      ],
+      "id": "dull-ember"
     },
     {
       "item": {
@@ -1032,7 +1018,8 @@
           "efeito": "Straid",
           "sinal": "+"
         }
-      ]
+      ],
+      "id": "ruin-sentinel-soul"
     },
     {
       "item": {
@@ -1069,7 +1056,8 @@
           ]
         }
       ],
-      "dados": []
+      "dados": [],
+      "id": "heavy-homing-soul-arrow"
     },
     {
       "item": {
@@ -1107,7 +1095,8 @@
           "efeito": "+5",
           "sinal": "+"
         }
-      ]
+      ],
+      "id": "ring-of-knowledge"
     },
     {
       "item": {
@@ -1151,7 +1140,8 @@
           "rendimento": "1"
         }
       ],
-      "dados": []
+      "dados": [],
+      "id": "great-heavy-soul-arrow"
     },
     {
       "item": {
@@ -1202,7 +1192,8 @@
           "efeito": "",
           "sinal": "+"
         }
-      ]
+      ],
+      "id": "lizard-staff"
     },
     {
       "item": {
@@ -1247,7 +1238,8 @@
           "efeito": "Ornifex",
           "sinal": "+"
         }
-      ]
+      ],
+      "id": "old-paledrake-soul"
     },
     {
       "item": {
@@ -1291,7 +1283,70 @@
           "efeito": "faltam 8 FOR",
           "sinal": "-"
         }
-      ]
+      ],
+      "id": "moonlight-greatsword"
+    },
+    {
+      "id": "heavy-soul-arrow",
+      "item": {
+        "tipo": "item",
+        "nome": "Heavy Soul Arrow",
+        "link": "https://darksouls2.wiki.fextralife.com/Heavy+Soul+Arrow",
+        "icone": "https://static0.fextralifeimages.com/file/darksouls2/f/f4/Heavy_soul_arrow.png"
+      },
+      "fonte": "https://darksouls2.wiki.fextralife.com/Heavy+Soul+Arrow",
+      "fontes": [
+        {
+          "tipo": "compra",
+          "fluxo": [
+            {
+              "tipo": "npc",
+              "nome": "Carhillion of the Fold",
+              "link": "https://darksouls2.wiki.fextralife.com/Carhillion+of+the+Fold",
+              "icone": "https://static0.fextralifeimages.com/file/darksouls2/a/a1/Carhillionframe.png",
+              "sub": "2.000 almas"
+            }
+          ],
+          "acesso": "agora",
+          "requisito": "INT 12",
+          "rendimento": "1",
+          "destaques": [
+            "mais_cedo"
+          ]
+        }
+      ],
+      "dados": []
+    },
+    {
+      "id": "soul-spear",
+      "item": {
+        "tipo": "item",
+        "nome": "Soul Spear",
+        "link": "https://darksouls2.wiki.fextralife.com/Soul+Spear",
+        "icone": "https://static0.fextralifeimages.com/file/darksouls2/c/cb/Soul_spear.png"
+      },
+      "fonte": "https://darksouls2.wiki.fextralife.com/Soul+Spear",
+      "fontes": [
+        {
+          "tipo": "compra",
+          "fluxo": [
+            {
+              "tipo": "npc",
+              "nome": "Grave Warden Agdayne",
+              "link": "https://darksouls2.wiki.fextralife.com/Grave+Warden+Agdayne",
+              "icone": "https://static0.fextralifeimages.com/file/darksouls2/0/0e/Agdayneframe.png",
+              "sub": "12.000 almas"
+            }
+          ],
+          "acesso": "tarde",
+          "requisito": "INT 40 · Undead Crypt",
+          "rendimento": "1",
+          "destaques": [
+            "mais_cedo"
+          ]
+        }
+      ],
+      "dados": []
     }
   ],
   "comparacao": [
@@ -1422,6 +1477,11 @@
     },
     {
       "titulo": "Tabelas do jogo (ShopLineupParam, ReinforceCostParam, ItemParam)",
+      "url": "",
+      "data": "2026-10-07"
+    },
+    {
+      "titulo": "Tabelas do jogo (SpellParam, PlayerDamageParam, PhysicalStatsPerLevelStatValuesParam)",
       "url": "",
       "data": "2026-10-07"
     }
@@ -2058,5 +2118,228 @@
       "detalhe": "feitiço: fórmula ainda não validada",
       "por_causa": []
     }
-  ]
+  ],
+  "agora": {
+    "acoes": [
+      "equipar-trocar-anel",
+      "explorar-libertar-o-straid",
+      "compra-large-titanite-shard-1"
+    ],
+    "almas": 2500,
+    "faltam": [
+      {
+        "tipo": "item",
+        "nome": "Large Titanite Shard",
+        "link": "https://darksouls2.wiki.fextralife.com/Large+Titanite+Shard",
+        "icone": "https://static0.fextralifeimages.com/file/darksouls2/6/62/Large_Titanite_Shard.png",
+        "sub": "1 pro +6"
+      }
+    ]
+  },
+  "feiticos": {
+    "catalisador": {
+      "tipo": "item",
+      "nome": "Sorcerer's Staff",
+      "link": "https://darksouls2.wiki.fextralife.com/Sorcerer%27s+Staff",
+      "icone": "https://static0.fextralifeimages.com/file/darksouls2/thumb/6/63/Sorcerer%27s_Staff.png/50px-Sorcerer%27s_Staff.png",
+      "sub": "+2 · menu 356",
+      "tem": true
+    },
+    "ar": {
+      "magico": 190,
+      "sombrio": 166
+    },
+    "slots": {
+      "total": 6,
+      "faixa": 3
+    },
+    "lista": [
+      {
+        "id": "soul-arrow",
+        "no": {
+          "tipo": "item",
+          "nome": "Soul Arrow",
+          "link": "https://darksouls2.wiki.fextralife.com/Soul+Arrow",
+          "icone": "https://static0.fextralifeimages.com/file/darksouls2/0/0d/Soul_arrow.png",
+          "tem": true
+        },
+        "estado": "equipado",
+        "elemento": "mágico",
+        "ar": 161,
+        "usos": 32,
+        "slots": 1,
+        "requisito": "INT 10",
+        "requisito_ok": true
+      },
+      {
+        "id": "great-soul-arrow",
+        "no": {
+          "tipo": "item",
+          "nome": "Great Soul Arrow",
+          "link": "https://darksouls2.wiki.fextralife.com/Great+Soul+Arrow",
+          "icone": "https://static0.fextralifeimages.com/file/darksouls2/0/06/Great_soul_arrow.png",
+          "tem": true
+        },
+        "estado": "equipado",
+        "elemento": "mágico",
+        "ar": 170,
+        "usos": 16,
+        "slots": 1,
+        "requisito": "INT 14",
+        "requisito_ok": true
+      },
+      {
+        "id": "soul-spear-barrage",
+        "no": {
+          "tipo": "item",
+          "nome": "Soul Spear Barrage",
+          "link": "https://darksouls2.wiki.fextralife.com/Soul+Spear+Barrage",
+          "icone": "https://static0.fextralifeimages.com/file/darksouls2/d/df/Soul_spear_barrage.png",
+          "sub": "por lança",
+          "tem": true
+        },
+        "estado": "equipado",
+        "elemento": "mágico",
+        "ar": 38,
+        "usos": 3,
+        "slots": 1,
+        "requisito": "INT 17",
+        "requisito_ok": true
+      },
+      {
+        "id": "magic-weapon",
+        "no": {
+          "tipo": "item",
+          "nome": "Magic Weapon",
+          "link": "https://darksouls2.wiki.fextralife.com/Magic+Weapon",
+          "icone": "https://static0.fextralifeimages.com/file/darksouls2/5/54/Magic_weapon.png",
+          "tem": true
+        },
+        "estado": "equipado",
+        "elemento": "buff",
+        "ar": "—",
+        "usos": 9,
+        "slots": 1,
+        "requisito": "INT 10",
+        "requisito_ok": true
+      },
+      {
+        "id": "fireball",
+        "no": {
+          "tipo": "item",
+          "nome": "Fireball",
+          "link": "https://darksouls2.wiki.fextralife.com/Fireball",
+          "icone": "https://static0.fextralifeimages.com/file/darksouls2/a/ae/Fireball.png",
+          "sub": "Pyromancy Flame · 204",
+          "tem": true
+        },
+        "estado": "equipado",
+        "elemento": "fogo",
+        "ar": 153,
+        "usos": 9,
+        "slots": 1,
+        "requisito": "—",
+        "requisito_ok": true
+      },
+      {
+        "id": "great-heavy-soul-arrow",
+        "no": {
+          "tipo": "item",
+          "nome": "Great Heavy Soul Arrow",
+          "link": "https://darksouls2.wiki.fextralife.com/Great+Heavy+Soul+Arrow",
+          "icone": "https://static0.fextralifeimages.com/file/darksouls2/e/e6/Great_heavy_soul_arrow.png"
+        },
+        "estado": "sugerido",
+        "elemento": "mágico",
+        "ar": 209,
+        "usos": 11,
+        "slots": 1,
+        "requisito": "INT 16",
+        "requisito_ok": true
+      },
+      {
+        "id": "heavy-soul-arrow",
+        "no": {
+          "tipo": "item",
+          "nome": "Heavy Soul Arrow",
+          "link": "https://darksouls2.wiki.fextralife.com/Heavy+Soul+Arrow",
+          "icone": "https://static0.fextralifeimages.com/file/darksouls2/f/f4/Heavy_soul_arrow.png"
+        },
+        "estado": "sugerido",
+        "elemento": "mágico",
+        "ar": 180,
+        "usos": 22,
+        "slots": 1,
+        "requisito": "INT 12",
+        "requisito_ok": true
+      },
+      {
+        "id": "soul-spear",
+        "no": {
+          "tipo": "item",
+          "nome": "Soul Spear",
+          "link": "https://darksouls2.wiki.fextralife.com/Soul+Spear",
+          "icone": "https://static0.fextralifeimages.com/file/darksouls2/c/cb/Soul_spear.png"
+        },
+        "estado": "sugerido",
+        "elemento": "mágico",
+        "ar": 341,
+        "usos": 2,
+        "slots": 1,
+        "requisito": "INT 40 · falta 14",
+        "requisito_ok": false
+      },
+      {
+        "id": "heavy-homing-soul-arrow",
+        "no": {
+          "tipo": "item",
+          "nome": "Heavy Homing Soul Arrow",
+          "link": "https://darksouls2.wiki.fextralife.com/Heavy+Homing+Soul+Arrow",
+          "icone": "https://static0.fextralifeimages.com/file/darksouls2/2/23/Heavy_homing_soul_arrow.png",
+          "sub": "teleguiado"
+        },
+        "estado": "sugerido",
+        "elemento": "mágico",
+        "ar": "—",
+        "usos": 9,
+        "slots": 1,
+        "requisito": "INT 35 · falta 9",
+        "requisito_ok": false
+      },
+      {
+        "id": "shockwave",
+        "no": {
+          "tipo": "item",
+          "nome": "Shockwave",
+          "link": "https://darksouls2.wiki.fextralife.com/Shockwave",
+          "icone": "https://static0.fextralifeimages.com/file/darksouls2/6/65/Shockwave.png",
+          "tem": true
+        },
+        "estado": "tem",
+        "elemento": "—",
+        "ar": "—",
+        "usos": 3,
+        "slots": 1,
+        "requisito": "INT 13",
+        "requisito_ok": true
+      },
+      {
+        "id": "yearn",
+        "no": {
+          "tipo": "item",
+          "nome": "Yearn",
+          "link": "https://darksouls2.wiki.fextralife.com/Yearn",
+          "icone": "https://static0.fextralifeimages.com/file/darksouls2/b/bf/Yearn.png",
+          "tem": true
+        },
+        "estado": "tem",
+        "elemento": "—",
+        "ar": "—",
+        "usos": 4,
+        "slots": 1,
+        "requisito": "INT 19",
+        "requisito_ok": true
+      }
+    ]
+  }
 }

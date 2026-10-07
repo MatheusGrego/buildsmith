@@ -11,6 +11,10 @@ Dados do usuário em `~/.buildsmith/` (crie as pastas se faltarem): `config.json
 
 ## Passos
 
+0. **Fila da página** (antes de tudo, se `config.json` tiver `paginas.<jogo>.<personagem>`): carregue a ferramenta `ArtifactData` (ToolSearch) e, com a URL da página, faça `list` de `pedidos`, `feitos` e `get` de `config/feiticos`. Esse banco fica no servidor junto da página: qualquer chat vê a mesma fila.
+   - `pedidos` com `estado: "na_fila"`: pesquise cada `texto` (wiki-cache + ds2data), crie/atualize a entrada em `itens` (com `id` = slug do item) e, **depois de publicar**, faça `update` do pedido com `estado: "respondido"`, `item_id` e `respondido_em`. Pedido sem resposta com fonte: `estado: "respondido"`, `item_id: null` e diga no chat.
+   - `feitos` com `marcado: true`: confirme pelo save quando der (chefe `derrotado`, compra registrada, item no inventário, upgrade feito) e grave `confirmado: true/false`. Passo marcado sai do plano mesmo sem confirmação.
+   - `config/feiticos.selecionados`: é a sintonia que o jogador quer; use nas sugestões e marque esses feitiços.
 1. **Ficha:** rode o `snapshot` da skill `ds2-save` (`<pasta>/../ds2-save/scripts/ds2save.py`). Se `config.json` tiver `slots.ds2`, passe `--slot`. Erro de "mais de um personagem": rode `slots`, pergunte, grave a escolha em `config.json`.
 2. **Histórico e eventos:** grave a saída em `history/ds2/<personagem>/<AAAA-MM-DDTHH-MM>.json`. Compare com o arquivo anterior: níveis, atributos, itens novos, upgrades, chefes que passaram a `derrotado`, compras novas. Isso vira `mudancas` (vazio na primeira vez).
    - **Aprender evento:** se o `pedido` conta algo que aconteceu ("libertei o Straid", "abri a porta X"), rode `ds2save.py flags-diff --antes <snapshot anterior> --depois <atual>`. Se `ligou` tiver de 1 a 20 flags, grave `{"nome": "<evento>", "flags": <ligou>, "data": "<hoje>"}` em `~/.buildsmith/flags/ds2.json` e diga quantas flags foram associadas. Se vier vazio ou maior que 20, explique que precisa ler o save no menu **antes** e **depois** do evento.
@@ -39,6 +43,9 @@ Dados do usuário em `~/.buildsmith/` (crie as pastas se faltarem): `config.json
    - **Fontes de cada item** (`itens[].fontes`): junte loja/troca (`ds2data`) + baús, drops, farms e recompensas (`wiki-cache`). Para cada fonte: `tipo`, `fluxo`, `requisito`, `acesso` (pela área da fonte, usando `ds2data acesso`), `rendimento` (quanto rende e se repete: "ilimitado", "1 por Bonfire Ascetic", "~1 a cada 4"). Ordene `agora → em_breve → tarde`. Marque **uma** `mais_cedo` (a primeira que o jogador consegue pegar) e no máximo **uma** `mais_rentavel` (a melhor repetível: estoque ilimitado, farm infinito, respawn com Bonfire Ascetic). Item que é ingrediente de outro (ex.: Smooth & Silky Stone para a Magic Stone via Dyna & Tillo) ganha entrada própria.
    - Defina `alvo_stats` a partir do perfil; `fases` de 1 atributo cada (com `atributo`), sobrevivência primeiro quando VGR < 20.
    - `progresso`: chefes (derrotados primeiro), compras e eventos aprendidos.
+   - `feiticos`: `ds2calc.py catalisador` (AR por elemento do catalisador equipado) e `ds2calc.py feitico` para cada feitiço que o jogador tem e para os sugeridos (AR calculado, usos, slots, requisito). Feitiço sem dano direto (buff, teleguiado) = `"—"`. Sugira o melhor por slot e marque `requisito_ok: false` quando faltar INT/FÉ. `slots.total` = `ds2calc.attunement(ATN)`.
+   - `agora`: até 3 ids de passo (o que dá para fazer já, sem farm), `almas` somadas dessas ações e `faltam` (materiais/itens que impedem o próximo upgrade ou compra).
+   - Todo passo e item tem `id` (slug). Requisito de fonte que é um item do plano vira `{"texto": "...", "item": "<id>"}`; requisito sem item fica texto (a página mostra o botão Pesquisar).
    - `dano`: arma da mão direita com atributos atuais (`agora`) × cada mudança que afeta AR (fase de DEX/STR, próximo upgrade, +10), com `por_causa` mostrando materiais e ferreiro. Catalisador/feitiço: `"—"`.
    - `comparacao`: builds do mesmo arquétipo via `wiki-cache`; respeite `travados` e `nao_migrar`.
 5. **Página:** siga a skill `build-page`.

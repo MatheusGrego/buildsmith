@@ -124,6 +124,42 @@ td .arrow { font-size: 16px; }
 .grupo h3 small { font: 13px var(--body); color: var(--text); }
 td.selos { white-space: nowrap; }
 td.selos .estado + .estado { margin-left: 4px; }
+
+/* Fogueira: checkbox no estilo DS2 — apagada (cinza) = pendente, acesa (dourada com brasa) = feito */
+.fogueira { flex: none; width: 34px; height: 34px; padding: 0; border: 1px solid var(--line); background: var(--th); cursor: pointer; display: grid; place-items: center; }
+.fogueira img { width: 24px; height: 24px; object-fit: contain; filter: grayscale(1) brightness(0.55); transition: filter 0.2s ease-out; }
+.fogueira:hover img { filter: grayscale(0.4) brightness(0.85); }
+.fogueira[aria-pressed="true"] { border-color: var(--pos); }
+.fogueira[aria-pressed="true"] img { filter: drop-shadow(0 0 5px rgba(240, 160, 60, 0.75)); }
+.fogueira:focus-visible { outline: 2px solid var(--link); outline-offset: 2px; }
+.fogueira[hidden] { display: none; }
+.fogueira:disabled { cursor: progress; }
+@media (prefers-reduced-motion: reduce) { .fogueira img { transition: none; } }
+.confirmado { font-size: 12px; color: var(--pos); }
+
+/* Painel Agora */
+.agora { display: grid; gap: 10px; padding: 14px 16px; border: 1px solid var(--line); background: var(--th); }
+.agora h2 { border: 0; padding: 0; font-size: 22px; }
+.agora-acao { display: flex; align-items: center; gap: 10px 12px; flex-wrap: wrap; }
+.agora-acao .step-title { font-size: 16px; text-decoration: none; }
+.agora-resumo { display: flex; flex-wrap: wrap; gap: 8px 18px; align-items: center; font-size: 13px; }
+
+/* Pesquisar e fila */
+.pesq { font: 12px var(--display); letter-spacing: 0.04em; padding: 1px 8px; border: 1px solid var(--link); background: none; color: var(--link); cursor: pointer; margin-left: 6px; white-space: nowrap; }
+.pesq:hover { background: var(--panel); }
+.pesq:disabled { cursor: default; border-color: var(--line); color: var(--text); }
+.pesq:focus-visible { outline: 2px solid var(--link); outline-offset: 2px; }
+.copiado { font: 12px var(--body); color: var(--text); margin-left: 6px; user-select: all; }
+.fila-form { display: flex; gap: 8px; flex-wrap: wrap; }
+.fila-form input { flex: 1 1 16rem; min-width: 0; background: var(--td); border: 1px solid var(--line); color: var(--head); padding: 6px 10px; font: 14px var(--body); }
+.fila-form input:focus-visible { outline: 2px solid var(--link); outline-offset: 1px; }
+.fila-form button { font: 14px var(--display); padding: 6px 14px; border: 1px solid var(--link); background: var(--th); color: var(--head); cursor: pointer; }
+details.mais summary { cursor: pointer; color: var(--link); font: 13px var(--display); margin-top: 6px; }
+details.mais[open] summary { margin-bottom: 6px; }
+.req-link { color: var(--link); }
+.sr-only { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
+.slots { font: 15px var(--display); color: var(--head); }
+.slots .neg, .slots .pos { font-family: var(--body); }
 </style>
 
 <main class="page"><div class="panel" id="app"><p class="empty">Carregando o plano…</p></div></main>
@@ -135,6 +171,17 @@ td.selos .estado + .estado { margin-left: 4px; }
                   ["compra", "Compras"], ["upgrade", "Upgrades"], ["farm", "Farms"], ["nivel", "Nível"]];
   const ACESSO = { agora: "Agora", em_breve: "Em breve", tarde: "Tarde" };
   const DESTAQUE = { mais_cedo: "Mais cedo", mais_rentavel: "Mais rentável" };
+  const ESTADO_FEITICO = { equipado: "Equipado", tem: "Tem", sugerido: "Sugerido" };
+  const state = { db: null, plano: null, feitos: {}, pedidos: {}, selecao: null };
+  const slug = (text) => String(text).normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "").slice(0, 180) || "pedido";
+  const fogueira = (attr, value, label) => `<button class="fogueira" type="button" ${attr}="${esc(value)}" aria-pressed="false" aria-label="${esc(label)}" title="${esc(label)}" hidden><img src="icons/fogueira.png" alt=""></button>`;
+  const pesq = (texto, origem) => `<button class="pesq" type="button" data-q="${esc(texto)}" data-origem="${esc(origem)}">Pesquisar</button>`;
+  function requisito(req, origem) {
+    if (!req) return "—";
+    if (typeof req === "object" && req.item) return `<a class="req-link" href="#item-${esc(req.item)}" data-goto-item="${esc(req.item)}">${esc(req.texto)}</a>`;
+    const text = typeof req === "object" ? req.texto : req;
+    return `${esc(text)}${pesq(text, origem)}`;
+  }
   const fmt = new Intl.NumberFormat("pt-BR");
   const esc = (v) => String(v ?? "").replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
   const ext = (url, inner, cls = "") => `<a class="${cls}" href="${esc(url)}" target="_blank" rel="noopener">${inner}</a>`;
@@ -191,7 +238,7 @@ td.selos .estado + .estado { margin-left: 4px; }
     return `<section><h2>Próximos passos</h2>${groups.map(([titulo, list]) => `<div class="grupo">
       <h3>${titulo}<small>${list.length}</small></h3>
       <ol class="steps">${list.map((s, i) => `<li class="step">
-        <div class="step-head"><span class="step-no">${i + 1}</span><span class="step-title">${esc(s.titulo)}</span></div>
+        <div class="step-head" id="passo-${esc(s.id)}">${fogueira("data-passo", s.id, "Marcar como feito")}<span class="step-no">${i + 1}</span><span class="step-title">${esc(s.titulo)}</span><span class="confirmado" data-confirma="${esc(s.id)}"></span></div>
         ${flow(s.fluxo)}
         ${rows(s.dados, ["Dado", "Agora", "Depois", "Efeito"])}
       </li>`).join("")}</ol>
@@ -230,16 +277,22 @@ td.selos .estado + .estado { margin-left: 4px; }
   function items(p) {
     const selo = (text, cls) => `<span class="estado ${cls}">${esc(text)}</span>`;
     const list = p.itens.map((it) => {
-      const lines = (it.fontes || []).map((f, i) => [
+      const line = (f, i) => [
         String(i + 1),
         flow(f.fluxo),
-        esc(f.requisito || "—"),
+        requisito(f.requisito, it.item.nome),
         selo(ACESSO[f.acesso] || f.acesso, f.acesso === "agora" ? "feito" : f.acesso === "tarde" ? "apagado" : ""),
         esc(f.rendimento || "—"),
         (f.destaques || []).map((d) => selo(DESTAQUE[d] || d, "destaque")).join("") || "",
-      ]);
-      const table = grid(["#", "Como", "Requisito", "Acesso", "Rendimento", "Destaque"], lines).replace(/<td>(<span class="estado)/g, '<td class="selos">$1');
-      return `<div class="block">
+      ];
+      const heads = ["#", "Como", "Requisito", "Acesso", "Rendimento", "Destaque"];
+      const fontes = (it.fontes || []).map((f, i) => [f, i]);
+      const top = fontes.filter(([f]) => (f.destaques || []).length);
+      const rest = fontes.filter(([f]) => !(f.destaques || []).length);
+      const fix = (html) => html.replace(/<td>(<span class="estado)/g, '<td class="selos">$1');
+      const table = fix(grid(heads, (top.length ? top : fontes).map(([f, i]) => line(f, i))))
+        + (top.length && rest.length ? `<details class="mais"><summary>Ver todas as fontes (${fontes.length})</summary>${fix(grid(heads, rest.map(([f, i]) => line(f, i))))}</details>` : "");
+      return `<div class="block" id="item-${esc(it.id)}">
         <div class="block-head">${node(it.item)}${it.fonte ? ext(it.fonte, "fonte", "muted") : ""}</div>
         ${table}
         ${rows(it.dados, ["Dado", "Agora", "Com o item", "Efeito"])}
@@ -292,6 +345,53 @@ td.selos .estado + .estado { margin-left: 4px; }
     return `<section><h2>Dano<small>AR físico pelas regras do jogo</small></h2>${grid(["Arma", "Agora", "Depois", "Diferença", "Mudança", "Por causa de"], lines, [1, 2, 3])}</section>`;
   }
 
+  function nowPanel(p) {
+    const a = p.agora;
+    if (!a) return "";
+    const byId = Object.fromEntries(p.passos.map((s) => [s.id, s]));
+    const acoes = a.acoes.map((id) => byId[id]).filter(Boolean).map((s) => `<div class="agora-acao">
+      ${fogueira("data-passo", s.id, "Marcar como feito")}
+      <a class="step-title" href="#passo-${esc(s.id)}" data-goto-passo="${esc(s.id)}">${esc(s.titulo)}</a>
+      ${flow(s.fluxo)}
+    </div>`).join("");
+    const faltam = (a.faltam || []).length ? `<span>Faltam:</span>${flow(a.faltam)}` : "";
+    return `<section class="agora" aria-label="Próximas ações"><h2>Agora</h2>${acoes}
+      <div class="agora-resumo">${typeof a.almas === "number" ? `<span>Almas pra essas ações: <span class="neg">${fmt.format(a.almas)}</span></span>` : ""}${faltam}</div>
+    </section>`;
+  }
+
+  function spells(p) {
+    const f = p.feiticos;
+    if (!f) return '<section><h2>Feitiços</h2><p class="empty">Este plano não tem feitiços.</p></section>';
+    const ar = Object.entries(f.ar || {}).map(([k, v]) => `${k} ${fmt.format(v)}`).join(" · ");
+    const lines = f.lista.map((sp) => [
+      fogueira("data-feitico", sp.id, "Selecionar para sintonizar"),
+      node(sp.no),
+      `<span class="estado${sp.estado === "equipado" ? " feito" : sp.estado === "sugerido" ? " destaque" : ""}">${esc(ESTADO_FEITICO[sp.estado] || sp.estado)}</span>`,
+      esc(sp.elemento || "—"),
+      typeof sp.ar === "number" ? fmt.format(sp.ar) : "—",
+      fmt.format(sp.usos),
+      fmt.format(sp.slots),
+      `<span class="${sp.requisito_ok ? "" : "neg"}">${esc(sp.requisito || "—")}</span>`,
+    ]);
+    return `<section><h2>Feitiços<small>AR calculado pelas regras do jogo</small></h2>
+      <div class="block-head">${node(f.catalisador)}<span class="muted">AR do catalisador: ${esc(ar)}</span></div>
+      <p class="slots">Slots selecionados: <span id="slots-usados">—</span> de ${fmt.format(f.slots.total)}</p>
+      ${grid(["", "Feitiço", "Estado", "Elemento", "AR", "Usos", "Slots", "Requisito"], lines, [4, 5, 6]).replace(/<td>(<span class="estado)/g, '<td class="selos">$1')}
+    </section>`;
+  }
+
+  function queue() {
+    return `<section><h2>Fila de pesquisa<small>respondida no próximo /buildsmith:build</small></h2>
+      <form class="fila-form" id="fila-form">
+        <label class="sr-only" for="fila-texto">O que você quer saber</label>
+        <input id="fila-texto" type="text" maxlength="160" placeholder="Onde farmar Bonfire Ascetic" autocomplete="off">
+        <button type="submit">Pesquisar</button>
+      </form>
+      <div id="fila-lista"><p class="empty">Nenhum pedido ainda.</p></div>
+    </section>`;
+  }
+
   function sources(p) {
     return `<section><h2>Fontes</h2>${p.fontes.length ? `<ul class="sources">${p.fontes.map((f) => `<li>${f.url ? ext(f.url, esc(f.titulo)) : esc(f.titulo)}${f.data ? ` <span class="muted">· ${esc(f.data)}</span>` : ""}</li>`).join("")}</ul>` : '<p class="empty">Sem fontes.</p>'}</section>`;
   }
@@ -305,17 +405,20 @@ td.selos .estado + .estado { margin-left: 4px; }
       { id: "passos", label: "Passos", count: p.passos.length, html: steps(p) },
       { id: "progresso", label: "Progresso", count: p.progresso ? p.progresso.chefes.filter((c) => c.estado === "derrotado").length : null, html: progress(p) },
       { id: "dano", label: "Dano", count: (p.dano || []).length || null, html: damage(p) },
+      { id: "feiticos", label: "Feitiços", count: p.feiticos ? p.feiticos.lista.length : null, html: spells(p) },
       { id: "atributos", label: "Atributos", count: null, html: stats(p) },
       { id: "fases", label: "Fases", count: p.fases.length, html: phases(p) },
       { id: "onde", label: "Onde pegar", count: p.itens.length, html: items(p) },
       { id: "builds", label: "Builds", count: p.comparacao.length, html: builds(p) },
+      { id: "fila", label: "Fila", count: null, html: queue() },
       { id: "fontes", label: "Fontes", count: p.fontes.length, html: sources(p) },
     ];
     let saved = null;
     try { saved = localStorage.getItem(KEY); } catch (e) { saved = null; }
     const fromHash = location.hash.slice(1);
     const start = [fromHash, saved, "passos"].find((id) => tabs.some((t) => t.id === id));
-    app.innerHTML = top(p)
+    state.plano = p;
+    app.innerHTML = top(p) + nowPanel(p)
       + `<nav class="tabs" role="tablist" aria-label="Seções">${tabs.map((t) => `<button class="tab" role="tab" id="aba-${t.id}" aria-controls="painel-${t.id}" aria-selected="${t.id === start}" data-tab="${t.id}">${t.label}${t.count ? `<span class="count">${t.count}</span>` : ""}</button>`).join("")}</nav>`
       + tabs.map((t) => `<div class="tab-panel" role="tabpanel" id="painel-${t.id}" aria-labelledby="aba-${t.id}"${t.id === start ? "" : " hidden"}>${t.html}</div>`).join("");
     app.querySelector(".tabs").addEventListener("click", (ev) => {
@@ -339,9 +442,124 @@ td.selos .estado + .estado { margin-left: 4px; }
     try { localStorage.setItem(KEY, id); } catch (e) { /* armazenamento bloqueado: só não lembra a aba */ }
     if (history.replaceState) history.replaceState(null, "", `#${id}`);
   }
+  function goTo(tab, targetId) {
+    select(tab);
+    const el = document.getElementById(targetId);
+    if (el) el.scrollIntoView({ behavior: "smooth", block: "start" });
+  }
+
+  function selectedSpells() {
+    if (state.selecao) return state.selecao;
+    return (state.plano.feiticos ? state.plano.feiticos.lista : []).filter((sp) => sp.estado === "equipado").map((sp) => sp.id);
+  }
+
+  function applyState() {
+    app.querySelectorAll("[data-passo]").forEach((b) => {
+      const f = state.feitos[b.dataset.passo];
+      b.setAttribute("aria-pressed", String(Boolean(f && f.marcado)));
+    });
+    app.querySelectorAll("[data-confirma]").forEach((el) => {
+      const f = state.feitos[el.dataset.confirma];
+      el.textContent = f && f.marcado ? (f.confirmado === true ? "confirmado pelo save" : f.confirmado === false ? "o save ainda não mostra" : "confirma no próximo /build") : "";
+    });
+    const chosen = selectedSpells();
+    app.querySelectorAll("[data-feitico]").forEach((b) => b.setAttribute("aria-pressed", String(chosen.includes(b.dataset.feitico))));
+    const used = (state.plano.feiticos ? state.plano.feiticos.lista : []).filter((sp) => chosen.includes(sp.id)).reduce((n, sp) => n + sp.slots, 0);
+    const slotsEl = document.getElementById("slots-usados");
+    if (slotsEl && state.plano.feiticos) slotsEl.innerHTML = `<span class="${used > state.plano.feiticos.slots.total ? "neg" : "pos"}">${used}</span>`;
+    app.querySelectorAll(".pesq").forEach((b) => {
+      const ped = state.pedidos[slug(b.dataset.q)];
+      if (!state.db) return;
+      b.disabled = Boolean(ped);
+      b.textContent = !ped ? "Pesquisar" : ped.estado === "respondido" ? "Respondido" : "Na fila";
+    });
+    const list = Object.values(state.pedidos).sort((a, b) => String(b.criado_em).localeCompare(String(a.criado_em)));
+    const box = document.getElementById("fila-lista");
+    if (box && list.length) {
+      box.innerHTML = grid(["Pedido", "De onde", "Estado", "Resposta"], list.map((ped) => [
+        esc(ped.texto), esc(ped.origem || "—"),
+        `<span class="estado${ped.estado === "respondido" ? " feito" : ""}">${ped.estado === "respondido" ? "Respondido" : "Na fila"}</span>`,
+        ped.item_id ? `<a class="req-link" href="#item-${esc(ped.item_id)}" data-goto-item="${esc(ped.item_id)}">ver em Onde pegar</a>` : "—",
+      ])).replace(/<td>(<span class="estado)/g, '<td class="selos">$1');
+    }
+    const tab = document.querySelector('[data-tab="fila"]');
+    const open = list.filter((ped) => ped.estado !== "respondido").length;
+    if (tab) tab.innerHTML = `Fila${open ? `<span class="count">${open}</span>` : ""}`;
+  }
+
+  async function enqueue(texto, origem, button) {
+    const text = texto.trim();
+    if (!text) return;
+    if (!state.db) {
+      const cmd = `/buildsmith:build ds2 onde pegar: ${text}`;
+      const note = document.createElement("span");
+      note.className = "copiado";
+      try { await navigator.clipboard.writeText(cmd); note.textContent = "Copiado: cole no Claude Code"; }
+      catch (e) { note.textContent = cmd; }
+      (button || document.getElementById("fila-form")).after(note);
+      return;
+    }
+    const id = slug(text);
+    if (state.pedidos[id]) return;
+    if (button) button.disabled = true;
+    try {
+      await state.db.doc(`pedidos/${id}`).set({ texto: text, origem: origem || "fila", estado: "na_fila", criado_em: new Date().toISOString() });
+    } catch (e) {
+      if (button) button.disabled = false;
+    }
+  }
+
+  function wire() {
+    app.addEventListener("click", async (ev) => {
+      const passo = ev.target.closest("[data-passo]");
+      if (passo && state.db) {
+        const id = passo.dataset.passo;
+        const cur = state.feitos[id];
+        passo.disabled = true;
+        try { await state.db.doc(`feitos/${id}`).set({ marcado: !(cur && cur.marcado), em: new Date().toISOString(), confirmado: null }); }
+        finally { passo.disabled = false; }
+        return;
+      }
+      const spell = ev.target.closest("[data-feitico]");
+      if (spell && state.db) {
+        const chosen = selectedSpells();
+        const id = spell.dataset.feitico;
+        const next = chosen.includes(id) ? chosen.filter((x) => x !== id) : [...chosen, id];
+        spell.disabled = true;
+        try { await state.db.doc("config/feiticos").set({ selecionados: next, em: new Date().toISOString() }); }
+        finally { spell.disabled = false; }
+        return;
+      }
+      const ask = ev.target.closest(".pesq");
+      if (ask) { enqueue(ask.dataset.q, ask.dataset.origem, ask); return; }
+      const item = ev.target.closest("[data-goto-item]");
+      if (item) { ev.preventDefault(); goTo("onde", `item-${item.dataset.gotoItem}`); return; }
+      const step = ev.target.closest("[data-goto-passo]");
+      if (step) { ev.preventDefault(); goTo("passos", `passo-${step.dataset.gotoPasso}`); }
+    });
+    app.addEventListener("submit", (ev) => {
+      if (ev.target.id !== "fila-form") return;
+      ev.preventDefault();
+      const input = document.getElementById("fila-texto");
+      enqueue(input.value, "fila", null).then(() => { input.value = ""; });
+    });
+  }
+
+  async function connect() {
+    const use = window.claude && typeof window.claude.use === "function" ? window.claude.use.bind(window.claude) : null;
+    const db = use ? await use("db").catch(() => null) : null;
+    if (!db) { applyState(); return; }
+    state.db = db;
+    app.querySelectorAll(".fogueira").forEach((b) => { b.hidden = false; });
+    const fail = () => { /* sem banco: a página segue só leitura */ };
+    db.collection("feitos").onSnapshot((snap) => { state.feitos = Object.fromEntries(snap.docs.map((d) => [d.id, d.data()])); applyState(); }, fail);
+    db.collection("pedidos").onSnapshot((snap) => { state.pedidos = Object.fromEntries(snap.docs.map((d) => [d.id, d.data()])); applyState(); }, fail);
+    db.doc("config/feiticos").onSnapshot((snap) => { state.selecao = snap.exists ? (snap.data().selecionados || []) : null; applyState(); }, fail);
+  }
+
   fetch("plano.json", { cache: "no-store" })
     .then((r) => { if (!r.ok) throw new Error(r.status); return r.json(); })
-    .then((p) => { render(p); fallbackIcons(app); })
+    .then((p) => { render(p); fallbackIcons(app); wire(); applyState(); connect(); })
     .catch(() => { app.innerHTML = '<p class="error">Não consegui ler o plano.json publicado junto com a página. Rode o /buildsmith:build de novo para republicar.</p>'; });
 })();
 </script>

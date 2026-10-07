@@ -92,10 +92,11 @@ def test_damage_value_must_be_int_or_dash():
     assert any("dano[0].depois" in p for p in validate_plano.validate(plano))
 
 
-def test_new_step_types_are_accepted():
-    plano = example()
-    assert {p["tipo"] for p in plano["passos"]} >= {"equipar", "explorar", "chefe", "troca", "compra", "upgrade", "farm", "nivel"}
-    assert validate_plano.validate(plano) == []
+def test_every_step_type_is_accepted():
+    for tipo in validate_plano.GRUPOS:
+        plano = example()
+        plano["passos"][0]["tipo"] = tipo
+        assert validate_plano.validate(plano) == [], tipo
 
 
 def test_item_sources_need_valid_access():
@@ -128,3 +129,32 @@ def test_owned_items_are_exempt_from_sources():
     plano = example()
     plano["passos"][0]["fluxo"].append({"tipo": "item", "nome": "Item Que Já Tenho", "tem": True})
     assert validate_plano.validate(plano) == []
+
+
+def test_steps_and_items_need_unique_ids():
+    plano = example()
+    plano["passos"][1]["id"] = plano["passos"][0]["id"]
+    assert any("id repetido" in p for p in validate_plano.validate(plano))
+    plano = example()
+    del plano["itens"][0]["id"]
+    assert any("itens[0] sem 'id'" in p for p in validate_plano.validate(plano))
+
+
+def test_requirement_link_must_point_to_item():
+    plano = example()
+    plano["itens"][0]["fontes"][0]["requisito"] = {"texto": "algo", "item": "nao-existe"}
+    assert any("nao-existe" in p for p in validate_plano.validate(plano))
+
+
+def test_now_panel_points_to_existing_steps():
+    plano = example()
+    assert plano["agora"]["acoes"]
+    plano["agora"]["acoes"] = ["passo-fantasma"]
+    assert any("passo-fantasma" in p for p in validate_plano.validate(plano))
+
+
+def test_spells_block_is_validated():
+    plano = example()
+    assert plano["feiticos"]["lista"]
+    plano["feiticos"]["lista"][0]["estado"] = "talvez"
+    assert any("feiticos.lista[0].estado" in p for p in validate_plano.validate(plano))
