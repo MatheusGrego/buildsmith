@@ -17,6 +17,11 @@
   --pos: #f0b54a;
   --neg: #6fa3d8;
   --track: #2b2b2b;
+  --dim: #7a7875;
+  --ember: #f0a03c;
+  --ember-glow: rgba(240, 160, 60, 0.55);
+  --ember-deep: #7a3d12;
+  --band: rgba(0, 0, 0, 0.78);
   --display: "Marcellus SC", "Palatino Linotype", "Book Antiqua", Georgia, serif;
   --body: "Helvetica Neue", Helvetica, Arial, sans-serif;
   color-scheme: dark;
@@ -118,7 +123,7 @@ td .arrow { font-size: 16px; }
 .estado { display: inline-block; font: 13px var(--display); letter-spacing: 0.04em; padding: 1px 10px; border: 1px solid var(--line); background: var(--th); color: var(--text); white-space: nowrap; }
 .estado.feito { border-color: var(--link); color: var(--head); }
 .estado.destaque { border-color: var(--pos); color: var(--pos); }
-.estado.apagado { color: #7a7875; }
+.estado.apagado { color: var(--dim); }
 .grupo { display: grid; gap: 4px; }
 .grupo h3 { font: 20px var(--display); color: var(--head); margin: 0; display: flex; align-items: baseline; gap: 10px; }
 .grupo h3 small { font: 13px var(--body); color: var(--text); }
@@ -160,9 +165,73 @@ details.mais[open] summary { margin-bottom: 6px; }
 .sr-only { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
 .slots { font: 15px var(--display); color: var(--head); }
 .slots .neg, .slots .pos { font-family: var(--body); }
+
+/* Ação (botão de menu do DS2): faixa dourada à esquerda, fogueira apagada que acende no hover */
+.acoes { display: flex; flex-wrap: wrap; gap: 8px 10px; }
+.acoes[hidden] { display: none; }
+.acao { display: inline-flex; align-items: center; gap: 8px; min-height: 38px; padding: 4px 14px 4px 8px; border: 1px solid var(--line); border-left: 2px solid var(--link); background: linear-gradient(90deg, rgba(171, 150, 111, 0.16), var(--th) 75%); color: var(--head); font: 15px var(--display); letter-spacing: 0.03em; cursor: pointer; }
+.acao img { width: 22px; height: 22px; object-fit: contain; filter: grayscale(1) brightness(0.7); transition: filter 0.2s ease-out; }
+.acao:hover:not(:disabled) { border-color: var(--link); }
+.acao:hover:not(:disabled) img { filter: drop-shadow(0 0 5px var(--ember-glow)); }
+.acao:focus-visible { outline: 2px solid var(--link); outline-offset: 2px; }
+.acao:disabled { cursor: default; color: var(--dim); border-left-color: var(--line); background: var(--th); }
+.acao:disabled img { filter: grayscale(1) brightness(0.4); }
+.acao .count { font: 12px var(--body); color: var(--link); background: var(--th); border: 1px solid var(--line); padding: 0 6px; }
+.acao .count[hidden] { display: none; }
+
+/* Forja: progresso da skill rodando sem janela (barra de etapas + microtexto rolando) */
+.forja { display: grid; gap: 12px; padding: 14px 16px 12px; border: 1px solid var(--line); background: var(--th); min-width: 0; }
+.forja[hidden] { display: none; }
+.forja-head { display: flex; flex-wrap: wrap; align-items: baseline; gap: 4px 14px; }
+.forja-titulo { font: 18px var(--display); color: var(--head); }
+.forja.erro .forja-titulo { color: var(--neg); }
+.forja-etapa { font: 13px var(--display); color: var(--ember); letter-spacing: 0.04em; }
+.forja-tempo { font: 13px var(--body); color: var(--text); font-variant-numeric: tabular-nums; }
+.forja-botoes { margin-left: auto; display: flex; gap: 6px; }
+.forja-botoes .pesq { margin: 0; }
+.etapas { list-style: none; margin: 0; padding: 0; display: grid; grid-template-columns: repeat(var(--n, 8), minmax(0, 1fr)); gap: 4px; }
+.etapa { display: grid; gap: 6px; min-width: 0; }
+.etapa .seg { height: 6px; background: var(--track); border: 1px solid var(--line); }
+.etapa .rotulo { font: 11px var(--display); letter-spacing: 0.04em; color: var(--dim); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.etapa.feita .seg { background: var(--link); border-color: var(--link); }
+.etapa.feita .rotulo { color: var(--link); }
+.etapa.pulada .seg { background: repeating-linear-gradient(90deg, var(--line) 0 3px, transparent 3px 7px); }
+.etapa.atual .seg { background: linear-gradient(90deg, var(--ember-deep), var(--ember), #ffd27a, var(--ember), var(--ember-deep)); background-size: 200% 100%; border-color: var(--ember); box-shadow: 0 0 8px var(--ember-glow); animation: brasa 1.6s linear infinite; }
+.etapa.atual .rotulo { color: var(--head); }
+@keyframes brasa { from { background-position: 200% 0; } to { background-position: 0 0; } }
+.microtexto { height: calc(6 * 1.55em); overflow-y: auto; scrollbar-width: none; font: 12px/1.55 var(--body); color: var(--text); padding-top: 1.2em; -webkit-mask-image: linear-gradient(to bottom, transparent, #000 40%); mask-image: linear-gradient(to bottom, transparent, #000 40%); }
+.microtexto::-webkit-scrollbar { display: none; }
+.microtexto:focus-visible { outline: 1px solid var(--line); }
+.linha { display: grid; grid-template-columns: 3.4em minmax(0, 1fr); gap: 8px; }
+.linha .t { color: var(--dim); text-align: right; font-variant-numeric: tabular-nums; }
+.linha .x { overflow-wrap: anywhere; }
+.linha-acao .x::before { content: "› "; color: var(--link); }
+.linha-texto .x { color: var(--head); }
+.linha-pensamento .x { color: var(--dim); font-style: italic; }
+.linha-etapa .x { font: 12px var(--display); letter-spacing: 0.08em; color: var(--ember); }
+.linha-erro .x { color: var(--neg); }
+.linha.nova { animation: surge 0.35s ease-out; }
+@keyframes surge { from { opacity: 0; transform: translateY(6px); } }
+.forja-msg { font-size: 13px; color: var(--text); white-space: pre-line; }
+.forja.erro .forja-msg { color: var(--neg); }
+.forja-msg[hidden] { display: none; }
+@media (max-width: 560px) {
+  .etapa .rotulo { display: none; }
+}
+
+/* Faixa de aviso no estilo "BONFIRE LIT": texto dourado sobre faixa escura no meio da tela */
+.faixa { position: fixed; inset: 0; z-index: 10; display: grid; place-items: center; pointer-events: none; }
+.faixa[hidden] { display: none; }
+.faixa span { width: 100%; padding: 22px 16px; text-align: center; background: linear-gradient(90deg, transparent, var(--band) 18%, var(--band) 82%, transparent); color: #e9d3a0; font: clamp(24px, 6vw, 46px) var(--display); letter-spacing: 0.18em; text-shadow: 0 0 18px rgba(240, 180, 74, 0.55); animation: acende 2.8s ease-out both; }
+@keyframes acende { 0% { opacity: 0; letter-spacing: 0.3em; } 20% { opacity: 1; letter-spacing: 0.18em; } 75% { opacity: 1; } 100% { opacity: 0; } }
+@media (prefers-reduced-motion: reduce) {
+  .etapa.atual .seg, .linha.nova, .faixa span { animation: none; }
+  .acao img { transition: none; }
+}
 </style>
 
 <main class="page"><div class="panel" id="app"><p class="empty">Carregando o plano…</p></div></main>
+<div class="faixa" id="faixa" hidden><span></span></div>
 
 <script>
 (function () {
@@ -216,6 +285,11 @@ details.mais[open] summary { margin-bottom: 6px; }
       <p class="meta">${esc(p.jogo)} · atualizado ${when(p.gerado_em)}</p>
       <h1>${esc(c.name)}</h1>
       <div class="legend"><span class="l-pos">ganho</span><span class="l-neg">perda / falta</span><span class="l-link">link da wiki</span></div>
+      <div class="acoes" id="forja-acoes" hidden>
+        <button class="acao" type="button" data-rodar="plano"><img src="icons/fogueira.png" alt="">Atualizar plano</button>
+        <button class="acao" type="button" data-rodar="fila"><img src="icons/fogueira.png" alt="">Responder fila<span class="count" id="forja-fila" hidden></span></button>
+      </div>
+      <div class="forja" id="forja" hidden></div>
     </header>`;
   }
 
@@ -382,7 +456,7 @@ details.mais[open] summary { margin-bottom: 6px; }
   }
 
   function queue() {
-    return `<section><h2>Fila de pesquisa<small>respondida no próximo /buildsmith:build</small></h2>
+    return `<section><h2>Fila de pesquisa<small>${forja.rodar ? "o botão Responder fila (no topo) responde agora" : "respondida no próximo /buildsmith:build"}</small></h2>
       <form class="fila-form" id="fila-form">
         <label class="sr-only" for="fila-texto">O que você quer saber</label>
         <input id="fila-texto" type="text" maxlength="160" placeholder="Onde farmar Bonfire Ascetic" autocomplete="off">
@@ -467,7 +541,7 @@ details.mais[open] summary { margin-bottom: 6px; }
     const used = (state.plano.feiticos ? state.plano.feiticos.lista : []).filter((sp) => chosen.includes(sp.id)).reduce((n, sp) => n + sp.slots, 0);
     const slotsEl = document.getElementById("slots-usados");
     if (slotsEl && state.plano.feiticos) slotsEl.innerHTML = `<span class="${used > state.plano.feiticos.slots.total ? "neg" : "pos"}">${used}</span>`;
-    app.querySelectorAll(".pesq").forEach((b) => {
+    app.querySelectorAll(".pesq[data-q]").forEach((b) => {
       const ped = state.pedidos[slug(b.dataset.q)];
       if (!state.db) return;
       b.disabled = Boolean(ped);
@@ -485,7 +559,179 @@ details.mais[open] summary { margin-bottom: 6px; }
     const tab = document.querySelector('[data-tab="fila"]');
     const open = list.filter((ped) => ped.estado !== "respondido").length;
     if (tab) tab.innerHTML = `Fila${open ? `<span class="count">${open}</span>` : ""}`;
+    paintActions();
   }
+
+  // Forja: os botões rodam a skill sem janela (POST rodar no servidor local) e a página acompanha (GET execucao).
+  const forja = { base: null, rodar: false, status: null, desde: -1, linhas: [], visivel: false, poll: null, relogio: null, recebido: 0, fechou: true, seguir: true };
+  const HEADERS = { "Content-Type": "application/json", "X-Buildsmith": "1" };
+  const TITULO = { plano: ["Forjando o plano", "Plano forjado"], fila: ["Respondendo a fila", "Fila respondida"] };
+  const tempo = (s) => `${Math.floor(s / 60)}:${String(Math.floor(s % 60)).padStart(2, "0")}`;
+  const usd = new Intl.NumberFormat("pt-BR", { style: "currency", currency: "USD" });
+  const daqui = (st) => !st.alvo || location.pathname.startsWith(`/p/${st.alvo.jogo}/${st.alvo.personagem}/`);
+  const pendentes = () => Object.values(state.pedidos).filter((ped) => ped.estado !== "respondido").length
+    + Object.values(state.feitos).filter((f) => f.marcado && f.confirmado == null).length;
+
+  function paintActions() {
+    const acoes = document.getElementById("forja-acoes");
+    if (!acoes) return;
+    acoes.hidden = !forja.rodar;
+    const busy = Boolean(forja.status && forja.status.estado === "rodando");
+    const n = pendentes();
+    acoes.querySelectorAll("[data-rodar]").forEach((b) => { b.disabled = busy || (b.dataset.rodar === "fila" && !n); });
+    const count = document.getElementById("forja-fila");
+    if (count) { count.hidden = !n; count.textContent = String(n); }
+  }
+
+  function linha(e, nova) {
+    const el = document.createElement("div");
+    el.className = `linha linha-${e.tipo}${nova ? " nova" : ""}`;
+    el.innerHTML = `<span class="t">${tempo(e.t)}</span><span class="x">${esc(e.texto)}</span>`;
+    return el;
+  }
+
+  function paintForja(novos = []) {
+    paintActions();
+    const box = document.getElementById("forja");
+    const st = forja.status;
+    if (!box) return;
+    if (!st || !forja.visivel || !st.etapas || !st.etapas.length) { box.hidden = true; return; }
+    box.hidden = false;
+    let log = box.querySelector(".microtexto");
+    if (!log) {
+      box.innerHTML = `<div class="forja-head" aria-live="polite"><span class="forja-titulo"></span><span class="forja-etapa"></span><span class="forja-tempo"></span><span class="forja-botoes"></span></div>
+        <ol class="etapas" style="--n:${st.etapas.length}">${st.etapas.map((e) => `<li class="etapa" data-etapa="${esc(e.id)}"><span class="seg"></span><span class="rotulo">${esc(e.nome)}</span></li>`).join("")}</ol>
+        <div class="microtexto" role="log" aria-live="off" aria-label="O que o Claude está fazendo" tabindex="0"></div>
+        <p class="forja-msg" hidden></p>`;
+      log = box.querySelector(".microtexto");
+      log.append(...forja.linhas.map((e) => linha(e, false)));
+      log.scrollTop = log.scrollHeight;
+      delete box.dataset.estado;
+      forja.seguir = true;
+      const parar = () => { forja.seguir = false; };
+      log.addEventListener("wheel", parar, { passive: true });
+      log.addEventListener("touchstart", parar, { passive: true });
+      log.addEventListener("scroll", () => { if (log.scrollHeight - log.scrollTop - log.clientHeight < 8) forja.seguir = true; }, { passive: true });
+    } else if (novos.length) {
+      log.append(...novos.map((e) => linha(e, true)));
+      while (log.childElementCount > 200) log.firstElementChild.remove();
+      if (forja.seguir) log.scrollTop = log.scrollHeight;  // direto: rolagem suave para em aba de fundo; a linha nova já entra animada
+    }
+    st.etapas.forEach((e) => {
+      const li = box.querySelector(`[data-etapa="${e.id}"]`);
+      if (!li) return;
+      li.className = `etapa ${e.estado}`;
+      if (e.estado === "atual") li.setAttribute("aria-current", "step"); else li.removeAttribute("aria-current");
+    });
+    const rodando = st.estado === "rodando";
+    const atual = st.etapas.findIndex((e) => e.estado === "atual");
+    box.classList.toggle("erro", st.estado === "erro" || st.estado === "cancelado");
+    const nomes = TITULO[st.modo] || TITULO.plano;
+    const titulo = !daqui(st) && rodando ? `Rodando para ${st.alvo.personagem.replace(/-/g, " ")}`
+      : rodando ? nomes[0]
+      : st.estado === "ok" ? nomes[1]
+      : st.estado === "cancelado" ? "Cancelado" : "A forja apagou";
+    box.querySelector(".forja-titulo").textContent = titulo;
+    box.querySelector(".forja-etapa").textContent = rodando && atual >= 0 ? `${st.etapas[atual].nome} · ${atual + 1} de ${st.etapas.length}` : "";
+    paintClock();
+    if (box.dataset.estado !== st.estado) {
+      box.dataset.estado = st.estado;
+      box.querySelector(".forja-botoes").innerHTML = rodando ? '<button class="pesq" type="button" data-forja="cancelar">Cancelar</button>'
+        : `${st.estado === "ok" ? "" : '<button class="pesq" type="button" data-forja="repetir">Tentar de novo</button>'}<button class="pesq" type="button" data-forja="fechar">Fechar</button>`;
+      const msg = box.querySelector(".forja-msg");
+      msg.textContent = rodando ? "" : st.estado === "ok" ? (st.resposta || "") : (st.mensagem || "");
+      msg.hidden = !msg.textContent;
+    }
+  }
+
+  function paintClock() {
+    const st = forja.status;
+    const el = document.querySelector("#forja .forja-tempo");
+    if (!st || !el) return;
+    el.textContent = st.estado === "rodando"
+      ? tempo(st.segundos + (Date.now() - forja.recebido) / 1000)
+      : tempo(st.segundos || 0) + (typeof st.custo_usd === "number" ? ` · ${usd.format(st.custo_usd)}` : "");
+  }
+
+  function ingest(st) {
+    const novos = (st.eventos || []).filter((e) => e.i > forja.desde);
+    novos.forEach((e) => { forja.linhas.push(e); forja.desde = e.i; });
+    forja.linhas.splice(0, Math.max(0, forja.linhas.length - 200));
+    forja.status = st;
+    forja.recebido = Date.now();
+    clearInterval(forja.relogio);
+    if (st.estado === "rodando") forja.relogio = setInterval(paintClock, 1000);
+    paintForja(novos);
+  }
+
+  async function poll() {
+    clearTimeout(forja.poll);
+    try {
+      const r = await fetch(`${forja.base}/execucao?desde=${forja.desde}`, { cache: "no-store" });
+      if (r.ok) ingest(await r.json());
+    } catch (e) { /* servidor ocupado: tenta no próximo ciclo */ }
+    if (forja.status && forja.status.estado === "rodando") forja.poll = setTimeout(poll, 700);
+    else terminou();
+  }
+
+  async function rodar(modo) {
+    if (!forja.base) return;
+    Object.assign(forja, { visivel: true, linhas: [], desde: -1, fechou: false });
+    const box = document.getElementById("forja");
+    if (box) box.innerHTML = "";
+    try {
+      const r = await fetch(`${forja.base}/rodar`, { method: "POST", headers: HEADERS, body: JSON.stringify({ modo }) });
+      ingest(await r.json());
+    } catch (e) {
+      ingest({ estado: "erro", modo, mensagem: "O servidor local não respondeu. Abra pelo atalho Forja de Build.", etapas: [{ id: "fim", nome: "Concluído", estado: "pendente" }], eventos: [], segundos: 0 });
+      return;
+    }
+    poll();
+  }
+
+  async function terminou() {
+    const st = forja.status;
+    if (!st || forja.fechou) return;
+    forja.fechou = true;
+    if (st.estado !== "ok" || !daqui(st)) return;
+    faixa((TITULO[st.modo] || TITULO.plano)[1]);
+    try {
+      const r = await fetch("plano.json", { cache: "no-store" });
+      if (!r.ok) return;
+      render(await r.json());
+      fallbackIcons(app);
+      if (state.db) app.querySelectorAll(".fogueira").forEach((b) => { b.hidden = false; });
+      applyState();
+      paintForja();
+    } catch (e) { /* plano novo ilegível: a página antiga continua */ }
+  }
+
+  function faixa(texto) {
+    const el = document.getElementById("faixa");
+    if (!el) return;
+    const span = el.firstElementChild;
+    span.textContent = texto;
+    span.style.animation = "none";
+    void span.offsetWidth;
+    span.style.animation = "";
+    el.hidden = false;
+    clearTimeout(faixa.t);
+    faixa.t = setTimeout(() => { el.hidden = true; }, 2900);
+  }
+
+  async function iniciarForja() {
+    paintActions();
+    try {
+      const r = await fetch(`${forja.base}/execucao`, { cache: "no-store" });
+      if (!r.ok) return;
+      const st = await r.json();
+      if (st.estado !== "rodando") { forja.desde = st.ultimo; return; }
+      Object.assign(forja, { visivel: true, fechou: false });
+      ingest(st);
+      poll();
+    } catch (e) { /* sem forja: os botões ficam, o progresso aparece no próximo clique */ }
+  }
+
 
   async function enqueue(texto, origem, button) {
     const text = texto.trim();
@@ -530,6 +776,16 @@ details.mais[open] summary { margin-bottom: 6px; }
         finally { spell.disabled = false; }
         return;
       }
+      const run = ev.target.closest("[data-rodar]");
+      if (run) { rodar(run.dataset.rodar); return; }
+      const ctl = ev.target.closest("[data-forja]");
+      if (ctl) {
+        const what = ctl.dataset.forja;
+        if (what === "cancelar") { ctl.disabled = true; fetch(`${forja.base}/cancelar`, { method: "POST", headers: HEADERS, body: "{}" }).catch(() => {}); }
+        else if (what === "repetir") rodar(forja.status ? forja.status.modo : "plano");
+        else { forja.visivel = false; paintForja(); }
+        return;
+      }
       const ask = ev.target.closest(".pesq");
       if (ask) { enqueue(ask.dataset.q, ask.dataset.origem, ask); return; }
       const item = ev.target.closest("[data-goto-item]");
@@ -551,9 +807,12 @@ details.mais[open] summary { margin-bottom: 6px; }
     if (!m) return null;
     try {
       const ping = await fetch("/api/ping", { cache: "no-store" });
-      if (!ping.ok || (await ping.json()).app !== "buildsmith") return null;
+      const info = ping.ok ? await ping.json() : {};
+      if (info.app !== "buildsmith") return null;
+      forja.rodar = Boolean(info.rodar);
     } catch (e) { return null; }
     const base = `/api/${m[1]}/${m[2]}`;
+    forja.base = base;
     const listeners = [];
     let last = null;
     const publish = (st) => { last = st; listeners.forEach((fn) => fn(st)); };
@@ -568,7 +827,7 @@ details.mais[open] summary { margin-bottom: 6px; }
         const [col, id] = path.split("/");
         return {
           set: async (data) => {
-            const r = await fetch(`${base}/${col}/${id}`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(data) });
+            const r = await fetch(`${base}/${col}/${id}`, { method: "POST", headers: HEADERS, body: JSON.stringify(data) });
             if (!r.ok) throw new Error(String(r.status));
             publish(await r.json());
           },
@@ -584,6 +843,11 @@ details.mais[open] summary { margin-bottom: 6px; }
     if (!db) { applyState(); return; }
     state.db = db;
     app.querySelectorAll(".fogueira").forEach((b) => { b.hidden = false; });
+    if (forja.base) {
+      const sub = document.querySelector("#painel-fila h2 small");
+      if (sub && forja.rodar) sub.textContent = "o botão Responder fila (no topo) responde agora";
+      iniciarForja();
+    }
     const fail = () => { /* sem banco: a página segue só leitura */ };
     db.collection("feitos").onSnapshot((snap) => { state.feitos = Object.fromEntries(snap.docs.map((d) => [d.id, d.data()])); applyState(); }, fail);
     db.collection("pedidos").onSnapshot((snap) => { state.pedidos = Object.fromEntries(snap.docs.map((d) => [d.id, d.data()])); applyState(); }, fail);

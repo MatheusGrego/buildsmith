@@ -9,6 +9,9 @@ Só biblioteca padrão. Escuta apenas em 127.0.0.1.
   python serve.py estado ...       imprime o estado de um personagem (usado pela skill)
   python serve.py responder ...    marca um pedido da fila como respondido
   python serve.py confirmar ...    grava a confirmação de um passo marcado como feito
+
+Os botões "Atualizar plano" e "Responder fila" da página rodam a skill sem janela (claude -p) pelo runner.py.
+Pedidos que gravam ou rodam algo exigem o cabeçalho X-Buildsmith: 1 e Host/Origin locais.
 """
 import argparse
 import json
@@ -23,11 +26,14 @@ import webbrowser
 from datetime import datetime, timezone
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
-from urllib.parse import unquote, urlsplit
+from urllib.parse import parse_qs, unquote, urlsplit
+
+from runner import Busy, Runner
 
 PORT = 8642
 SEGMENT = re.compile(r"^[a-z0-9][a-z0-9._-]{0,180}$")
 COLLECTIONS = {"feitos", "pedidos", "config"}
+MODOS = {"plano", "fila"}
 DOCTYPE = b'<!doctype html><html lang="pt-BR"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"></head><body>'
 
 
@@ -72,6 +78,18 @@ def write_doc(home: Path, jogo: str, personagem: str, collection: str, doc_id: s
         return state
 
 
+def build_prompt(home: Path, jogo: str, personagem: str, modo: str) -> str:
+    """Comando da skill para o botão da página; o nome vem do plano publicado."""
+    nome = personagem
+    try:
+        plan = json.loads((Path(home) / "paginas" / jogo / personagem / "plano.json").read_text(encoding="utf-8"))
+        nome = str(plan["personagem"]["name"])
+    except (OSError, ValueError, KeyError, TypeError):
+        pass
+    extra = " fila" if modo == "fila" else ""
+    return f"/buildsmith:build {jogo}{extra} (pela página, personagem: {nome})"
+
+
 def pages(home: Path) -> list[tuple[str, str, float]]:
     found = []
     for plan in sorted((Path(home) / "paginas").glob("*/*/plano.json")):
@@ -81,6 +99,7 @@ def pages(home: Path) -> list[tuple[str, str, float]]:
 
 class Handler(BaseHTTPRequestHandler):
     home: Path = default_home()
+    runner: Runner | None = None
     server_version = "buildsmith"
 
     def log_message(self, *args):  # sem log no console (roda com pythonw)
@@ -104,16 +123,35 @@ class Handler(BaseHTTPRequestHandler):
             return None
         return parts
 
+    def _local_host(self) -> bool:
+        """Barra DNS rebinding: o navegador tem que ter chamado 127.0.0.1 ou localhost."""
+        port = self.server.server_address[1]
+        return self.headers.get("Host") in {f"127.0.0.1:{port}", f"localhost:{port}"}
+
+    def _trusted(self) -> bool:
+        """POST só da própria página: Host e Origin locais + cabeçalho próprio (outro site não manda sem preflight)."""
+        port = self.server.server_address[1]
+        origin = self.headers.get("Origin")
+        if origin and origin not in {f"http://127.0.0.1:{port}", f"http://localhost:{port}"}:
+            return False
+        return self._local_host() and self.headers.get("X-Buildsmith") == "1"
+
     def do_GET(self):  # noqa: N802 (nome exigido pelo http.server)
         parts = self._parts()
         if parts is None:
             return self._send(400, b"caminho invalido", "text/plain; charset=utf-8")
+        if not self._local_host():
+            return self._send(400, b"host invalido", "text/plain; charset=utf-8")
         if not parts:
             return self._index()
         if parts == ["api", "ping"]:
-            return self._json({"app": "buildsmith", "ok": True})
-        if len(parts) == 4 and parts[0] == "api" and parts[3] == "estado" and all(SEGMENT.match(p) for p in parts[1:3]):
-            return self._json(read_state(self.home, parts[1], parts[2]))
+            return self._json({"app": "buildsmith", "ok": True, "rodar": self.runner is not None})
+        if len(parts) == 4 and parts[0] == "api" and all(SEGMENT.match(p) for p in parts[1:3]):
+            if parts[3] == "estado":
+                return self._json(read_state(self.home, parts[1], parts[2]))
+            if parts[3] == "execucao" and self.runner is not None:
+                desde = parse_qs(urlsplit(self.path).query).get("desde", ["-1"])[0]
+                return self._json(self.runner.status(int(desde) if desde.lstrip("-").isdigit() else -1))
         if len(parts) >= 3 and parts[0] == "p" and all(SEGMENT.match(p) for p in parts[1:3]):
             if not urlsplit(self.path).path.endswith("/") and len(parts) == 3:
                 self.send_response(301)
@@ -125,6 +163,11 @@ class Handler(BaseHTTPRequestHandler):
 
     def do_POST(self):  # noqa: N802
         parts = self._parts()
+        if not self._trusted():
+            return self._send(403, b"origem recusada", "text/plain; charset=utf-8")
+        if (parts and len(parts) == 4 and parts[0] == "api" and parts[3] in ("rodar", "cancelar")
+                and self.runner is not None and all(SEGMENT.match(p) for p in parts[1:3])):
+            return self._run(parts[1], parts[2], parts[3])
         if parts == ["api", "desligar"]:
             self._json({"ok": True})
             threading.Thread(target=self.server.shutdown, daemon=True).start()
@@ -142,6 +185,30 @@ class Handler(BaseHTTPRequestHandler):
         if not isinstance(data, dict):
             return self._send(400, b"esperava objeto", "text/plain; charset=utf-8")
         return self._json(write_doc(self.home, parts[1], parts[2], parts[3], parts[4], data))
+
+    def _body(self) -> dict | None:
+        length = int(self.headers.get("Content-Length") or 0)
+        if length > 64 * 1024:
+            return None
+        try:
+            data = json.loads(self.rfile.read(length) or b"{}")
+        except json.JSONDecodeError:
+            return None
+        return data if isinstance(data, dict) else None
+
+    def _run(self, jogo: str, personagem: str, acao: str):
+        if acao == "cancelar":
+            self.runner.cancel()
+            return self._json(self.runner.status())
+        data = self._body()
+        modo = (data or {}).get("modo")
+        if modo not in MODOS:
+            return self._send(400, b"modo invalido", "text/plain; charset=utf-8")
+        try:
+            self.runner.start(modo, build_prompt(self.home, jogo, personagem, modo), {"jogo": jogo, "personagem": personagem})
+        except Busy:
+            return self._json(self.runner.status(), status=409)
+        return self._json(self.runner.status())
 
     def _file(self, jogo: str, personagem: str, rest: list[str]):
         root = (Path(self.home) / "paginas" / jogo / personagem).resolve()
@@ -165,8 +232,9 @@ class Handler(BaseHTTPRequestHandler):
         return self._send(200, DOCTYPE + html.encode("utf-8") + b"</body></html>", "text/html; charset=utf-8")
 
 
-def make_server(home: Path, port: int = PORT) -> ThreadingHTTPServer:
-    handler = type("BuildsmithHandler", (Handler,), {"home": Path(home)})
+def make_server(home: Path, port: int = PORT, runner: Runner | None = None) -> ThreadingHTTPServer:
+    runner = runner or Runner(cwd=Path(home), log_path=Path(home) / "execucoes" / "ultima.jsonl")
+    handler = type("BuildsmithHandler", (Handler,), {"home": Path(home), "runner": runner})
     return ThreadingHTTPServer(("127.0.0.1", port), handler)
 
 

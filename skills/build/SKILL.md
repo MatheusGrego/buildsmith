@@ -17,7 +17,10 @@ Nenhum fato de jogo vem da memória. Todo fato que aparece no plano, na página 
 - **Antes de publicar**, confira cada local, requisito e efeito do plano contra a fonte. Fonte e plano têm que dizer a mesma coisa.
 - **Se o jogador contestar um fato**, verifique na fonte antes de responder. Se estava errado, diga isso claramente, corrija o cache e o plano.
 
-Argumentos: `<jogo> [pedido livre]`. Hoje só `ds2`; outro jogo → diga que ainda não há leitor de save para ele.
+Argumentos: `<jogo> [fila] [pedido livre]`. Hoje só `ds2`; outro jogo → diga que ainda não há leitor de save para ele.
+
+- **`fila`** (botão **Responder fila** da página): só o passo 0 e a página. Parta do plano publicado (`~/.buildsmith/paginas/<jogo>/<slug>/plano.json`), rode o `snapshot` só para confirmar `feitos`, pesquise os `pedidos` na fila, acrescente ou atualize as entradas em `itens` (com a regra de credibilidade), gere a página de novo (skill `build-page`) e responda a fila. Não refaça passos, fases, dano, feitiços nem builds.
+- **`(pela página, personagem: <nome>)`**: a skill está rodando sem janela, pelo botão da página (`claude -p`, `app/runner.py`). Ninguém responde pergunta: use o perfil salvo; se faltar perfil ou slot, pare e diga o motivo na resposta final. Arquivos temporários vão em `~/.buildsmith/tmp/`. A resposta final aparece na página: primeira linha = próximo passo, no máximo 3 linhas, sem link.
 
 Dados do usuário em `~/.buildsmith/` (crie as pastas se faltarem): `config.json`, `profiles/<jogo>/`, `history/<jogo>/<personagem>/`, `cache/<jogo>/`.
 

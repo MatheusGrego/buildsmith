@@ -23,6 +23,8 @@ pip install pillow
 python app/instalar_atalho.py
 ```
 
+Na página local, **Atualizar plano** e **Responder fila** rodam a skill sem abrir o Claude Code (`claude -p` em segundo plano, uma execução por vez, com etapas e custo na tela). Precisa do `claude` no PATH e logado: rode `claude` uma vez no terminal e use `/login`.
+
 Para ver no celular, publique no Artifact: `/buildsmith:build ds2 publicar`.
 
 Seus dados (perfil, histórico, cache da wiki, link da página) ficam em `~/.buildsmith/`, fora do repositório.
