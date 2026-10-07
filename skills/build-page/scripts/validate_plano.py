@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 """Confere se o plano.json (versão 2) tem tudo que a página precisa antes de publicar."""
 import json
+import re
 import sys
 
 STATS = ["VGR", "END", "VIT", "ATN", "STR", "DEX", "INT", "FTH", "ADP"]
@@ -15,6 +16,8 @@ TIPOS_NO = {"item", "chefe", "inimigo", "npc", "local", "bau", "almas", "atribut
 SINAIS = {"+", "-", ""}
 ESTADOS_CHEFE = {"derrotado", "vivo"}
 ESTADOS_EVENTO = {"feito", "pendente"}
+URL_KEYS = {"link", "fonte", "url"}
+LOCAL_ICON = re.compile(r"^icons/[A-Za-z0-9._-]+$")
 TOP = {"versao": int, "gerado_em": str, "jogo": str, "objetivo": str, "personagem": dict, "alvo_stats": dict,
        "mudancas": list, "passos": list, "fases": list, "itens": list, "comparacao": list, "fontes": list}
 
@@ -106,6 +109,7 @@ def validate(plano: dict) -> list[str]:
     if "feiticos" in plano:
         _spells(plano["feiticos"], problems)
     _requirement_links(plano, problems)
+    _urls(plano, "", problems)
     if not problems:
         _closure(plano, problems)
     return problems
@@ -120,6 +124,23 @@ def _ids(where: str, entries: list, problems: list) -> None:
         elif ident in seen:
             problems.append(f"{where}[{i}].id repetido: {ident}")
         seen.add(ident)
+
+
+def _urls(value, where: str, problems: list) -> None:
+    """Link só http(s); ícone só https ou icons/<arquivo>. A página não mostra o resto (javascript:, data:...)."""
+    if isinstance(value, dict):
+        for key, inner in value.items():
+            here = f"{where}.{key}" if where else key
+            if key in URL_KEYS and inner and not (isinstance(inner, str) and re.match(r"^https?://", inner)):
+                problems.append(f"{here} deveria ser um link http(s)")
+            elif key == "icone" and inner and not (isinstance(inner, str)
+                                                   and (inner.startswith("https://") or LOCAL_ICON.match(inner))):
+                problems.append(f"{here} deveria ser https://... ou icons/<arquivo>")
+            else:
+                _urls(inner, here, problems)
+    elif isinstance(value, list):
+        for i, inner in enumerate(value):
+            _urls(inner, f"{where}[{i}]", problems)
 
 
 def _requirement_links(plano: dict, problems: list) -> None:

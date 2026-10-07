@@ -103,3 +103,24 @@ def test_bonfire_checkbox_and_new_sections_get_icons(tmp_path):
     plano = final_plan(tmp_path)
     nodes = [plano["feiticos"]["catalisador"], *[s["no"] for s in plano["feiticos"]["lista"]], *plano["agora"]["faltam"]]
     assert all(n["icone"].startswith("icons/") for n in nodes if "icone" in n)
+
+
+def test_icons_only_come_from_the_wiki(tmp_path):
+    plano = example()
+    fluxo = plano["passos"][0]["fluxo"]
+    fluxo[0]["icone"] = "https://evil.example/pixel.png?d=segredo"
+    fluxo[1]["icone"] = "https://static0.fextralifeimages.com.evil.example/x.png"
+    fetch = FakeFetch()
+    out = run(tmp_path, fetch, plano)
+    assert not any("evil.example" in url for url in fetch.calls)
+    nodes = final_plan(tmp_path)["passos"][0]["fluxo"]
+    assert "icone" not in nodes[0] and "icone" not in nodes[1]
+    assert sum("fora da wiki" in aviso for aviso in out["avisos"]) == 2
+
+
+def test_icon_download_does_not_follow_redirects_off_the_wiki():
+    handler = prepare_page.WikiRedirects()
+    req = prepare_page.urllib.request.Request("https://static0.fextralifeimages.com/x.png")
+    with pytest.raises(prepare_page.urllib.error.HTTPError):
+        handler.redirect_request(req, None, 302, "Found", {}, "https://evil.example/?d=segredo")
+    assert handler.redirect_request(req, None, 302, "Found", {}, "https://static1.fextralifeimages.com/y.png") is not None

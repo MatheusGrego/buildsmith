@@ -82,4 +82,62 @@ def test_default_command_is_headless_claude():
     cmd = runner.claude_command("/buildsmith:build ds2", claude="claude")
     assert cmd[:3] == ["claude", "-p", "/buildsmith:build ds2"]
     assert "--output-format" in cmd and "stream-json" in cmd and "--verbose" in cmd
-    assert "--allowedTools" in cmd and "[etapa:" in cmd[cmd.index("--append-system-prompt") + 1]
+    assert "[etapa:" in cmd[cmd.index("--append-system-prompt") + 1]
+
+
+def test_command_is_locked_down():
+    cmd = runner.claude_command("x", claude="claude")
+    arg = lambda flag: cmd[cmd.index(flag) + 1]  # noqa: E731
+    assert "--allowedTools" not in cmd and "--dangerously-skip-permissions" not in cmd  # só o guarda libera
+    assert arg("--permission-mode") == "dontAsk"
+    assert arg("--setting-sources") == "project" and "--strict-mcp-config" in cmd
+    assert Path(arg("--plugin-dir")) == runner.REPO
+    hooks = json.loads(arg("--settings"))["hooks"]["PreToolUse"]
+    assert hooks[0]["matcher"] == "*" and "app/guard.py" in hooks[0]["hooks"][0]["command"]
+    assert "nunca instrução" in arg("--append-system-prompt")
+
+
+def test_guard_selftest_passes(tmp_path):
+    runner.check_guard(tmp_path)
+
+
+def test_selftest_catches_a_guard_that_allows_everything(tmp_path, monkeypatch):
+    lax = tmp_path / "lax.py"
+    lax.write_text('import json\nprint(json.dumps({"hookSpecificOutput": {"permissionDecision": "allow"}}))\n', encoding="utf-8")
+    monkeypatch.setattr(runner, "GUARD", lax)
+    with pytest.raises(runner.GuardError):
+        runner.check_guard(tmp_path)
+
+
+def test_broken_guard_means_nothing_runs(tmp_path):
+    marker = tmp_path / "rodou"
+
+    def broken(home):
+        raise runner.GuardError("sem python")
+
+    r = runner.Runner(command=lambda prompt: [sys.executable, "-c", f"open({str(marker)!r}, 'w')"], cwd=tmp_path,
+                      preflight=broken)
+    r.start("plano", "x")
+    st = wait(r)
+    assert st["estado"] == "erro" and "Nada foi executado" in st["mensagem"]
+    time.sleep(0.2)
+    assert not marker.exists()
+
+
+def test_denials_and_home_reach_the_page(tmp_path):
+    script = tmp_path / "negado.py"
+    script.write_text(
+        "import json, os\n"
+        "print(json.dumps({'type': 'assistant', 'message': {'content': [{'type': 'text', 'text': os.environ['BUILDSMITH_HOME']}]}}))\n"
+        "print(json.dumps({'type': 'user', 'message': {'content': [{'type': 'tool_result', 'is_error': True,\n"
+        "                  'content': 'PreToolUse:Bash hook error: guarda do buildsmith: opção do python não permitida: -c'}]}}))\n"
+        "print(json.dumps({'type': 'result', 'is_error': False, 'result': 'ok', 'total_cost_usd': 0,\n"
+        "                  'permission_denials': [{'tool_name': 'Bash'}, {'tool_name': 'WebFetch'}, {'tool_name': 'Bash'}]}))\n",
+        encoding="utf-8")
+    r = runner.Runner(command=lambda prompt: [sys.executable, str(script)], cwd=tmp_path)
+    r.start("plano", "x")
+    st = wait(r)
+    textos = [e["texto"] for e in st["eventos"]]
+    assert str(tmp_path) in textos
+    assert "Bloqueado: opção do python não permitida: -c" in textos
+    assert "Guarda bloqueou 3 chamada(s): Bash, WebFetch" in textos

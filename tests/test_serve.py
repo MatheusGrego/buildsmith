@@ -139,3 +139,9 @@ def test_prompt_uses_character_name_from_plan(tmp_path):
     (page / "plano.json").write_text(json.dumps({"personagem": {"name": "Melatonina Vorcaro"}}), encoding="utf-8")
     assert serve.build_prompt(tmp_path, "ds2", "melatonina-vorcaro", "fila") == "/buildsmith:build ds2 fila (pela página, personagem: Melatonina Vorcaro)"
     assert serve.build_prompt(tmp_path, "ds2", "outro", "plano") == "/buildsmith:build ds2 (pela página, personagem: outro)"
+
+
+def test_cli_refuses_odd_game_names(tmp_path):
+    with pytest.raises(SystemExit):
+        serve.main(["estado", "--home", str(tmp_path), "--jogo", "../../x", "--personagem", "Melatonina"])
+    assert not (tmp_path / "estado").exists()

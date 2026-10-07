@@ -275,6 +275,8 @@ def main(argv=None) -> int:
 
     if args.cmd:
         who = slug(args.personagem)
+        if not SEGMENT.match(args.jogo) or not SEGMENT.match(who):
+            parser.error("--jogo e --personagem precisam virar um nome simples (letras, números e -)")
         if args.cmd == "responder":
             write_doc(home, args.jogo, who, "pedidos", args.pedido,
                       {"estado": "respondido", "item_id": args.item or None, "respondido_em": now()}, merge=True)

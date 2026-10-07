@@ -158,3 +158,17 @@ def test_spells_block_is_validated():
     assert plano["feiticos"]["lista"]
     plano["feiticos"]["lista"][0]["estado"] = "talvez"
     assert any("feiticos.lista[0].estado" in p for p in validate_plano.validate(plano))
+
+
+def test_links_must_be_http_and_icons_https_or_local():
+    plano = example()
+    node = plano["passos"][0]["fluxo"][0]
+    node["link"] = "javascript:alert(1)"
+    node["icone"] = "data:image/png;base64,AAAA"
+    plano["fontes"][0]["url"] = "file:///etc/passwd"
+    problems = validate_plano.validate(plano)
+    assert "passos[0].fluxo[0].link deveria ser um link http(s)" in problems
+    assert "passos[0].fluxo[0].icone deveria ser https://... ou icons/<arquivo>" in problems
+    assert "fontes[0].url deveria ser um link http(s)" in problems
+    node["link"], node["icone"], plano["fontes"][0]["url"] = "https://darksouls2.wiki.fextralife.com/X", "icons/x.png", ""
+    assert validate_plano.validate(plano) == []
