@@ -1,0 +1,32 @@
+<!-- @dsCard group="Estrutura e ações" height=420 -->
+<!doctype html>
+<html>
+<head><meta charset="utf-8"><title>Acao — preview</title></head>
+<body>
+<div class="page">
+<div class="panel">
+  <section>
+    <p class="label">Pronto, com 2 pendências (passe o mouse para ver o hover)</p>
+    <div class="acoes" id="forja-acoes">
+      <button class="acao" type="button" data-rodar="plano">Atualizar plano</button>
+      <button class="acao" type="button" data-rodar="fila">Responder fila<span class="count" id="forja-fila">2</span></button>
+    </div>
+  </section>
+  <section>
+    <p class="label">Sem pendência: Responder fila desativada, contador oculto</p>
+    <div class="acoes">
+      <button class="acao" type="button" data-rodar="plano">Atualizar plano</button>
+      <button class="acao" type="button" data-rodar="fila" disabled>Responder fila<span class="count" hidden>0</span></button>
+    </div>
+  </section>
+  <section>
+    <p class="label">Skill rodando: as duas desativadas</p>
+    <div class="acoes">
+      <button class="acao" type="button" data-rodar="plano" disabled>Atualizar plano</button>
+      <button class="acao" type="button" data-rodar="fila" disabled>Responder fila<span class="count">2</span></button>
+    </div>
+  </section>
+</div>
+</div>
+</body>
+</html>
