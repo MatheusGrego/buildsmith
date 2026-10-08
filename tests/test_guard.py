@@ -119,11 +119,12 @@ def test_background_run_is_denied(check):
 
 def test_write_only_inside_writable_folders(check):
     home = check.home
-    for path in (home / "config.json", home / "profiles" / "ds2" / "x.yaml", home / "history" / "a.json",
-                 home / "cache" / "ds2" / "x.md", home / "flags" / "ds2.json", home / "tmp" / "p.json",
-                 check.scratch / "plano.json"):
+    for path in (home / "history" / "ds2" / "Melatonina Vorcaro" / "2026-10-07T19-00.json",
+                 home / "cache" / "ds2" / "ring-of-binding.md", home / "tmp" / "p.json", check.scratch / "plano.json"):
         assert check("Write", file_path=str(path), content="x") == "allow", path
-    for path in (home / ".claude" / "settings.json", home / "CLAUDE.md", home / ".mcp.json",
+    # perfil, config e flags: só leitura na execução sem janela
+    for path in (home / "config.json", home / "profiles" / "ds2" / "x.yaml", home / "flags" / "ds2.json",
+                 home / ".claude" / "settings.json", home / "CLAUDE.md", home / ".mcp.json",
                  home / "estado" / "ds2" / "x.json", home / "paginas" / "ds2" / "x" / "index.html",
                  home / "profiles" / ".." / ".." / ".bashrc", check.tmp / "fora.txt",
                  REPO / "app" / "guard.py", Path(SAVE)):
@@ -160,7 +161,7 @@ def test_reads_only_in_buildsmith_folders(check):
 
 
 @pytest.mark.parametrize("tool,decision", [
-    ("Skill", "allow"), ("WebSearch", "allow"), ("ToolSearch", "allow"), ("TodoWrite", "allow"),
+    ("Skill", "deny"), ("WebSearch", "allow"), ("ToolSearch", "allow"), ("TodoWrite", "allow"),
     ("Agent", "deny"), ("PowerShell", "deny"), ("mcp__gmail__send_email", "deny"), (None, "deny"),
 ])
 def test_other_tools(check, tool, decision):

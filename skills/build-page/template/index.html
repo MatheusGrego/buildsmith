@@ -463,7 +463,7 @@ details.mais[open] summary { margin-bottom: 6px; }
     return `<section><h2>Fila de pesquisa<small>${forja.rodar ? "o botão Responder fila (no topo) responde agora" : "respondida no próximo /buildsmith:build"}</small></h2>
       <form class="fila-form" id="fila-form">
         <label class="sr-only" for="fila-texto">O que você quer saber</label>
-        <input id="fila-texto" type="text" maxlength="160" placeholder="Onde farmar Bonfire Ascetic" autocomplete="off">
+        <input id="fila-texto" type="text" maxlength="120" placeholder="Onde farmar Bonfire Ascetic" autocomplete="off">
         <button type="submit">Pesquisar</button>
       </form>
       <div id="fila-lista"><p class="empty">Nenhum pedido ainda.</p></div>
@@ -737,14 +737,21 @@ details.mais[open] summary { margin-bottom: 6px; }
   }
 
 
+  // Texto de pedido vira termo de busca para o Claude (fila ou comando copiado): uma linha, caracteres de nome
+  // de item e no máximo 120. Um requisito vindo da wiki com várias linhas não chega inteiro a lugar nenhum.
+  const limpaPedido = (texto, max = 120) => String(texto ?? "")
+    .replace(/[\u0000-\u001f\u007f-\u009f\u2028\u2029]/g, " ")
+    .replace(/[^\p{L}\p{N} '&+,.()\-]/gu, "")
+    .replace(/\s+/g, " ").trim().slice(0, max).trim();
+
   async function enqueue(texto, origem, button) {
-    const text = texto.trim();
+    const text = limpaPedido(texto);
     if (!text) return;
     if (!state.db) {
       const cmd = `/buildsmith:build ds2 onde pegar: ${text}`;
       const note = document.createElement("span");
       note.className = "copiado";
-      try { await navigator.clipboard.writeText(cmd); note.textContent = "Copiado: cole no Claude Code"; }
+      try { await navigator.clipboard.writeText(cmd); note.textContent = `Copiado: ${cmd}`; }
       catch (e) { note.textContent = cmd; }
       (button || document.getElementById("fila-form")).after(note);
       return;
@@ -753,7 +760,7 @@ details.mais[open] summary { margin-bottom: 6px; }
     if (state.pedidos[id]) return;
     if (button) button.disabled = true;
     try {
-      await state.db.doc(`pedidos/${id}`).set({ texto: text, origem: origem || "fila", estado: "na_fila", criado_em: new Date().toISOString() });
+      await state.db.doc(`pedidos/${id}`).set({ texto: text, origem: limpaPedido(origem || "fila", 80) || "fila", estado: "na_fila", criado_em: new Date().toISOString() });
     } catch (e) {
       if (button) button.disabled = false;
     }

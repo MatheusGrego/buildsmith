@@ -133,11 +133,8 @@ def test_run_button_starts_skill_and_reports_stages(server):
     assert [e["texto"] for e in st["eventos"]][:2] == ["Fila", "Lendo a fila"]
 
 
-def test_prompt_uses_character_name_from_plan(tmp_path):
-    page = tmp_path / "paginas" / "ds2" / "melatonina-vorcaro"
-    page.mkdir(parents=True)
-    (page / "plano.json").write_text(json.dumps({"personagem": {"name": "Melatonina Vorcaro"}}), encoding="utf-8")
-    assert serve.build_prompt(tmp_path, "ds2", "melatonina-vorcaro", "fila") == "/buildsmith:build ds2 fila (pela página, personagem: Melatonina Vorcaro)"
+def test_prompt_uses_only_the_page_slug(tmp_path):
+    assert serve.build_prompt(tmp_path, "ds2", "melatonina-vorcaro", "fila") == "/buildsmith:build ds2 fila (pela página, personagem: melatonina-vorcaro)"
     assert serve.build_prompt(tmp_path, "ds2", "outro", "plano") == "/buildsmith:build ds2 (pela página, personagem: outro)"
 
 

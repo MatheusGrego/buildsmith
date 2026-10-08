@@ -14,6 +14,7 @@ Os botões "Atualizar plano" e "Responder fila" da página rodam a skill sem jan
 Pedidos que gravam ou rodam algo exigem o cabeçalho X-Buildsmith: 1 e Host/Origin locais.
 """
 import argparse
+import html
 import json
 import mimetypes
 import os
@@ -32,8 +33,18 @@ from runner import Busy, Runner
 
 PORT = 8642
 SEGMENT = re.compile(r"^[a-z0-9][a-z0-9._-]{0,180}$")
+GAME_OK = re.compile(r"^[a-z0-9]+$")
 COLLECTIONS = {"feitos", "pedidos", "config"}
 MODOS = {"plano", "fila"}
+MAX_BODY = 4 * 1024
+MAX_FILA = 50  # pedidos na_fila ao mesmo tempo
+TEXTO_MAX = 160
+CONTROLE = re.compile(r"[\x00-\x1f\x7f-\x9f\u2028\u2029]")
+# A página só fala com o próprio servidor: fetch e imagens de fora ficam bloqueados (nada sai por um XSS).
+CSP_PAGINA = ("default-src 'none'; script-src 'unsafe-inline'; style-src 'unsafe-inline' https://fonts.googleapis.com; "
+              "font-src https://fonts.gstatic.com; img-src 'self' data:; connect-src 'self'; base-uri 'none'; "
+              "form-action 'none'; frame-ancestors 'none'")
+CSP_INICIO = "default-src 'none'; style-src 'unsafe-inline'; base-uri 'none'; form-action 'none'; frame-ancestors 'none'"
 DOCTYPE = b'<!doctype html><html lang="pt-BR"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"></head><body>'
 
 
@@ -57,9 +68,41 @@ def state_path(home: Path, jogo: str, personagem: str) -> Path:
 def read_state(home: Path, jogo: str, personagem: str) -> dict:
     path = state_path(home, jogo, personagem)
     state = {"feitos": {}, "pedidos": {}, "config": {}}
-    if path.exists():
+    if path.is_file():
         state.update(json.loads(path.read_text(encoding="utf-8")))
     return state
+
+
+def _linha(value, limite: int) -> bool:
+    return isinstance(value, str) and 0 < len(value) <= limite and not CONTROLE.search(value)
+
+
+def clean_doc(collection: str, doc_id: str, data) -> dict | None:
+    """Documento que a página pode gravar, campo a campo; qualquer outra coisa é recusada (None).
+
+    O texto de um pedido vai para o modelo no próximo /buildsmith:build: uma linha, tamanho limitado, sem campo
+    extra e sem o estado "respondido" (só a skill responde, pela CLI).
+    """
+    if not isinstance(data, dict):
+        return None
+    if collection == "pedidos":
+        if (set(data) - {"texto", "origem", "estado", "criado_em"} or not _linha(data.get("texto"), TEXTO_MAX)
+                or data.get("estado") != "na_fila" or not _linha(data.get("origem", "fila"), 80)
+                or not _linha(data.get("criado_em", "-"), 40)):
+            return None
+        return data
+    if collection == "feitos":
+        if (set(data) - {"marcado", "em", "confirmado"} or not isinstance(data.get("marcado"), bool)
+                or not _linha(data.get("em", "-"), 40) or data.get("confirmado") is not None):
+            return None
+        return data
+    if collection == "config" and doc_id == "feiticos":
+        sel = data.get("selecionados")
+        if (set(data) - {"selecionados", "em"} or not isinstance(sel, list) or len(sel) > 40
+                or not all(isinstance(x, str) and SEGMENT.match(x) for x in sel) or not _linha(data.get("em", "-"), 40)):
+            return None
+        return data
+    return None
 
 
 _lock = threading.Lock()
@@ -79,21 +122,23 @@ def write_doc(home: Path, jogo: str, personagem: str, collection: str, doc_id: s
 
 
 def build_prompt(home: Path, jogo: str, personagem: str, modo: str) -> str:
-    """Comando da skill para o botão da página; o nome vem do plano publicado."""
-    nome = personagem
-    try:
-        plan = json.loads((Path(home) / "paginas" / jogo / personagem / "plano.json").read_text(encoding="utf-8"))
-        nome = str(plan["personagem"]["name"])
-    except (OSError, ValueError, KeyError, TypeError):
-        pass
+    """Comando da skill para o botão da página.
+
+    Só o slug da URL (já conferido pelo SEGMENT) entra no prompt. Nada do plano.json: ele é gravado pelo
+    modelo, e um nome plantado ali viraria instrução do usuário em todo clique. A skill lê o nome como dado.
+    """
+    if not GAME_OK.match(jogo) or not SEGMENT.match(personagem) or modo not in MODOS:
+        raise ValueError("jogo, personagem ou modo inválido")
     extra = " fila" if modo == "fila" else ""
-    return f"/buildsmith:build {jogo}{extra} (pela página, personagem: {nome})"
+    return f"/buildsmith:build {jogo}{extra} (pela página, personagem: {personagem})"
 
 
 def pages(home: Path) -> list[tuple[str, str, float]]:
     found = []
     for plan in sorted((Path(home) / "paginas").glob("*/*/plano.json")):
-        found.append((plan.parent.parent.name, plan.parent.name, plan.stat().st_mtime))
+        jogo, personagem = plan.parent.parent.name, plan.parent.name
+        if SEGMENT.match(jogo) and SEGMENT.match(personagem):  # pasta com outro nome não vira link
+            found.append((jogo, personagem, plan.stat().st_mtime))
     return found
 
 
@@ -105,11 +150,14 @@ class Handler(BaseHTTPRequestHandler):
     def log_message(self, *args):  # sem log no console (roda com pythonw)
         pass
 
-    def _send(self, status: int, body: bytes, ctype: str) -> None:
+    def _send(self, status: int, body: bytes, ctype: str, csp: str | None = None) -> None:
         self.send_response(status)
         self.send_header("Content-Type", ctype)
         self.send_header("Content-Length", str(len(body)))
         self.send_header("Cache-Control", "no-store")
+        self.send_header("X-Content-Type-Options", "nosniff")
+        if csp:
+            self.send_header("Content-Security-Policy", csp)
         self.end_headers()
         self.wfile.write(body)
 
@@ -175,24 +223,27 @@ class Handler(BaseHTTPRequestHandler):
         if (parts is None or len(parts) != 5 or parts[0] != "api" or parts[3] not in COLLECTIONS
                 or not all(SEGMENT.match(p) for p in (parts[1], parts[2], parts[4]))):
             return self._send(400, b"caminho invalido", "text/plain; charset=utf-8")
-        length = int(self.headers.get("Content-Length") or 0)
-        if length > 64 * 1024:
-            return self._send(413, b"grande demais", "text/plain; charset=utf-8")
-        try:
-            data = json.loads(self.rfile.read(length) or b"{}")
-        except json.JSONDecodeError:
-            return self._send(400, b"json invalido", "text/plain; charset=utf-8")
-        if not isinstance(data, dict):
-            return self._send(400, b"esperava objeto", "text/plain; charset=utf-8")
-        return self._json(write_doc(self.home, parts[1], parts[2], parts[3], parts[4], data))
+        data = clean_doc(parts[3], parts[4], self._body())
+        if data is None:
+            return self._send(400, b"documento invalido", "text/plain; charset=utf-8")
+        jogo, personagem, collection, doc_id = parts[1:]
+        if collection == "pedidos":
+            pedidos = read_state(self.home, jogo, personagem)["pedidos"]
+            abertos = sum(1 for k, v in pedidos.items() if k != doc_id and isinstance(v, dict) and v.get("estado") == "na_fila")
+            if abertos >= MAX_FILA:
+                return self._send(409, b"fila cheia", "text/plain; charset=utf-8")
+        return self._json(write_doc(self.home, jogo, personagem, collection, doc_id, data))
 
     def _body(self) -> dict | None:
-        length = int(self.headers.get("Content-Length") or 0)
-        if length > 64 * 1024:
+        try:
+            length = int(self.headers.get("Content-Length") or 0)
+        except ValueError:
+            return None
+        if not 0 <= length <= MAX_BODY:
             return None
         try:
             data = json.loads(self.rfile.read(length) or b"{}")
-        except json.JSONDecodeError:
+        except (json.JSONDecodeError, UnicodeDecodeError):
             return None
         return data if isinstance(data, dict) else None
 
@@ -217,19 +268,20 @@ class Handler(BaseHTTPRequestHandler):
             return self._send(404, b"nao encontrado", "text/plain; charset=utf-8")
         body = target.read_bytes()
         if target.name == "index.html":
-            return self._send(200, DOCTYPE + body + b"</body></html>", "text/html; charset=utf-8")
+            return self._send(200, DOCTYPE + body + b"</body></html>", "text/html; charset=utf-8", CSP_PAGINA)
         ctype = mimetypes.guess_type(target.name)[0] or "application/octet-stream"
         if ctype.startswith("text/") or ctype == "application/json":
             ctype += "; charset=utf-8"
         return self._send(200, body, ctype)
 
     def _index(self):
-        items = "".join(f'<li><a href="/p/{j}/{p}/">{p.replace("-", " ").title()}</a> <small>({j})</small></li>'
+        esc = html.escape
+        items = "".join(f'<li><a href="/p/{esc(j)}/{esc(p)}/">{esc(p.replace("-", " ").title())}</a> <small>({esc(j)})</small></li>'
                         for j, p, _ in pages(self.home)) or "<li>Nenhuma página ainda. Rode /buildsmith:build ds2.</li>"
-        html = ("<title>Forja de Build</title><style>body{background:#101013;color:#b4b2b0;font:15px Helvetica,Arial,sans-serif;"
+        body = ("<title>Forja de Build</title><style>body{background:#101013;color:#b4b2b0;font:15px Helvetica,Arial,sans-serif;"
                 "padding:32px 16px}a{color:#ab966f}h1{color:#fff;font-family:Georgia,serif;font-weight:400}</style>"
                 f"<h1>Forja de Build</h1><ul>{items}</ul>")
-        return self._send(200, DOCTYPE + html.encode("utf-8") + b"</body></html>", "text/html; charset=utf-8")
+        return self._send(200, DOCTYPE + body.encode("utf-8") + b"</body></html>", "text/html; charset=utf-8", CSP_INICIO)
 
 
 def make_server(home: Path, port: int = PORT, runner: Runner | None = None) -> ThreadingHTTPServer:
@@ -277,10 +329,21 @@ def main(argv=None) -> int:
         who = slug(args.personagem)
         if not SEGMENT.match(args.jogo) or not SEGMENT.match(who):
             parser.error("--jogo e --personagem precisam virar um nome simples (letras, números e -)")
+        ids = [v for v in (getattr(args, "pedido", None), getattr(args, "item", None), getattr(args, "passo", None)) if v]
+        if not all(SEGMENT.match(v) for v in ids):
+            parser.error("--pedido, --item e --passo são ids da página (letras minúsculas, números e -)")
+        state = read_state(home, args.jogo, who)
+        # Só responde o que a página pediu e só confirma o que ela marcou: a CLI não cria entrada nova.
         if args.cmd == "responder":
+            if args.pedido not in state["pedidos"]:
+                print(json.dumps({"error": f"não há pedido {args.pedido} na fila"}, ensure_ascii=False))
+                return 1
             write_doc(home, args.jogo, who, "pedidos", args.pedido,
                       {"estado": "respondido", "item_id": args.item or None, "respondido_em": now()}, merge=True)
         elif args.cmd == "confirmar":
+            if args.passo not in state["feitos"]:
+                print(json.dumps({"error": f"o passo {args.passo} não está marcado na página"}, ensure_ascii=False))
+                return 1
             write_doc(home, args.jogo, who, "feitos", args.passo, {"confirmado": args.resultado == "sim"}, merge=True)
         print(json.dumps(read_state(home, args.jogo, who), ensure_ascii=False, indent=2))
         return 0
