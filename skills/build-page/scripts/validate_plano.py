@@ -17,6 +17,9 @@ SINAIS = {"+", "-", ""}
 ESTADOS_CHEFE = {"derrotado", "vivo"}
 ESTADOS_EVENTO = {"feito", "pendente"}
 URL_KEYS = {"link", "fonte", "url"}
+NOME_MAX = 32  # o DS2 limita o nome do personagem bem abaixo disso
+REQUISITO_MAX = 80
+CONTROLE = re.compile(r"[\x00-\x1f\x7f-\x9f\u2028\u2029]")
 LOCAL_ICON = re.compile(r"^icons/[A-Za-z0-9._-]+$")
 TOP = {"versao": int, "gerado_em": str, "jogo": str, "objetivo": str, "personagem": dict, "alvo_stats": dict,
        "mudancas": list, "passos": list, "fases": list, "itens": list, "comparacao": list, "fontes": list}
@@ -110,6 +113,10 @@ def validate(plano: dict) -> list[str]:
         _spells(plano["feiticos"], problems)
     _requirement_links(plano, problems)
     _urls(plano, "", problems)
+    _single_line(plano, "", problems)
+    name = person.get("name")
+    if not isinstance(name, str) or not 0 < len(name) <= NOME_MAX:
+        problems.append(f"personagem.name deveria ser texto de 1 a {NOME_MAX} caracteres")
     if not problems:
         _closure(plano, problems)
     return problems
@@ -143,11 +150,27 @@ def _urls(value, where: str, problems: list) -> None:
             _urls(inner, f"{where}[{i}]", problems)
 
 
+def _single_line(value, where: str, problems: list) -> None:
+    """Nenhum texto do plano tem quebra de linha ou caractere de controle: texto vindo da wiki com várias linhas
+    é o formato de uma instrução plantada (o requisito vira pedido da fila e comando copiado)."""
+    if isinstance(value, dict):
+        for key, inner in value.items():
+            _single_line(inner, f"{where}.{key}" if where else key, problems)
+    elif isinstance(value, list):
+        for i, inner in enumerate(value):
+            _single_line(inner, f"{where}[{i}]", problems)
+    elif isinstance(value, str) and CONTROLE.search(value):
+        problems.append(f"{where} tem quebra de linha ou caractere de controle")
+
+
 def _requirement_links(plano: dict, problems: list) -> None:
     item_ids = {item.get("id") for item in plano["itens"]}
     for i, item in enumerate(plano["itens"]):
         for j, src in enumerate(item.get("fontes") or []):
             req = src.get("requisito")
+            texto = req.get("texto") if isinstance(req, dict) else req
+            if isinstance(texto, str) and len(texto) > REQUISITO_MAX:
+                problems.append(f"itens[{i}].fontes[{j}].requisito passa de {REQUISITO_MAX} caracteres")
             if isinstance(req, dict):
                 if not req.get("texto"):
                     problems.append(f"itens[{i}].fontes[{j}].requisito sem 'texto'")

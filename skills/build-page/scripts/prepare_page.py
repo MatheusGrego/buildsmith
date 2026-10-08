@@ -42,9 +42,15 @@ def default_fetch(url: str) -> bytes:
         return response.read()
 
 
+IMAGE_EXT = (".png", ".jpg", ".jpeg", ".gif", ".webp")
+
+
 def icon_name(url: str) -> str:
-    name = url.split("?")[0].rstrip("/").rsplit("/", 1)[-1]
-    return re.sub(r"[^A-Za-z0-9._-]", "_", name) or "icone.png"
+    """Nome do arquivo do ícone: só o caminho da URL (sem ?query nem #fragmento) e sempre com extensão de
+    imagem, para uma URL como .../Pagina#/CLAUDE.md não virar um CLAUDE.md no disco."""
+    name = urlsplit(url).path.rstrip("/").rsplit("/", 1)[-1]
+    name = re.sub(r"[^A-Za-z0-9._-]", "_", name).lstrip("._-") or "icone"
+    return name if name.lower().endswith(IMAGE_EXT) else f"{name}.png"
 
 
 class IconStore:

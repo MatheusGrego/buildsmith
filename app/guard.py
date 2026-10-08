@@ -2,15 +2,20 @@
 """Guarda das execuções sem janela (claude -p) que os botões da página disparam.
 
 O runner.py instala este arquivo como hook PreToolUse (via --settings). O claude -p lê a wiki, que qualquer
-um edita: um texto escondido numa página pode tentar fazer o modelo rodar código, gravar fora do lugar ou
-mandar dados para fora. Aqui cada chamada de ferramenta é decidida por código, não pelo modelo:
+um edita: um texto escondido numa página pode tentar fazer o modelo rodar código, gravar fora do lugar,
+deixar instrução para a próxima execução ou mandar dados para fora. Aqui cada chamada de ferramenta é
+decidida por código, não pelo modelo:
 
   Bash             só os scripts do buildsmith (python "<script>" <subcomando> ...), mkdir, ls e date;
-                   sem &&, |, ;, $(), crase, variável nem coringa; "> arquivo" só para as pastas graváveis.
-  Write/Edit       só em ~/.buildsmith/{config.json, profiles, history, cache, flags, tmp} e no scratchpad.
+                   sem &&, |, ;, $(), crase, variável nem coringa; "> arquivo" só onde o Write grava.
+  Write/Edit       só history/*.json, cache/*.md|json e tmp/*.json|md|txt em ~/.buildsmith, e o scratchpad.
+                   Perfil, config.json e flags ficam só leitura aqui (mudam numa sessão interativa).
+                   Nunca .claude/, CLAUDE.md, AGENTS.md nem SKILL.md: o Claude Code carrega esses arquivos
+                   sozinho como instrução, e um texto plantado viraria regra das próximas execuções.
   WebFetch         só https na wiki (Fextralife).
   Read/Glob/Grep   só no repositório, em ~/.buildsmith, no scratchpad e na pasta da sessão.
-  Skill, WebSearch, ToolSearch e lista de tarefas: liberadas. Qualquer outra (MCP, Agent, PowerShell...): negada.
+  Skill            só as do buildsmith. WebSearch, ToolSearch e lista de tarefas: liberadas.
+  Qualquer outra (MCP, Agent, PowerShell...): negada.
 
 Na dúvida, nega. Erro do próprio guarda também nega. Só biblioteca padrão.
 """
@@ -39,15 +44,24 @@ PYTHON_FLAGS = {"-u", "-B", "-3", "-Xutf8"}
 ENV_OK = {"PYTHONIOENCODING=utf-8", "PYTHONUTF8=1"}
 DATE_OPTS = {"-u", "--utc", "-I", "-Idate", "-Ihours", "-Iminutes", "-Iseconds",
              "--iso-8601", "--iso-8601=date", "--iso-8601=minutes", "--iso-8601=seconds"}
-WRITE_DIRS = ("profiles", "history", "cache", "flags", "tmp")
+# O que a execução sem janela grava em ~/.buildsmith, por pasta.
+WRITE_EXT = {"history": (".json",), "cache": (".md", ".json"), "tmp": (".json", ".md", ".txt")}
+SCRATCH_EXT = (".json", ".md", ".txt")
+# Arquivos que o Claude Code carrega sozinho como instrução (memória de projeto, skill, agente).
+RESERVED = {"claude.md", "claude.local.md", "agents.md", "skill.md"}
 WIKI_HOSTS = ("fextralife.com", "fextralifeimages.com")
-FREE_TOOLS = {"Skill", "WebSearch", "ToolSearch", "TodoWrite", "TaskCreate", "TaskUpdate", "TaskList", "TaskGet"}
+FREE_TOOLS = {"WebSearch", "ToolSearch", "TodoWrite", "TaskCreate", "TaskUpdate", "TaskList", "TaskGet"}
 READ_TOOLS = {"Read", "Glob", "Grep"}
 EDIT_TOOLS = {"Write", "Edit", "MultiEdit", "NotebookEdit"}
 # Fora de aspas o bash expandiria ou encadearia; dentro de aspas nenhum nome de item usa.
 BAD_CHARS = set("$`\n\r*?[]{}#\0")
 PUNCT = set("();<>|&")
-SEGMENT = re.compile(r"^[a-z0-9]+$")
+GAME = re.compile(r"^[a-z0-9]+$")
+SEGMENT = re.compile(r"^[a-z0-9][a-z0-9._-]{0,180}$")  # o mesmo do serve.py (pastas e ids da página)
+# Nome de arquivo ou pasta gravável: sem ponto no começo (.claude), sem : / \ < > " | ~ e sem ponto ou
+# espaço no fim (o Windows corta, e "CLAUDE.md." viraria CLAUDE.md).
+PART = re.compile(r"^\w[\w .,'()+&-]*(?<![ .])$")
+DIR_PART = re.compile(r"^\w[\w -]*(?<! )$")  # pasta criada com mkdir: sem ponto nenhum
 
 
 class Deny(Exception):
@@ -68,6 +82,12 @@ def under(path: Path, roots) -> bool:
     return any(root is not None and (path == root or path.is_relative_to(root)) for root in roots)
 
 
+def _names_ok(parts, pattern, what: str) -> None:
+    for part in parts:
+        if not pattern.match(part) or part.lower() in RESERVED:
+            raise Deny(f"{what}: nome não permitido: {part}")
+
+
 class Context:
     def __init__(self, data: dict, home: Path | None = None):
         self.home = Path(home or default_home()).expanduser().resolve()
@@ -84,12 +104,6 @@ class Context:
             path = self.cwd / path
         return path.resolve()
 
-    def write_roots(self):
-        return [self.home / d for d in WRITE_DIRS] + [self.scratch]
-
-    def page_roots(self):
-        return [self.home / "paginas", self.home / "tmp", self.scratch]
-
     def read_roots(self):
         return [REPO, self.home, self.scratch, self.session]
 
@@ -97,6 +111,51 @@ class Context:
         path = self.path(raw)
         if not under(path, roots):
             raise Deny(f"{what} fora das pastas permitidas: {path}")
+        return path
+
+    def _relative(self, path: Path, what: str) -> tuple[tuple[str, ...], str]:
+        """Partes do caminho dentro do scratchpad ou de ~/.buildsmith, e a pasta de cima."""
+        if self.scratch and path != self.scratch and under(path, [self.scratch]):
+            return path.relative_to(self.scratch).parts, "scratchpad"
+        if path != self.home and under(path, [self.home]):
+            parts = path.relative_to(self.home).parts
+            return parts, parts[0]
+        raise Deny(f"{what} fora de ~/.buildsmith e do scratchpad: {path}")
+
+    def writable(self, raw, what: str = "gravação") -> Path:
+        """Arquivo que a execução sem janela pode gravar: formato fixo por pasta."""
+        path = self.path(raw)
+        parts, top = self._relative(path, what)
+        exts = SCRATCH_EXT if top == "scratchpad" else WRITE_EXT.get(top) if len(parts) > 1 else None
+        if exts is None:
+            raise Deny(f"{what} só em ~/.buildsmith/{{{','.join(WRITE_EXT)}}} e no scratchpad "
+                       f"(perfil, config.json e flags: só leitura aqui): {path}")
+        _names_ok(parts, PART, what)
+        if not path.name.lower().endswith(exts):
+            raise Deny(f"{what}: em {top}/ só {', '.join(exts)}")
+        return path
+
+    def creatable_dir(self, raw) -> Path:
+        path = self.path(raw)
+        parts, top = self._relative(path, "mkdir")
+        if top != "scratchpad" and top not in WRITE_EXT:
+            raise Deny(f"mkdir só em ~/.buildsmith/{{{','.join(WRITE_EXT)}}} e no scratchpad: {path}")
+        _names_ok(parts, DIR_PART, "mkdir")
+        return path
+
+    def page_dir(self, raw) -> Path:
+        """Pasta de saída do prepare_page: paginas/<jogo>/<personagem>, ou em tmp/ e no scratchpad."""
+        path = self.path(raw)
+        paginas = self.home / "paginas"
+        if under(path, [paginas]):
+            parts = path.relative_to(paginas).parts
+            if len(parts) != 2 or not all(SEGMENT.match(p) for p in parts):
+                raise Deny("pasta da página: use paginas/<jogo>/<personagem> (letras minúsculas, números e -)")
+            return path
+        parts, top = self._relative(path, "pasta da página")
+        if top not in ("tmp", "scratchpad"):
+            raise Deny(f"pasta da página só em paginas/, tmp/ ou no scratchpad: {path}")
+        _names_ok(parts, PART, "pasta da página")
         return path
 
 
@@ -132,8 +191,14 @@ def _script(rel: str, args: list[str], ctx: Context) -> None:
         raise Deny(f"{Path(rel).name}: subcomando precisa ser um de {sorted(subcommands)}")
     if rel == "app/serve.py":
         for name, value in _options(args[1:], SERVE_OPTS):
-            if name == "--jogo" and not SEGMENT.match(value):
+            if name == "--jogo" and not GAME.match(value):
                 raise Deny("--jogo inválido")
+            if name in ("--pedido", "--item", "--passo") and not SEGMENT.match(value):
+                raise Deny(f"{name} precisa ser um id da página (letras minúsculas, números e -)")
+            if name == "--resultado" and value not in ("sim", "nao"):
+                raise Deny("--resultado é sim ou nao")
+            if name == "--personagem" and len(value) > 80:
+                raise Deny("--personagem longo demais")
     elif rel.endswith("prepare_page.py"):
         positional, rest = [], list(args)
         while rest:  # só <plano> <saida> e --jogo/--cache; "--" e outras opções são negadas
@@ -148,14 +213,14 @@ def _script(rel: str, args: list[str], ctx: Context) -> None:
                 if not rest:
                     raise Deny(f"{name} sem valor")
                 value = rest.pop(0)
-            if name == "--jogo" and not SEGMENT.match(value):
+            if name == "--jogo" and not GAME.match(value):
                 raise Deny("--jogo inválido")
-            if name == "--cache":
-                ctx.need(value, [ctx.home / "cache"], "cache")
+            if name == "--cache" and ctx.path(value) != ctx.home / "cache":
+                raise Deny("--cache só ~/.buildsmith/cache")
         if len(positional) != 2:
             raise Deny("prepare_page: use <plano.json> <pasta da página>")
         ctx.need(positional[0], ctx.read_roots(), "plano")
-        ctx.need(positional[1], ctx.page_roots(), "pasta da página")
+        ctx.page_dir(positional[1])
 
 
 def check_bash(tool_input: dict, ctx: Context) -> str:
@@ -176,7 +241,7 @@ def check_bash(tool_input: dict, ctx: Context) -> str:
     if not tokens:
         raise Deny("comando vazio")
     if redirect is not None and redirect != "/dev/null":
-        ctx.need(redirect, ctx.write_roots(), "redirecionamento")
+        ctx.writable(redirect, "redirecionamento")
 
     head = tokens[0]
     if head in ("mkdir", "ls", "date"):
@@ -187,13 +252,15 @@ def check_bash(tool_input: dict, ctx: Context) -> str:
             if any(a not in DATE_OPTS and not a.startswith("+") for a in args):
                 raise Deny("date só com +FORMATO, -u ou -I")
             return "date"
-        roots = [ctx.home, ctx.scratch] if head == "mkdir" else ctx.read_roots()
         for arg in args:
             if arg.startswith("-"):
                 if head == "mkdir" and arg not in ("-p", "--parents"):
                     raise Deny("mkdir só com -p")
                 continue
-            ctx.need(arg, roots, head)
+            if head == "mkdir":
+                ctx.creatable_dir(arg)
+            else:
+                ctx.need(arg, ctx.read_roots(), "ls")
         return head
 
     i = 0
@@ -241,11 +308,11 @@ def check_read(tool: str, tool_input: dict, ctx: Context) -> None:
         ctx.need(static, roots, "busca")
 
 
-def check_edit(tool_input: dict, ctx: Context) -> None:
-    raw = tool_input.get("file_path") or tool_input.get("notebook_path")
-    path = ctx.path(raw)
-    if path != ctx.home / "config.json" and not under(path, ctx.write_roots()):
-        raise Deny(f"gravação só em ~/.buildsmith/{{config.json,{','.join(WRITE_DIRS)}}} e no scratchpad: {path}")
+def check_skill(tool_input: dict) -> str:
+    name = str(tool_input.get("skill") or "").lstrip("/")
+    if not name.startswith("buildsmith:"):
+        raise Deny(f"só as skills do buildsmith (buildsmith:...); pedida: {name or '?'}")
+    return name
 
 
 def decide(data: dict, home: Path | None = None) -> tuple[str, str]:
@@ -258,11 +325,13 @@ def decide(data: dict, home: Path | None = None) -> tuple[str, str]:
         ctx = Context(data, home)
         if tool in FREE_TOOLS:
             return "allow", f"{tool} liberada"
+        if tool == "Skill":
+            return "allow", f"skill {check_skill(tool_input)}"
         if tool in READ_TOOLS:
             check_read(tool, tool_input, ctx)
             return "allow", "leitura dentro das pastas do buildsmith"
         if tool in EDIT_TOOLS:
-            check_edit(tool_input, ctx)
+            ctx.writable(tool_input.get("file_path") or tool_input.get("notebook_path"))
             return "allow", "gravação dentro de ~/.buildsmith"
         if tool == "WebFetch":
             return "allow", f"wiki: {check_url(tool_input.get('url'))}"
