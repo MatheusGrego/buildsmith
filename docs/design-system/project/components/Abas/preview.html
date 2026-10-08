@@ -1,0 +1,26 @@
+<!-- @dsCard group="Estrutura e ações" height=510 -->
+<!doctype html>
+<html>
+<head><meta charset="utf-8"><title>Abas — preview</title></head>
+<body>
+<div class="page">
+<div class="panel">
+  <nav class="tabs" role="tablist" aria-label="Seções"><button class="tab" role="tab" id="aba-ficha" aria-controls="painel-ficha" aria-selected="false" data-tab="ficha">Ficha</button><button class="tab" role="tab" id="aba-passos" aria-controls="painel-passos" aria-selected="true" data-tab="passos">Passos<span class="count">11</span></button><button class="tab" role="tab" id="aba-progresso" aria-controls="painel-progresso" aria-selected="false" data-tab="progresso">Progresso<span class="count">5</span></button><button class="tab" role="tab" id="aba-dano" aria-controls="painel-dano" aria-selected="false" data-tab="dano">Dano<span class="count">4</span></button><button class="tab" role="tab" id="aba-feiticos" aria-controls="painel-feiticos" aria-selected="false" data-tab="feiticos">Feitiços<span class="count">11</span></button><button class="tab" role="tab" id="aba-atributos" aria-controls="painel-atributos" aria-selected="false" data-tab="atributos">Atributos</button><button class="tab" role="tab" id="aba-fases" aria-controls="painel-fases" aria-selected="false" data-tab="fases">Fases<span class="count">4</span></button><button class="tab" role="tab" id="aba-onde" aria-controls="painel-onde" aria-selected="false" data-tab="onde">Onde pegar<span class="count">15</span></button><button class="tab" role="tab" id="aba-builds" aria-controls="painel-builds" aria-selected="false" data-tab="builds">Builds<span class="count">1</span></button><button class="tab" role="tab" id="aba-fila" aria-controls="painel-fila" aria-selected="false" data-tab="fila">Fila</button><button class="tab" role="tab" id="aba-fontes" aria-controls="painel-fontes" aria-selected="false" data-tab="fontes">Fontes<span class="count">16</span></button></nav>
+  <div class="tab-panel" role="tabpanel" id="painel-passos" aria-labelledby="aba-passos"><section><h2>Próximos passos</h2></section></div>
+</div>
+</div>
+<div class="page">
+<div class="panel">
+  <nav class="tabs" role="tablist" aria-label="Seções"><button class="tab" role="tab" aria-selected="false" data-tab="ficha">Ficha</button><button class="tab" role="tab" aria-selected="false" data-tab="passos">Passos<span class="count">11</span></button><button class="tab" role="tab" aria-selected="false" data-tab="progresso">Progresso<span class="count">5</span></button><button class="tab" role="tab" aria-selected="false" data-tab="dano">Dano<span class="count">4</span></button><button class="tab" role="tab" aria-selected="false" data-tab="feiticos">Feitiços<span class="count">11</span></button><button class="tab" role="tab" aria-selected="false" data-tab="atributos">Atributos</button><button class="tab" role="tab" aria-selected="false" data-tab="fases">Fases<span class="count">4</span></button><button class="tab" role="tab" aria-selected="false" data-tab="onde">Onde pegar<span class="count">15</span></button><button class="tab" role="tab" aria-selected="false" data-tab="builds">Builds<span class="count">1</span></button><button class="tab" role="tab" aria-selected="true" data-tab="fila">Fila<span class="count">2</span></button><button class="tab" role="tab" aria-selected="false" data-tab="fontes">Fontes<span class="count">16</span></button></nav>
+  <div class="tab-panel" role="tabpanel"><section><h2>Fila de pesquisa<small>respondida no próximo /buildsmith:build</small></h2></section></div>
+</div>
+</div>
+<script>
+  // A barra rola dentro dela mesma: leva a aba selecionada para a vista, como faz o foco por teclado.
+  var barra = document.querySelectorAll(".tabs")[1];
+  var fim = function () { barra.scrollLeft = barra.scrollWidth; };
+  fim();
+  if (document.fonts) document.fonts.ready.then(fim);
+</script>
+</body>
+</html>

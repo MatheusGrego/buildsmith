@@ -1,0 +1,37 @@
+<!-- @dsCard group="Estrutura e ações" height=260 -->
+<!doctype html>
+<html>
+<head><meta charset="utf-8"><title>Faixa — preview</title></head>
+<body>
+<div class="page">
+<div class="panel">
+  <header class="top">
+      <p class="meta">Dark Souls II: Scholar of the First Sin · atualizado 06/10/2026, 17:26</p>
+      <h1>Melatonina Vorcaro</h1>
+      <div class="legend"><span class="l-pos">ganho</span><span class="l-neg">perda / falta</span><span class="l-link">link da wiki</span></div>
+    </header>
+</div>
+</div>
+<div class="faixa" id="faixa"><span>Plano forjado</span></div>
+<script>
+  // A mesma função faixa() do template, repetida em ciclo com os dois títulos de fim da Forja.
+  (function () {
+    var el = document.getElementById("faixa");
+    var span = el.firstElementChild;
+    var textos = ["Plano forjado", "Fila respondida"];
+    var i = 0;
+    function faixa(texto) {
+      span.textContent = texto;
+      span.style.animation = "none";
+      void span.offsetWidth;
+      span.style.animation = "";
+      el.hidden = false;
+      clearTimeout(faixa.t);
+      faixa.t = setTimeout(function () { el.hidden = true; }, 2900);
+    }
+    faixa(textos[0]);
+    setInterval(function () { i = (i + 1) % textos.length; faixa(textos[i]); }, 3600);
+  })();
+</script>
+</body>
+</html>

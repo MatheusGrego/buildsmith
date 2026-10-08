@@ -1,0 +1,153 @@
+/* buildsmith — generated from tokens.json */
+:root, [data-theme="dark"] {
+  --bg: #101013;
+  --panel: #181818;
+  --line: #333333;
+  --text: #b4b2b0;
+  --head: #ffffff;
+  --link: #ab966f;
+  --th: #111111;
+  --td: rgba(45, 45, 45, 0.85);
+  --edge: #d9d9d9;
+  --pos: #f0b54a;
+  --neg: #6fa3d8;
+  --track: #2b2b2b;
+  --dim: #7a7875;
+  --ember: #f0a03c;
+  --ember-glow: rgba(240, 160, 60, 0.55);
+  --ember-deep: #7a3d12;
+  --band: rgba(0, 0, 0, 0.78);
+  --fogueira-glow: rgba(240, 160, 60, 0.75);
+  --acao-tint: rgba(171, 150, 111, 0.16);
+  --ember-core: #ffd27a;
+  --microtexto-mask: #000;
+  --faixa-text: #e9d3a0;
+  --faixa-glow: rgba(240, 180, 74, 0.55);
+}
+:root {
+  --gutter: 16px;
+  --page-pad-top: 24px;
+  --page-pad-bottom: 48px;
+  --panel-pad-top: 20px;
+  --panel-pad-bottom: 28px;
+  --panel-gap: 34px;
+  --tab-panel-gap: 28px;
+  --section-gap: 14px;
+  --header-gap: 12px;
+  --title-rule-gap: 6px;
+  --title-small-gap: 10px;
+  --cell-pad-y: 6px;
+  --cell-pad-x: 10px;
+  --cell-icon-gap: 8px;
+  --node-pad: 6px;
+  --node-pad-right: 12px;
+  --node-icon-gap: 10px;
+  --node-pad-table: 2px;
+  --node-pad-right-table: 8px;
+  --node-icon-gap-table: 8px;
+  --flow-gap-y: 8px;
+  --flow-gap-x: 10px;
+  --flow-gap-y-table: 4px;
+  --flow-gap-x-table: 6px;
+  --equipped-gap: 8px;
+  --step-pad-y: 18px;
+  --step-gap: 12px;
+  --block-pad-y: 16px;
+  --block-gap: 10px;
+  --list-first-pad-top: 4px;
+  --group-gap: 4px;
+  --group-title-gap: 10px;
+  --legend-gap-y: 6px;
+  --legend-gap-x: 18px;
+  --stats-gap-y: 10px;
+  --stats-gap-x: 28px;
+  --stat-gap: 10px;
+  --tab-pad-y: 10px;
+  --tab-pad-x: 14px;
+  --count-pad-x: 6px;
+  --seal-pad-y: 1px;
+  --seal-pad-x: 10px;
+  --seal-gap: 4px;
+  --box-pad-y: 14px;
+  --box-pad-x: 16px;
+  --agora-gap: 10px;
+  --forja-gap: 12px;
+  --pesq-pad-y: 1px;
+  --pesq-pad-x: 8px;
+  --inline-offset: 6px;
+  --control-pad-y: 6px;
+  --acao-pad-y: 4px;
+  --acao-pad-left: 8px;
+  --acao-pad-right: 14px;
+  --acao-icon-gap: 8px;
+  --faixa-pad-y: 22px;
+  --faixa-pad-x: 16px;
+  --focus-offset: 2px;
+  --sources-indent: 1.2em;
+  --radius-panel: 12px;
+  --border-hair: 1px;
+  --border-tab: 2px;
+  --border-acao: 2px;
+  --border-table: 3px;
+  --focus-width: 2px;
+  --focus-width-log: 1px;
+  --icon-node: 40px;
+  --icon-node-table: 28px;
+  --icon-stat: 26px;
+  --icon-fogueira: 24px;
+  --icon-small: 22px;
+  --z-tabs: 2;
+  --z-faixa: 10;
+  --page-max-width: 64rem;
+  --panel-pad-x: clamp(14px, 3vw, 28px);
+  --table-min-width: 30rem;
+  --stats-col-min: 17rem;
+  --stat-abbr-col: 3rem;
+  --stat-val-col: 5.5rem;
+  --fila-input-basis: 16rem;
+  --fogueira-size: 34px;
+  --acao-min-height: 38px;
+  --bar-height: 8px;
+  --bar-goal-width: 2px;
+  --bar-goal-overhang: -5px;
+  --segment-height: 6px;
+  --step-no-min-width: 28px;
+  --log-time-col: 3.4em;
+  --breakpoint-narrow: 560px;
+  --font-display: "Marcellus SC", "Palatino Linotype", "Book Antiqua", Georgia, serif;
+  --font-body: "Helvetica Neue", Helvetica, Arial, sans-serif;
+}
+.faixa-aviso { font-family: var(--font-display); font-size: 46px; font-weight: 400; letter-spacing: 0.18em; }
+.titulo-pagina { font-family: var(--font-display); font-size: 40px; font-weight: 400; line-height: 1.15; }
+.titulo-secao { font-family: var(--font-display); font-size: 30px; font-weight: 400; line-height: 1.3; }
+.numero-passo { font-family: var(--font-display); font-size: 26px; font-weight: 400; line-height: 1; }
+.titulo-agora { font-family: var(--font-display); font-size: 22px; font-weight: 400; line-height: 1.3; }
+.titulo-grupo { font-family: var(--font-display); font-size: 20px; font-weight: 400; }
+.inicial-no { font-family: var(--font-display); font-size: 20px; font-weight: 400; }
+.titulo-passo { font-family: var(--font-display); font-size: 18px; font-weight: 400; }
+.titulo-acao-agora { font-family: var(--font-display); font-size: 16px; font-weight: 400; }
+.aba { font-family: var(--font-display); font-size: 15px; font-weight: 400; letter-spacing: 0.03em; }
+.contador-slots { font-family: var(--font-display); font-size: 15px; font-weight: 400; }
+.inicial-no-tabela { font-family: var(--font-display); font-size: 15px; font-weight: 400; }
+.cabecalho-tabela { font-family: var(--font-display); font-size: 14px; font-weight: 400; letter-spacing: 0.02em; }
+.botao-fila { font-family: var(--font-display); font-size: 14px; font-weight: 400; }
+.rodape-tabela { font-family: var(--font-display); font-size: 14px; font-weight: 400; line-height: 1.6; }
+.selo { font-family: var(--font-display); font-size: 13px; font-weight: 400; letter-spacing: 0.04em; }
+.mais-fontes { font-family: var(--font-display); font-size: 13px; font-weight: 400; }
+.botao-pequeno { font-family: var(--font-display); font-size: 12px; font-weight: 400; letter-spacing: 0.04em; }
+.etapa-log { font-family: var(--font-display); font-size: 12px; font-weight: 400; letter-spacing: 0.08em; }
+.rotulo-etapa { font-family: var(--font-display); font-size: 11px; font-weight: 400; letter-spacing: 0.04em; }
+.valor-slots { font-family: var(--font-body); font-size: 15px; font-weight: 500; }
+.corpo { font-family: var(--font-body); font-size: 14px; font-weight: 400; line-height: 1.6; }
+.vazio { font-family: var(--font-body); font-size: 14px; font-weight: 400; line-height: 1.6; font-style: italic; }
+.nome-no { font-family: var(--font-body); font-size: 14px; font-weight: 500; line-height: 1.6; }
+.campo { font-family: var(--font-body); font-size: 14px; font-weight: 400; }
+.subtitulo-secao { font-family: var(--font-body); font-size: 14px; font-weight: 400; letter-spacing: 0; }
+.pequeno { font-family: var(--font-body); font-size: 13px; font-weight: 400; line-height: 1.6; }
+.subtitulo-grupo { font-family: var(--font-body); font-size: 13px; font-weight: 400; }
+.legenda-no { font-family: var(--font-body); font-size: 12px; font-weight: 400; line-height: 1.6; }
+.contador { font-family: var(--font-body); font-size: 12px; font-weight: 400; }
+.texto-log { font-family: var(--font-body); font-size: 12px; font-weight: 400; line-height: 1.55; }
+.pensamento-log { font-family: var(--font-body); font-size: 12px; font-weight: 400; line-height: 1.55; font-style: italic; }
+.seta { font-family: var(--font-body); font-size: 20px; font-weight: 400; line-height: 1; }
+.seta-tabela { font-family: var(--font-body); font-size: 16px; font-weight: 400; line-height: 1; }

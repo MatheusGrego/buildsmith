@@ -1,0 +1,46 @@
+<!-- @dsCard height=300 -->
+<!doctype html>
+<html>
+<head><meta charset="utf-8"><title>buildsmith — capa</title>
+<style>
+  html, body { margin: 0; background: var(--bg); }
+  .cover { display: block; width: 100%; height: auto; }
+  .ember { fill: var(--ember); }
+  .gold { fill: var(--link); }
+  .steel { fill: var(--neg); }
+  .node { fill: var(--track); stroke: var(--link); stroke-width: 2; }
+  .lit { fill: var(--pos); }
+  .arrow { fill: var(--link); font: 18px var(--body); }
+  .spark { fill: var(--ember-core); }
+  .name { fill: var(--head); font-family: var(--display); font-size: 68px; }
+  .tag { fill: var(--text); font-family: var(--body); font-size: 14px; letter-spacing: 0.04em; }
+</style>
+</head>
+<body>
+<!-- Derivação:
+     Blocos: ember (slab 168x228, rx=radius-panel 12) + link (92x110) + neg (92x104); peso maior no ember, a cor-assinatura (fogo/brasa).
+     Arranjo: um slab alto com dois satélites à direita (x>480); nome no canto inferior esquerdo sobre o fundo.
+     Padrão: fluxo de nós-tile levando a um nó aceso (linha "feito = fogo aceso" + "dados, não frases" = fluxo de .node). É o motivo literal da página, não genérico.
+     Escala/raios: tiles 22 (quadrados, como as tabelas da wiki), único raio do sistema (radius-panel 12) no slab; faíscas em ember-core. -->
+<svg class="cover" viewBox="0 0 960 300" width="960" height="300" role="img" aria-label="buildsmith">
+  <rect x="0" y="0" width="960" height="300" fill="var(--bg)"/>
+  <!-- blocos -->
+  <rect class="ember" x="648" y="36" width="168" height="228" rx="12"/>
+  <rect class="gold" x="836" y="36" width="92" height="110"/>
+  <rect class="steel" x="836" y="160" width="92" height="104"/>
+  <!-- fluxo de nós até o nó aceso -->
+  <rect class="node" x="512" y="139" width="22" height="22"/>
+  <text class="arrow" x="544" y="156">&#10142;</text>
+  <rect class="node" x="566" y="139" width="22" height="22"/>
+  <text class="arrow" x="598" y="156">&#10142;</text>
+  <rect class="lit" x="620" y="139" width="22" height="22"/>
+  <!-- faíscas subindo do nó aceso -->
+  <circle class="spark" cx="634" cy="120" r="4"/>
+  <circle class="spark" cx="646" cy="102" r="3"/>
+  <circle class="spark" cx="639" cy="86" r="2.5"/>
+  <!-- nome -->
+  <text class="name" x="48" y="206">buildsmith</text>
+  <text class="tag" x="50" y="236">Forja de Build &#183; plano de build do Dark Souls II SotFS</text>
+</svg>
+</body>
+</html>
