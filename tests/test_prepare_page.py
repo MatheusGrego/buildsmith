@@ -152,7 +152,8 @@ def faixa_area():
             "malhas": [{"v": v, "f": f}],
             "fogueiras": [{"id": 16675, "nome": "Servants' Quarters", "pos": [0.2, 0, 0.3]}],
             "itens": [{"lote": 10165010, "pos": [2.9, 0, 0.6], "itens": [{"id": 1, "nome": "Soul Vessel", "qtd": 1}]},
-                      {"lote": 10165020, "pos": [1.5, 0, 0.5], "itens": [{"id": 2, "nome": "Large Titanite Shard", "qtd": 2}]}],
+                      {"lote": 10165020, "pos": [1.5, 0, 0.5], "itens": [{"id": 3, "nome": "Radiant Lifegem", "qtd": 1},
+                                                                           {"id": 2, "nome": "Large Titanite Shard", "qtd": 2}]}],
             "inimigos": [{"id": 145, "pos": [1.0, 0, 0.5]}]}
 
 
@@ -178,6 +179,7 @@ def test_plan_points_become_area_and_route(tmp_path):
     assert area["nome"] == "The Lost Bastille" and "malhas" not in area and area["planta"]["andares"]
     pontos = {p["lote"]: p for p in area["itens"]}
     assert pontos[10165020]["plano"] is True and pontos[10165020]["item_id"] == "large-titanite-shard"
+    assert pontos[10165020]["itens"][0]["nome"] == "Large Titanite Shard"  # o item do plano vem primeiro (rótulo e ícone)
     assert pontos[10165010]["plano"] is False and pontos[10165010]["icone"].startswith("icons/")
     assert Path(out["files"][pontos[10165020]["icone"]]).exists()
     assert all("andar" in p for p in area["fogueiras"] + area["itens"] + area["inimigos"])
