@@ -183,3 +183,43 @@ def test_cli_extract_prints_summary(tmp_path, capsys):
     assert ds2mapa.main(["extrair", "--area", "m10_16_00_00", "--game", str(GAME), "--cache", str(tmp_path)]) == 0
     out = json.loads(capsys.readouterr().out)
     assert out["nome"] == "The Lost Bastille" and out["fogueiras"] == 7 and out["itens"] > 50
+
+
+def faixa_area(ilhas=False):
+    """Faixa de 6 triângulos ao longo de x (0..3), e uma ilha separada em x=10 quando pedida."""
+    v = [0, 0, 0, 0, 0, 1, 1, 0, 0, 1, 0, 1, 2, 0, 0, 2, 0, 1, 3, 0, 0, 3, 0, 1]
+    f = [0, 2, 1, 1, 2, 3, 2, 4, 3, 3, 4, 5, 4, 6, 5, 5, 6, 7]
+    malhas = [{"v": v, "f": f}]
+    if ilhas:
+        malhas.append({"v": [10, 0, 0, 11, 0, 0, 10, 0, 1], "f": [0, 1, 2]})
+    return {"area": "m10_16_00_00", "malhas": malhas,
+            "fogueiras": [{"id": 16675, "nome": "Servants' Quarters", "pos": [0.2, 0, 0.3]}],
+            "itens": [{"lote": 10165010, "pos": [2.9, 0, 0.6], "itens": []}, {"lote": 7, "pos": [10.5, 0, 0.2], "itens": []}],
+            "inimigos": [{"id": 145, "pos": [1.5, 0, 0.5]}]}
+
+
+def test_route_follows_the_floor():
+    area = faixa_area()
+    r = ds2mapa.rota(area, ds2mapa.ponto_de(area, "fogueira", 16675), ds2mapa.ponto_de(area, "item", 10165010))
+    assert r["pontos"][0] == [0.2, 0, 0.3] and r["pontos"][-1] == [2.9, 0, 0.6]
+    assert 2.7 <= r["metros"] <= 4.0 and len(r["pontos"]) >= 3
+
+
+def test_route_between_islands_is_none():
+    area = faixa_area(ilhas=True)
+    assert ds2mapa.rota(area, ds2mapa.ponto_de(area, "fogueira", 16675), ds2mapa.ponto_de(area, "item", 7)) is None
+
+
+def test_unknown_point_raises():
+    with pytest.raises(KeyError):
+        ds2mapa.ponto_de(faixa_area(), "item", 123)
+    with pytest.raises(KeyError):
+        ds2mapa.ponto_de(faixa_area(), "baú", 1)
+
+
+@pytest.mark.skipif(not (GAME / "GameDataEbl.bhd").exists(), reason="DS2 SotFS não instalado")
+def test_real_route_servants_quarters_to_straid(tmp_path, capsys):
+    assert ds2mapa.main(["rota", "--area", "m10_16_00_00", "--de", "fogueira:16675", "--ate", "fogueira:16650",
+                         "--game", str(GAME), "--cache", str(tmp_path)]) == 0
+    r = json.loads(capsys.readouterr().out)
+    assert 150 < r["metros"] < 400 and len(r["pontos"]) > 10
