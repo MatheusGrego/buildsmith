@@ -20,6 +20,8 @@ import struct
 import sys
 from pathlib import Path
 
+from ds2planta import PLANTA_VERSAO  # noqa: F401 (versão da planta guardada no cache)
+
 AREA = re.compile(r"^m(\d\d)_(\d\d)_(\d\d)_(\d\d)$")
 TIPO_NAVMESH, TIPO_COLISAO, TIPO_OBJETO = 4, 3, 1
 
@@ -119,6 +121,20 @@ def nome_mapa_id(area: str) -> int:
     return int(m.group(1)) * 1_000_000 + int(m.group(2)) * 10_000
 
 
+def com_planta(area: dict) -> dict:
+    """Garante a planta limpa (andares e contornos, ds2planta) e o andar de cada ponto; não refaz a mesma versão."""
+    import ds2planta
+
+    if area.get("planta", {}).get("versao") == ds2planta.PLANTA_VERSAO:
+        return area
+    pl = ds2planta.planta(area)
+    area["planta"] = pl
+    for lista in ("fogueiras", "itens", "inimigos"):
+        for p in area.get(lista, []):
+            p["andar"] = ds2planta.andar_de(pl, p["pos"][1])
+    return area
+
+
 def lotes_itens(data: bytes) -> dict[int, list[tuple[int, int]]]:
     """ItemLotParam2_Other: quantidades (10 bytes) em +0x04 e IDs (10 int) em +0x2C; ID <= 10 = vazio."""
     out = {}
@@ -174,7 +190,9 @@ def extrair_area(game_dir, area: str, cache_dir, names=None) -> dict:
         try:
             pronto = json.loads(destino.read_text(encoding="utf-8"))
             if pronto.get("assinatura") == assinatura:
-                return pronto
+                if pronto.get("planta", {}).get("versao") == PLANTA_VERSAO:
+                    return pronto
+                return _gravar(destino, com_planta(pronto))
         except ValueError:
             pass
     arq = ds2arquivos.Arquivo(game_dir, "GameData")
@@ -190,11 +208,15 @@ def extrair_area(game_dir, area: str, cache_dir, names=None) -> dict:
     nomes_itens = {i: n for i, (_cat, n) in names.items()}
     nome = _texto(arq, "mapname").get(nome_mapa_id(area), area)
     out = montar_area(area, nome, partes, instancias, _texto(arq, "bonfirename"), lotes, nomes_itens, malhas, geradores, assinatura)
+    return _gravar(destino, com_planta(out))
+
+
+def _gravar(destino: Path, dados: dict) -> dict:
     destino.parent.mkdir(parents=True, exist_ok=True)
     tmp = destino.with_suffix(".tmp")
-    tmp.write_text(json.dumps(out, ensure_ascii=False, separators=(",", ":")), encoding="utf-8")
+    tmp.write_text(json.dumps(dados, ensure_ascii=False, separators=(",", ":")), encoding="utf-8")
     os.replace(tmp, destino)
-    return out
+    return dados
 
 
 def areas(game_dir) -> list[dict]:
