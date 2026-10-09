@@ -10,6 +10,10 @@ import pytest
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "app"))
 import serve  # noqa: E402
+from conftest import build_bnd4, make_slot  # noqa: E402
+
+PNG = b"\x89PNG\r\n\x1a\n" + b"\0" * 20
+JPG = b"\xff\xd8\xff\xe0" + b"\0" * 20
 
 FAKE = r'''
 import json
@@ -33,7 +37,13 @@ def server(tmp_path):
         seen.append(prompt)
         return [sys.executable, str(fake)]
 
-    httpd = serve.make_server(tmp_path, port=0, runner=serve.Runner(command=command, cwd=tmp_path))
+    save = tmp_path / "DS2SOFS0000.co2"
+    save.write_bytes(build_bnd4({"USER_DATA001": bytes(make_slot(name="Melatonina Vorcaro")),
+                                 "USER_DATA002": bytes(make_slot(name="Melatonina (teste)", level=70)),
+                                 "USER_DATA011": bytes(0x30000), "USER_DATA012": bytes(0x30000)}))
+    steam = tmp_path / "steam"
+    httpd = serve.make_server(tmp_path, port=0, runner=serve.Runner(command=command, cwd=tmp_path),
+                              save=save, steam_dirs=[steam])
     httpd.prompts = seen
     thread = threading.Thread(target=httpd.serve_forever, daemon=True)
     thread.start()
@@ -66,9 +76,72 @@ def test_files_of_the_page(server):
     assert get(f"{base}/p/ds2/melatonina-vorcaro/icons/a.png")[1] == "image/png"
 
 
-def test_index_lists_characters(server):
+def test_index_opens_latest_page_and_lists_on_request(server):
     base, _ = server
-    assert b"/p/ds2/melatonina-vorcaro/" in get(f"{base}/")[2]
+    req = urllib.request.Request(f"{base}/")
+    opener = urllib.request.build_opener(NoRedirect)
+    with pytest.raises(urllib.error.HTTPError) as err:
+        opener.open(req, timeout=5)
+    assert err.value.code == 302 and err.value.headers["Location"] == "/p/ds2/melatonina-vorcaro/"
+    assert b"/p/ds2/melatonina-vorcaro/" in get(f"{base}/?lista=1")[2]
+
+
+class NoRedirect(urllib.request.HTTPRedirectHandler):
+    def redirect_request(self, *args, **kwargs):
+        return None
+
+
+def post_raw(url, data, ctype, headers=None):
+    headers = {"Content-Type": ctype, "X-Buildsmith": "1", **(headers or {})}
+    req = urllib.request.Request(url, data=data, method="POST", headers=headers)
+    with urllib.request.urlopen(req, timeout=5) as resp:
+        return json.loads(resp.read())
+
+
+def test_characters_come_from_the_save(server):
+    base, _ = server
+    data = json.loads(get(f"{base}/api/ds2/personagens")[2])
+    lista = data["personagens"]
+    assert [(p["slug"], p["nivel"], p["pagina"]) for p in lista] == [("melatonina-vorcaro", 65, True), ("melatonina-teste", 70, False)]
+    assert lista[0]["url"] == "/p/ds2/melatonina-vorcaro/" and lista[1]["url"] is None
+    assert lista[0]["retrato"] is None and data["print"] is False
+
+
+def test_portrait_upload_rules(server):
+    base, home = server
+    url = f"{base}/api/ds2/melatonina-vorcaro/retrato"
+    with pytest.raises(urllib.error.HTTPError) as err:
+        post_raw(url, b"<svg onload=alert(1)>", "image/png")
+    assert err.value.code == 400
+    with pytest.raises(urllib.error.HTTPError) as err:
+        post_raw(url, PNG, "image/png", headers={"X-Buildsmith": ""})
+    assert err.value.code == 403
+    with pytest.raises(urllib.error.HTTPError) as err:
+        post_raw(url, PNG + b"\0" * (2 * 1024 * 1024), "image/png")
+    assert err.value.code == 413
+    assert not (home / "retratos").exists() or not any((home / "retratos").rglob("*.*"))
+    post_raw(url, PNG, "image/png")
+    status, ctype, body = get(url)
+    assert ctype == "image/png" and body == PNG
+    personagem = json.loads(get(f"{base}/api/ds2/personagens")[2])["personagens"][0]
+    assert personagem["retrato"].startswith("/api/ds2/melatonina-vorcaro/retrato")
+    post(f"{base}/api/ds2/melatonina-vorcaro/retrato-limpar", {})
+    with pytest.raises(urllib.error.HTTPError) as err:
+        get(url)
+    assert err.value.code == 404
+
+
+def test_portrait_from_latest_steam_print(server):
+    base, home = server
+    with pytest.raises(urllib.error.HTTPError) as err:
+        post(f"{base}/api/ds2/melatonina-vorcaro/retrato-print", {})
+    assert err.value.code == 404
+    shots = home / "steam" / "userdata" / "7" / "760" / "remote" / "335300" / "screenshots"
+    shots.mkdir(parents=True)
+    (shots / "x.jpg").write_bytes(JPG)
+    assert json.loads(get(f"{base}/api/ds2/personagens")[2])["print"] is True
+    post(f"{base}/api/ds2/melatonina-vorcaro/retrato-print", {})
+    assert get(f"{base}/api/ds2/melatonina-vorcaro/retrato")[2] == JPG
 
 
 def test_state_round_trip(server):

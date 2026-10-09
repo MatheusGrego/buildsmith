@@ -235,7 +235,7 @@ def test_queue_has_a_ceiling(server):
 
 def test_index_escapes_folder_names_and_pages_have_csp(server):
     base, _ = server
-    with urllib.request.urlopen(f"{base}/", timeout=5) as resp:
+    with urllib.request.urlopen(f"{base}/?lista=1", timeout=5) as resp:
         body, csp = resp.read().decode(), resp.headers.get("Content-Security-Policy", "")
     assert "<img" not in body and "script-src" not in csp and "default-src 'none'" in csp
     with urllib.request.urlopen(f"{base}/p/ds2/melatonina-vorcaro/", timeout=5) as resp:
