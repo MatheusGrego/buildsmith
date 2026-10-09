@@ -24,6 +24,7 @@ OFF_HANDS = 0x190
 HAND_SLOTS = ["L1", "R1", "L2", "R2", "L3", "R3"]
 OFF_ARMOR = 0x1A8
 ARMOR_SLOTS = ["cabeca", "peito", "maos", "pernas"]
+ARMOR_ITEM_OFFSET = 10_000_000  # o slot guarda o ID da ArmorParam; o item (e o nome) é esse + 10.000.000
 OFF_RINGS = 0x1D0
 OFF_SPELLS = 0x208
 SPELL_SLOTS = 14
@@ -172,7 +173,7 @@ def parse_slot(slot: bytes, names) -> dict:
         "stats": dict(zip(STAT_NAMES, struct.unpack_from("<9H", slot, OFF_STATS))),
         "equipped": {
             "hands": {k: named(i) for k, i in zip(HAND_SLOTS, _ids(slot, OFF_HANDS, 6)) if i not in EMPTY},
-            "armor": {k: named(i) for k, i in zip(ARMOR_SLOTS, _ids(slot, OFF_ARMOR, 4)) if i not in EMPTY},
+            "armor": {k: named(i + ARMOR_ITEM_OFFSET) for k, i in zip(ARMOR_SLOTS, _ids(slot, OFF_ARMOR, 4)) if i not in EMPTY},
             "rings": [named(i) for i in _ids(slot, OFF_RINGS, 4) if i not in EMPTY],
             "spells": [named(i) for i in _ids(slot, OFF_SPELLS, SPELL_SLOTS) if i not in EMPTY],
         },
@@ -293,14 +294,32 @@ def _plain(text: str) -> str:
     return unicodedata.normalize("NFKD", text).encode("ascii", "ignore").decode().casefold().strip()
 
 
+def _slug(text: str) -> str:
+    return re.sub(r"[^a-z0-9]+", "-", _plain(text)).strip("-")
+
+
 def slot_by_name(path, name: str) -> int:
-    """Slot do personagem pelo nome (sem diferença de maiúscula/acento). Um save pode ter vários personagens."""
+    """Slot do personagem pelo nome ou pelo slug da página (sem diferença de maiúscula/acento/pontuação)."""
     found = list_slots(path)
     for item in found:
-        if _plain(item["name"]) == _plain(name):
+        if _slug(item["name"]) == _slug(name):
             return item["slot"]
     options = ", ".join(f'{item["slot"]}: {item["name"]}' for item in found) or "nenhum"
     raise SaveError(f"personagem {name!r} não está no save (personagens: {options})")
+
+
+def personagens(path, names=None) -> list[dict]:
+    """Personagens do save com o que a seleção da página mostra: nível, soul memory e o equipamento do retrato."""
+    names = names if names is not None else load_item_names()
+    out = []
+    for number, slot in _occupied(_read_entries(path)):
+        info = parse_slot(slot, names)
+        eq = info["equipped"]
+        equipado = {k: eq["armor"].get(k) for k in ("cabeca", "peito", "maos", "pernas")}
+        equipado.update({k: eq["hands"].get(k) for k in ("R1", "L1")})
+        out.append({"slot": number, "nome": info["name"], "slug": _slug(info["name"]), "nivel": info["level"],
+                    "soul_memory": info["soul_memory"], "equipado": equipado})
+    return out
 
 
 def snapshot(path, slot: int | None = None, names=None, regulation=None, learned=None) -> dict:

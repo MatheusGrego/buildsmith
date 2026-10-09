@@ -1,4 +1,5 @@
 import json
+import struct
 
 import pytest
 
@@ -150,3 +151,23 @@ def test_find_save_prefers_seamless_extension(tmp_path):
     (game / "SeamlessCoop" / "ds2sc_settings.ini").write_text("[SAVE]\nsave_file_extension = teste\n", encoding="utf-8")
     assert ds2save.find_save(str(tmp_path), game_dir=game) == test_save
     assert ds2save.seamless_extension(game) == "teste"
+
+
+def test_armor_uses_item_ids(tmp_path):
+    slot = make_slot(name="A")
+    struct.pack_into("<4I", slot, ds2save.OFF_ARMOR, 12460100, 12460101, 12460102, 12460103)
+    path = tmp_path / "a.sl2"
+    path.write_bytes(build_bnd4({"USER_DATA001": bytes(slot), "USER_DATA011": bytes(0x30000)}))
+    armor = ds2save.snapshot(path, names={22460100: ("Armor", "Tseldora Cap")}, regulation=False)["equipped"]["armor"]
+    assert armor["cabeca"] == {"id": 22460100, "name": "Tseldora Cap"}
+
+
+def test_slot_by_slug_and_character_list(tmp_path, names):
+    path = tmp_path / "multi.sl2"
+    path.write_bytes(build_bnd4({"USER_DATA001": bytes(make_slot(name="Melatonina Vorcaro")),
+                                 "USER_DATA002": bytes(make_slot(name="Melatonina (teste)", level=10)),
+                                 "USER_DATA011": bytes(0x30000), "USER_DATA012": bytes(0x30000)}))
+    assert ds2save.slot_by_name(path, "melatonina-teste") == 2
+    lista = ds2save.personagens(path, names=names)
+    assert [(p["slot"], p["slug"], p["nivel"]) for p in lista] == [(1, "melatonina-vorcaro", 65), (2, "melatonina-teste", 10)]
+    assert set(lista[0]["equipado"]) == {"cabeca", "peito", "maos", "pernas", "R1", "L1"}
