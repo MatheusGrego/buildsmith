@@ -40,3 +40,20 @@ def test_cache_avoids_second_request_and_remembers_misses(tmp_path):
     assert de_novo.url("Fragrant Branch of Yore").endswith("Fragrant_branch_of_yore.png")
     assert de_novo.url("Item Inventado") is None
     assert len(fetch.chamadas) == 2
+
+
+def test_boss_names_try_singular_and_without_the(tmp_path):
+    pagina = PAGINA.replace("Fragrant_branch_of_yore", "Ruin_sentinels")
+    fetch = FakeFetch({icones_wiki.pagina_item("Ruin Sentinel"): pagina, icones_wiki.pagina_item("Lost Sinner"): pagina})
+    icones = icones_wiki.IconesWiki(tmp_path / "icones.json", fetch)
+    assert icones.url("Ruin Sentinels").endswith("Ruin_sentinels.png")
+    assert icones.pagina("Ruin Sentinels") == "https://darksouls2.wiki.fextralife.com/Ruin_Sentinel"
+    assert icones.url("The Lost Sinner").endswith("Ruin_sentinels.png")
+
+
+def test_old_cached_miss_is_retried(tmp_path):
+    cache = tmp_path / "icones.json"
+    cache.write_text('{"ruin sentinels": {"url": null, "data": "2099-01-01"}}', encoding="utf-8")
+    pagina = PAGINA.replace("Fragrant_branch_of_yore", "Ruin_sentinels")
+    icones = icones_wiki.IconesWiki(cache, FakeFetch({icones_wiki.pagina_item("Ruin Sentinel"): pagina}))
+    assert icones.url("Ruin Sentinels").endswith("Ruin_sentinels.png")

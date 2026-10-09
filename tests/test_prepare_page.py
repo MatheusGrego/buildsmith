@@ -154,7 +154,12 @@ def faixa_area():
             "itens": [{"lote": 10165010, "pos": [2.9, 0, 0.6], "itens": [{"id": 1, "nome": "Soul Vessel", "qtd": 1}]},
                       {"lote": 10165020, "pos": [1.5, 0, 0.5], "itens": [{"id": 3, "nome": "Radiant Lifegem", "qtd": 1},
                                                                            {"id": 2, "nome": "Large Titanite Shard", "qtd": 2}]}],
-            "inimigos": [{"id": 145, "pos": [1.0, 0, 0.5]}]}
+            "inimigos": [{"id": 145, "pos": [1.0, 0, 0.5]}],
+            "npcs": [{"id": 7680, "nome": "Straid of Olaphis", "pos": [2.5, 0, 0.5]},
+                     {"id": 7520, "nome": "Lucatiel of Mirrah", "pos": [0.5, 0, 0.5]}],
+            "chefes": [{"flag": 100962, "nome": "Ruin Sentinels", "wiki": "https://darksouls2.wiki.fextralife.com/Ruin+Sentinels",
+                        "pos": [2.0, 0, 0.8]}],
+            "inicio": [0.1, 0, 0.1]}
 
 
 def plano_com_pontos():
@@ -218,3 +223,23 @@ def test_without_game_the_page_has_no_map_and_a_warning(tmp_path):
                                carregar_area=sem_jogo)
     assert any("mapa indisponível" in a for a in out["avisos"])
     assert "mapa" not in final_plan(tmp_path)["itens"][0]["fontes"][0]
+
+
+
+def test_page_area_has_zones_plan_npcs_and_boss_state(tmp_path):
+    plano = plano_com_pontos()
+    plano["progresso"]["chefes"].append({"no": {"tipo": "chefe", "nome": "Ruin Sentinels"}, "estado": "derrotado"})
+    src = tmp_path / "p.json"
+    src.write_text(json.dumps(plano, ensure_ascii=False), encoding="utf-8")
+    out = prepare_page.prepare(src, tmp_path / "saida", "ds2", cache_root=tmp_path / "cache", fetch=FakeFetch(),
+                               carregar_area=lambda area: faixa_area())
+    area = json.loads(Path(out["files"]["mapas/m10_16_00_00.json"]).read_text(encoding="utf-8"))
+    assert area["zonas"]["lista"] and area["zonas"]["lista"][0]["ordem"] == 1
+    assert all(p.get("zona") for p in area["itens"] + area["npcs"] + area["chefes"] + area["fogueiras"])
+    npcs = {n["nome"]: n for n in area["npcs"]}
+    assert npcs["Straid of Olaphis"]["plano"] is True
+    assert {"Ring of Knowledge", "Heavy Homing Soul Arrow"} <= set(npcs["Straid of Olaphis"]["precisa"])
+    assert npcs["Lucatiel of Mirrah"]["plano"] is False and npcs["Lucatiel of Mirrah"]["precisa"] == []
+    assert npcs["Straid of Olaphis"]["retrato"].startswith("icons/")
+    chefe = area["chefes"][0]
+    assert chefe["estado"] == "derrotado" and chefe["retrato"].startswith("icons/")

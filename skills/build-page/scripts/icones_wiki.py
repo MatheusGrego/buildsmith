@@ -12,11 +12,25 @@ from urllib.parse import quote, urlsplit
 WIKI = "https://darksouls2.wiki.fextralife.com/"
 HOSTS = ("fextralifeimages.com", "fextralife.com")
 REFAZER_FALTA = timedelta(days=30)
+CACHE_VERSAO = 2  # 2: tenta variações do nome (sem "The", singular) e guarda a página achada
 IMG = re.compile(r"<img[^>]*?\ssrc=[\"']([^\"']+)[\"']", re.I)
 
 
 def pagina_item(nome: str) -> str:
     return WIKI + quote(nome.strip().replace(" ", "_"), safe="_'()&,-.")
+
+
+def candidatos(nome: str) -> list[str]:
+    """Nome como está, sem o "The" do começo e no singular: chefes têm página com outro nome (Ruin Sentinel)."""
+    base = nome.strip()
+    out = [base]
+    sem_the = re.sub(r"^the\s+", "", base, flags=re.I)
+    if sem_the not in out:
+        out.append(sem_the)
+    for n in list(out):
+        if n.endswith("s") and not n.endswith("ss") and n[:-1] not in out:
+            out.append(n[:-1])
+    return out
 
 
 def _da_fextralife(url: str) -> bool:
@@ -49,28 +63,40 @@ class IconesWiki:
 
     def _guardado(self, nome: str) -> dict | None:
         g = self.cache.get(nome.strip().casefold())
-        if g and (g.get("url") or date.fromisoformat(g["data"]) > date.today() - REFAZER_FALTA):
+        if g and (g.get("url") or (g.get("v") == CACHE_VERSAO and date.fromisoformat(g["data"]) > date.today() - REFAZER_FALTA)):
             return g
         return None
 
-    def _buscar(self, nome: str) -> str | None:
-        try:
-            return icone_da_pagina(self.fetch(pagina_item(nome)).decode("utf-8", errors="replace"))
-        except Exception:  # rede, 404: fica sem ícone e tenta de novo depois
-            return None
+    def _buscar(self, nome: str) -> tuple[str | None, str | None]:
+        for candidato in candidatos(nome):
+            pagina = pagina_item(candidato)
+            try:
+                url = icone_da_pagina(self.fetch(pagina).decode("utf-8", errors="replace"))
+            except Exception:  # rede, 404: tenta o próximo nome
+                continue
+            if url:
+                return url, pagina
+        return None, None
 
-    def _guardar(self, nome: str, url: str | None) -> None:
-        self.cache[nome.strip().casefold()] = {"url": url, "data": date.today().isoformat()}
+    def _guardar(self, nome: str, achado: tuple) -> None:
+        url, pagina = achado
+        self.cache[nome.strip().casefold()] = {"url": url, "pagina": pagina, "data": date.today().isoformat(), "v": CACHE_VERSAO}
         self.mudou = True
 
-    def url(self, nome: str) -> str | None:
+    def _entrada(self, nome: str) -> dict:
         g = self._guardado(nome)
-        if g:
-            return g.get("url")
-        url = self._buscar(nome)
-        self._guardar(nome, url)
-        self.salvar()
-        return url
+        if not g:
+            self._guardar(nome, self._buscar(nome))
+            self.salvar()
+            g = self.cache[nome.strip().casefold()]
+        return g
+
+    def url(self, nome: str) -> str | None:
+        return self._entrada(nome).get("url")
+
+    def pagina(self, nome: str) -> str | None:
+        """Página da wiki onde o ícone foi achado (pode ter nome diferente do jogo)."""
+        return self._entrada(nome).get("pagina")
 
     def prebuscar(self, nomes, workers: int = 6) -> None:
         """Busca de uma vez (em paralelo) os ícones que ainda não estão no cache."""
@@ -80,8 +106,8 @@ class IconesWiki:
         if not faltam:
             return
         with ThreadPoolExecutor(max_workers=workers) as ex:
-            for nome, url in zip(faltam, ex.map(self._buscar, faltam)):
-                self._guardar(nome, url)
+            for nome, achado in zip(faltam, ex.map(self._buscar, faltam)):
+                self._guardar(nome, achado)
         self.salvar()
 
     def salvar(self) -> None:

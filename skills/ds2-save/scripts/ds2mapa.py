@@ -207,6 +207,8 @@ def com_zonas(area: dict) -> dict:
         baldes[(int(c[0] // 8), int(c[2] // 8))].append(t)
 
     def zona_de(pos):
+        if not tri_zona:  # área sem fogueira: sem zonas
+            return None
         bx, bz = int(pos[0] // 8), int(pos[2] // 8)
         for raio in (1, 3, 8):
             cand = [t for dx in range(-raio, raio + 1) for dz in range(-raio, raio + 1) for t in baldes.get((bx + dx, bz + dz), [])]

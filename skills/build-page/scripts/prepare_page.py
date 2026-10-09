@@ -198,7 +198,7 @@ def prepare(plano_path, out_dir, jogo: str, cache_root=None, fetch=default_fetch
         if carregar_area is None:
             carregar_area, listar_areas = carregar_area_do_jogo(cache_root, jogo), listar_areas or listar_areas_do_jogo
         map_files = mapas_pagina.preparar(plano, out_dir, carregar_area, listar_areas or (lambda: []), icone_local,
-                                          icones.prebuscar)
+                                          icones.prebuscar, icones.pagina)
     except ValueError:
         raise
     except Exception as err:  # jogo ausente, arquivo trocado por atualização: página sem mapa, com aviso

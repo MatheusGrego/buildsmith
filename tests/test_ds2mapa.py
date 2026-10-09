@@ -322,3 +322,8 @@ def test_real_lost_bastille_zones(tmp_path):
     assert len(zonas) == 7 and sorted(z["ordem"] for z in zonas) == list(range(1, 8))
     assert area["zonas"]["ordem_por"] == "inicio"
     assert all(p.get("zona") for p in area["itens"] + area["npcs"] + area["chefes"])
+
+
+def test_area_without_bonfires_has_no_zones():
+    area = ds2mapa.com_zonas(area_sintetica([quadrado(0, 0, 10, 10, 0.0)], itens=[{"lote": 9, "pos": [3, 0, 5], "itens": []}]))
+    assert area["zonas"]["lista"] == [] and area["itens"][0]["zona"] is None
