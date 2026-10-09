@@ -23,6 +23,8 @@ from pathlib import Path
 from ds2planta import PLANTA_VERSAO  # noqa: F401 (versão da planta guardada no cache)
 
 AREA = re.compile(r"^m(\d\d)_(\d\d)_(\d\d)_(\d\d)$")
+EXTRACAO_VERSAO = 2  # 2: NPCs e chefes; muda quando o que sai do jogo muda
+JUNTAR_NPC = 10.0  # metros: geradores do mesmo NPC mais perto que isso viram um marcador só
 TIPO_NAVMESH, TIPO_COLISAO, TIPO_OBJETO = 4, 3, 1
 
 
@@ -129,10 +131,52 @@ def com_planta(area: dict) -> dict:
         return area
     pl = ds2planta.planta(area)
     area["planta"] = pl
-    for lista in ("fogueiras", "itens", "inimigos"):
+    for lista in ("fogueiras", "itens", "inimigos", "npcs", "chefes"):
         for p in area.get(lista, []):
             p["andar"] = ds2planta.andar_de(pl, p["pos"][1])
     return area
+
+
+def montar_atores(locais: dict, personagens: dict, base: tuple, nomes_npc: dict, chefes_mapa: list) -> tuple[list, list]:
+    """NPCs (personagem // 10000 com nome no npcmenu.fmg) e chefes (família do personagem listada no BossBattleParam).
+
+    locais: gerador -> posição relativa; personagens: gerador -> ID do personagem (generatorparam +8).
+    """
+    absoluto = {g: tuple(c + base[k] for k, c in enumerate(rel)) for g, rel in locais.items()}
+    npcs = []
+    for g in sorted(absoluto):
+        npc = personagens.get(g, 0) // 10000
+        if npc not in nomes_npc:
+            continue
+        pos = absoluto[g]
+        if any(n["id"] == npc and _dist(n["pos"], pos) < JUNTAR_NPC for n in npcs):
+            continue
+        npcs.append({"id": npc, "nome": nomes_npc[npc], "pos": _r(pos)})
+    chefes = []
+    for c in chefes_mapa:
+        familias = {f // 10 for f in c["familias"] if f}
+        pts = [absoluto[g] for g in sorted(absoluto) if personagens.get(g, 0) // 100000 in familias]
+        if not pts:
+            continue
+        media = tuple(sum(p[k] for p in pts) / len(pts) for k in range(3))
+        chefes.append({"flag": c["flag"], "nome": c["nome"], "wiki": c.get("wiki", ""), "pos": _r(media)})
+    return npcs, chefes
+
+
+def chefes_do_mapa(boss_param: bytes, area: str, bosses: list) -> list:
+    """Linhas do BossBattleParam desta área (id // 1000 = AABB): flag em +20, personagens em +44/+48/+52."""
+    m = AREA.match(area)
+    chave = int(m.group(1)) * 100 + int(m.group(2))
+    por_flag = {b["flag"]: b for b in bosses}
+    out = []
+    for rid, raw in linhas_param(boss_param):
+        if rid // 1000 != chave or len(raw) < 56:
+            continue
+        flag = struct.unpack_from("<i", raw, 20)[0]
+        if flag in por_flag:
+            out.append({"flag": flag, "nome": por_flag[flag]["nome"], "wiki": por_flag[flag].get("wiki", ""),
+                        "familias": list(struct.unpack_from("<3i", raw, 44))})
+    return out
 
 
 def lotes_itens(data: bytes) -> dict[int, list[tuple[int, int]]]:
@@ -189,7 +233,7 @@ def extrair_area(game_dir, area: str, cache_dir, names=None) -> dict:
     if destino.is_file():
         try:
             pronto = json.loads(destino.read_text(encoding="utf-8"))
-            if pronto.get("assinatura") == assinatura:
+            if pronto.get("assinatura") == assinatura and pronto.get("versao_extracao") == EXTRACAO_VERSAO:
                 if pronto.get("planta", {}).get("versao") == PLANTA_VERSAO:
                     return pronto
                 return _gravar(destino, com_planta(pronto))
@@ -203,11 +247,18 @@ def extrair_area(game_dir, area: str, cache_dir, names=None) -> dict:
     instancias = {rid: struct.unpack_from("<i", raw)[0] for rid, raw in linhas_param(arq.ler(inst_path)) if len(raw) >= 4} if arq.tem(inst_path) else {}
     ger_path = f"/param/generatorlocation_{area}.param"
     geradores = [(rid, struct.unpack_from("<3f", raw)) for rid, raw in linhas_param(arq.ler(ger_path)) if len(raw) >= 12] if arq.tem(ger_path) else []
-    lotes = lotes_itens(ds2regulation.load_params(ds2regulation.find_regulation(game_dir))["ItemLotParam2_Other"])
+    lotes = lotes_itens(ds2regulation.load_params(ds2regulation.find_regulation(game_dir))["ItemLotParam2_Other"])  # noqa: E501
     names = names if names is not None else ds2save.load_item_names()
     nomes_itens = {i: n for i, (_cat, n) in names.items()}
     nome = _texto(arq, "mapname").get(nome_mapa_id(area), area)
     out = montar_area(area, nome, partes, instancias, _texto(arq, "bonfirename"), lotes, nomes_itens, malhas, geradores, assinatura)
+    gen_path = f"/param/generatorparam_{area}.param"
+    personagens = {rid: struct.unpack_from("<i", raw, 8)[0] for rid, raw in linhas_param(arq.ler(gen_path)) if len(raw) >= 12} if arq.tem(gen_path) else {}
+    bosses = json.loads((ds2save.GAME_DIR / "bosses.json").read_text(encoding="utf-8"))["chefes"]
+    params = ds2regulation.load_params(ds2regulation.find_regulation(game_dir))
+    out["npcs"], out["chefes"] = montar_atores(dict(geradores), personagens, base, _texto(arq, "npcmenu"),
+                                               chefes_do_mapa(params["BossBattleParam"], area, bosses))
+    out["versao_extracao"] = EXTRACAO_VERSAO
     return _gravar(destino, com_planta(out))
 
 
