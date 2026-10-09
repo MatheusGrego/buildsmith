@@ -162,6 +162,22 @@ def _area_poligono(poly: list) -> float:
     return sum(poly[i - 1][0] * poly[i][1] - poly[i][0] * poly[i - 1][1] for i in range(len(poly))) / 2
 
 
+def origem_grade(tris: list) -> tuple[int, int]:
+    """Canto da grade comum a todos os desenhos da área (planta e zonas ficam alinhadas)."""
+    return (math.floor(min(p[0] for t in tris for p in t)) - 2, math.floor(min(p[2] for t in tris for p in t)) - 2)
+
+
+def contornar(tris: list, x0: float, z0: float) -> list:
+    """Polígonos simplificados do chão coberto pelos triângulos (raster, frestas fechadas, contorno)."""
+    poligonos = []
+    for laco in _contornos(_fechar(_pintar(tris, x0, z0))):
+        mundo = [(x0 + i * CELULA, z0 + j * CELULA) for i, j in laco]
+        simples = simplificar(mundo, TOLERANCIA)
+        if len(simples) >= 3 and abs(_area_poligono(simples)) >= AREA_MIN:
+            poligonos.append([[round(x, 1), round(z, 1)] for x, z in simples])
+    return poligonos
+
+
 def planta(area: dict) -> dict:
     tris = list(triangulos(area))
     cortes = detectar_andares(tris)
@@ -170,8 +186,7 @@ def planta(area: dict) -> dict:
         grupos[bisect.bisect(cortes, _altura(t))].append(t)
     if not tris:
         return {"versao": PLANTA_VERSAO, "celula": CELULA, "cortes": cortes, "andares": []}
-    x0 = math.floor(min(p[0] for t in tris for p in t)) - 2
-    z0 = math.floor(min(p[2] for t in tris for p in t)) - 2
+    x0, z0 = origem_grade(tris)
     andares = []
     for idx in range(len(cortes) + 1):
         ts = grupos.get(idx, [])
@@ -179,12 +194,7 @@ def planta(area: dict) -> dict:
             continue
         peso = sum(max(_area_xz(t), 0.01) for t in ts)
         altura = sum(_altura(t) * max(_area_xz(t), 0.01) for t in ts) / peso
-        poligonos = []
-        for laco in _contornos(_fechar(_pintar(ts, x0, z0))):
-            mundo = [(x0 + i * CELULA, z0 + j * CELULA) for i, j in laco]
-            simples = simplificar(mundo, TOLERANCIA)
-            if len(simples) >= 3 and abs(_area_poligono(simples)) >= AREA_MIN:
-                poligonos.append([[round(x, 1), round(z, 1)] for x, z in simples])
+        poligonos = contornar(ts, x0, z0)
         andares.append({"id": idx, "altura": round(altura, 1), "min": round(min(_altura(t) for t in ts), 1),
                         "max": round(max(_altura(t) for t in ts), 1), "poligonos": poligonos})
     return {"versao": PLANTA_VERSAO, "celula": CELULA, "cortes": cortes, "andares": andares}

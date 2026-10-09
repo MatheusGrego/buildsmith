@@ -13,6 +13,7 @@ Formatos lidos (conferidos contra a Lost Bastille, m10_16_00_00):
 - FMG (texto do jogo): grupos em 0x0C, textos em 0x10, tabela de offsets em 0x14; grupo = (índice, primeiro, último).
 """
 import argparse
+from collections import defaultdict
 import json
 import os
 import re
@@ -23,8 +24,9 @@ from pathlib import Path
 from ds2planta import PLANTA_VERSAO  # noqa: F401 (versão da planta guardada no cache)
 
 AREA = re.compile(r"^m(\d\d)_(\d\d)_(\d\d)_(\d\d)$")
-EXTRACAO_VERSAO = 2  # 2: NPCs e chefes; muda quando o que sai do jogo muda
-JUNTAR_NPC = 10.0  # metros: geradores do mesmo NPC mais perto que isso viram um marcador só
+EXTRACAO_VERSAO = 3  # 2: NPCs e chefes; 3: início do mapa (zonas); muda quando o que sai do jogo muda
+INICIO_MAPA = "マップ開始地点"  # nome do ponto de início no MSB (texto do próprio jogo)
+JUNTAR_NPC = 15.0  # metros: geradores do mesmo NPC mais perto que isso viram um marcador só
 TIPO_NAVMESH, TIPO_COLISAO, TIPO_OBJETO = 4, 3, 1
 
 
@@ -61,6 +63,15 @@ def partes_msb(data: bytes) -> list[dict]:
         pos = struct.unpack_from("<3f", data, e + 0x10)
         ref = struct.unpack_from("<I", data, e + 0xA0)[0] if tipo == TIPO_OBJETO else 0
         out.append({"nome": nome, "tipo": tipo, "pos": pos, "ref": ref})
+    return out
+
+
+def pontos_msb(data: bytes) -> list[dict]:
+    """Regiões/pontos do MSB (POINT_PARAM_ST): nome e posição (+0x10, como nas partes)."""
+    out = []
+    for e in _listas_msb(data).get("POINT_PARAM_ST", []):
+        nome = _wstr(data, e + struct.unpack_from("<q", data, e)[0])
+        out.append({"nome": nome, "pos": struct.unpack_from("<3f", data, e + 0x10)})
     return out
 
 
@@ -179,6 +190,36 @@ def chefes_do_mapa(boss_param: bytes, area: str, bosses: list) -> list:
     return out
 
 
+def com_zonas(area: dict) -> dict:
+    """Garante as zonas de fogueira (ds2zonas) e a zona de cada ponto; não refaz a mesma versão."""
+    import ds2zonas
+
+    area = com_planta(area)
+    if area.get("zonas", {}).get("versao") == ds2zonas.ZONAS_VERSAO:
+        return area
+    grafo = _grafo(area)
+    z = ds2zonas.zonas(area, grafo)
+    tri_zona = z.pop("triangulo")
+    area["zonas"] = z
+    centros = grafo[0]
+    baldes = defaultdict(list)  # centróides por quadrado de 8 m, para achar o triângulo mais perto sem varrer todos
+    for t, c in enumerate(centros):
+        baldes[(int(c[0] // 8), int(c[2] // 8))].append(t)
+
+    def zona_de(pos):
+        bx, bz = int(pos[0] // 8), int(pos[2] // 8)
+        for raio in (1, 3, 8):
+            cand = [t for dx in range(-raio, raio + 1) for dz in range(-raio, raio + 1) for t in baldes.get((bx + dx, bz + dz), [])]
+            if cand:
+                return tri_zona[min(cand, key=lambda t: _dist(centros[t], pos))]
+        return None
+
+    for lista in ("fogueiras", "itens", "inimigos", "npcs", "chefes"):
+        for p in area.get(lista, []):
+            p["zona"] = zona_de(p["pos"])
+    return area
+
+
 def lotes_itens(data: bytes) -> dict[int, list[tuple[int, int]]]:
     """ItemLotParam2_Other: quantidades (10 bytes) em +0x04 e IDs (10 int) em +0x2C; ID <= 10 = vazio."""
     out = {}
@@ -234,9 +275,12 @@ def extrair_area(game_dir, area: str, cache_dir, names=None) -> dict:
         try:
             pronto = json.loads(destino.read_text(encoding="utf-8"))
             if pronto.get("assinatura") == assinatura and pronto.get("versao_extracao") == EXTRACAO_VERSAO:
-                if pronto.get("planta", {}).get("versao") == PLANTA_VERSAO:
+                import ds2zonas
+
+                if (pronto.get("planta", {}).get("versao") == PLANTA_VERSAO
+                        and pronto.get("zonas", {}).get("versao") == ds2zonas.ZONAS_VERSAO):
                     return pronto
-                return _gravar(destino, com_planta(pronto))
+                return _gravar(destino, com_zonas(pronto))
         except ValueError:
             pass
     arq = ds2arquivos.Arquivo(game_dir, "GameData")
@@ -258,8 +302,10 @@ def extrair_area(game_dir, area: str, cache_dir, names=None) -> dict:
     params = ds2regulation.load_params(ds2regulation.find_regulation(game_dir))
     out["npcs"], out["chefes"] = montar_atores(dict(geradores), personagens, base, _texto(arq, "npcmenu"),
                                                chefes_do_mapa(params["BossBattleParam"], area, bosses))
+    inicio = [q["pos"] for q in pontos_msb(arq.ler(f"/map/{area}/{area}.msb")) if q["nome"] == INICIO_MAPA]
+    out["inicio"] = _r(inicio[0]) if inicio else None
     out["versao_extracao"] = EXTRACAO_VERSAO
-    return _gravar(destino, com_planta(out))
+    return _gravar(destino, com_zonas(out))
 
 
 def _gravar(destino: Path, dados: dict) -> dict:

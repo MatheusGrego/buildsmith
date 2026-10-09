@@ -297,3 +297,28 @@ def test_real_lost_bastille_actors(tmp_path):
     assert "Straid of Olaphis" in npcs and math.dist(npcs["Straid of Olaphis"]["pos"], fog["Straid's Cell"]) < 5
     assert {"Ruin Sentinels", "Belfry Gargoyles"} <= {c["nome"] for c in area["chefes"]}
     assert all("andar" in a for a in area["npcs"] + area["chefes"])
+
+
+def test_bonfire_zones_by_walking_distance_and_start():
+    area = ds2mapa.com_planta(area_sintetica(
+        [quadrado(0, 0, 10, 10, 0.0), quadrado(10, 0, 20, 10, 0.0)],
+        fogueiras=[{"id": 1, "nome": "A", "pos": [2, 0, 5]}, {"id": 2, "nome": "B", "pos": [18, 0, 5]}],
+        itens=[{"lote": 9, "pos": [3, 0, 5], "itens": []}]))
+    area["inicio"] = [19, 0, 5]
+    area = ds2mapa.com_zonas(area)
+    zonas = area["zonas"]["lista"]
+    assert [(z["ordem"], z["fogueira"]) for z in zonas] == [(1, 2), (2, 1)]  # B fica mais perto do início do mapa
+    assert area["zonas"]["ordem_por"] == "inicio"
+    assert area["itens"][0]["zona"] == 2 and area["fogueiras"][0]["zona"] == 2
+    for z in zonas:
+        polys = [p for ps in z["poligonos"].values() for p in ps]
+        assert polys and 60 <= sum(area_poligono(p) for p in polys) <= 140
+
+
+@pytest.mark.skipif(not (GAME / "GameDataEbl.bhd").exists(), reason="DS2 SotFS não instalado")
+def test_real_lost_bastille_zones(tmp_path):
+    area = ds2mapa.extrair_area(GAME, "m10_16_00_00", tmp_path)
+    zonas = area["zonas"]["lista"]
+    assert len(zonas) == 7 and sorted(z["ordem"] for z in zonas) == list(range(1, 8))
+    assert area["zonas"]["ordem_por"] == "inicio"
+    assert all(p.get("zona") for p in area["itens"] + area["npcs"] + area["chefes"])
