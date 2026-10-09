@@ -225,6 +225,83 @@ def onde(game_dir, cache_dir, item: str, areas_filtro=None) -> list[dict]:
     return out
 
 
+TIPOS_PONTO = {"fogueira": ("fogueiras", "id"), "item": ("itens", "lote"), "inimigo": ("inimigos", "id")}
+
+
+def ponto_de(area: dict, tipo: str, ref: int) -> list[float]:
+    """Posição de um ponto da área: fogueira pelo ID do jogo, item pelo lote, inimigo pelo gerador."""
+    if tipo not in TIPOS_PONTO:
+        raise KeyError(f"tipo de ponto desconhecido: {tipo}")
+    lista, chave = TIPOS_PONTO[tipo]
+    for p in area[lista]:
+        if p[chave] == ref:
+            return list(p["pos"])
+    raise KeyError(f"ponto {tipo}:{ref} não existe em {area.get('area')}")
+
+
+def _grafo(area: dict):
+    """Triângulos da área (centróides) e vizinhos por aresta compartilhada, inclusive entre malhas."""
+    centros, vizinhos, arestas = [], [], {}
+    for m in area["malhas"]:
+        v, f = m["v"], m["f"]
+        pts = [tuple(v[i:i + 3]) for i in range(0, len(v), 3)]
+        for i in range(0, len(f), 3):
+            a, b, c = pts[f[i]], pts[f[i + 1]], pts[f[i + 2]]
+            t = len(centros)
+            centros.append(tuple((a[k] + b[k] + c[k]) / 3 for k in range(3)))
+            vizinhos.append(set())
+            for u, w in ((a, b), (b, c), (c, a)):
+                key = (u, w) if u <= w else (w, u)
+                for outro in arestas.setdefault(key, []):
+                    vizinhos[t].add(outro)
+                    vizinhos[outro].add(t)
+                arestas[key].append(t)
+    return centros, vizinhos
+
+
+def _dist(a, b) -> float:
+    return ((a[0] - b[0]) ** 2 + (a[1] - b[1]) ** 2 + (a[2] - b[2]) ** 2) ** 0.5
+
+
+def rota(area: dict, de, ate) -> dict | None:
+    """Caminho mais curto pelo chão (centróides dos triângulos) de um ponto a outro; None se não há caminho."""
+    import heapq
+
+    centros, vizinhos = _grafo(area)
+    if not centros:
+        return None
+    perto = lambda p: min(range(len(centros)), key=lambda t: _dist(centros[t], p))  # noqa: E731
+    s, g = perto(de), perto(ate)
+    custo, anterior, fila = {s: 0.0}, {s: None}, [(0.0, s)]
+    while fila:
+        c, t = heapq.heappop(fila)
+        if t == g:
+            break
+        if c > custo[t]:
+            continue
+        for n in vizinhos[t]:
+            nc = c + _dist(centros[t], centros[n])
+            if nc < custo.get(n, float("inf")):
+                custo[n], anterior[n] = nc, t
+                heapq.heappush(fila, (nc, n))
+    if g not in anterior:
+        return None
+    caminho, t = [], g
+    while t is not None:
+        caminho.append(_r(centros[t]))
+        t = anterior[t]
+    pontos = [list(de)] + caminho[::-1] + [list(ate)]
+    metros = sum(_dist(pontos[i], pontos[i + 1]) for i in range(len(pontos) - 1))
+    return {"pontos": pontos, "metros": round(metros, 1)}
+
+
+def _ponto_cli(texto: str) -> tuple[str, int]:
+    tipo, _, ref = texto.partition(":")
+    if tipo not in TIPOS_PONTO or not ref.isdigit():
+        raise ValueError(f"ponto inválido: {texto!r} (use fogueira:<id>, item:<lote> ou inimigo:<id>)")
+    return tipo, int(ref)
+
+
 def _cache_padrao() -> Path:
     return Path(os.environ.get("BUILDSMITH_HOME", Path.home() / ".buildsmith")) / "cache" / "ds2"
 
@@ -235,13 +312,16 @@ def main(argv=None) -> int:
 
     parser = argparse.ArgumentParser(prog="ds2mapa")
     sub = parser.add_subparsers(dest="cmd", required=True)
-    for nome in ("areas", "extrair", "onde"):
+    for nome in ("areas", "extrair", "onde", "rota"):
         p = sub.add_parser(nome)
         p.add_argument("--game", help="pasta Game do DS2 (padrão: a instalação da Steam)")
         p.add_argument("--cache", help="pasta do cache (padrão: ~/.buildsmith/cache/ds2)")
     sub.choices["extrair"].add_argument("--area", required=True)
     sub.choices["onde"].add_argument("--item", required=True)
     sub.choices["onde"].add_argument("--area", action="append", help="limita a busca (pode repetir)")
+    sub.choices["rota"].add_argument("--area", required=True)
+    sub.choices["rota"].add_argument("--de", required=True, help="fogueira:<id>, item:<lote> ou inimigo:<id>")
+    sub.choices["rota"].add_argument("--ate", required=True)
     args = parser.parse_args(argv)
     game = Path(args.game) if args.game else ds2arquivos.game_dir_padrao()
     cache = Path(args.cache) if args.cache else _cache_padrao()
@@ -254,6 +334,12 @@ def main(argv=None) -> int:
             dados = extrair_area(game, args.area, cache)
             out = {"area": dados["area"], "nome": dados["nome"], "fogueiras": len(dados["fogueiras"]), "itens": len(dados["itens"]),
                    "inimigos": len(dados["inimigos"]), "malhas": len(dados["malhas"]), "cache": str(cache / "mapas" / f"{args.area}.json")}
+        elif args.cmd == "rota":
+            dados = extrair_area(game, args.area, cache)
+            de, ate = (ponto_de(dados, *_ponto_cli(x)) for x in (args.de, args.ate))
+            out = rota(dados, de, ate)
+            if out is None:
+                raise MapaError("sem caminho pelo chão entre os dois pontos")
         else:
             out = onde(game, cache, args.item, args.area)
     except (MapaError, ds2arquivos.ArquivoError, ValueError, OSError, KeyError) as err:
