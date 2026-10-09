@@ -22,6 +22,10 @@ Script: `scripts/ds2save.py` nesta pasta. Precisa de Python 3 e `pycryptodome` (
 | `python "<pasta>/scripts/ds2data.py" trocas --item "Moonlight Greatsword"` (ou `--alma`) | trocas de alma de chefe: NPC, alma e preço |
 | `python "<pasta>/scripts/ds2data.py" custo-upgrade --arma Uchigatana --de 5 --ate 6` | almas e materiais por nível e no total |
 | `python "<pasta>/scripts/ds2data.py" acesso --snapshot S.json` | acesso de cada área: `agora`, `em_breve`, `tarde` |
+| `python "<pasta>/scripts/ds2mapa.py" areas` | mapas do jogo com nome (do texto do próprio jogo), ex. `m10_16_00_00` = The Lost Bastille |
+| `python "<pasta>/scripts/ds2mapa.py" extrair --area m10_16_00_00` | extrai chão, fogueiras (ID e nome), itens (lote, itens, posição) e inimigos para `~/.buildsmith/cache/ds2/mapas/`; imprime o resumo |
+| `python "<pasta>/scripts/ds2mapa.py" onde --item "Fragrant Branch of Yore" [--area m10_16_00_00]` | todos os pontos do jogo com o item (a primeira vez extrai as áreas que faltam) |
+| `python "<pasta>/scripts/ds2mapa.py" rota --area m10_16_00_00 --de fogueira:16675 --ate item:10165010` | caminho pelo chão (navmesh) e metros; não conhece portas, alavancas e quedas |
 
 `<pasta>` é o diretório base desta skill. Sem `--save`, o script usa o save ativo: a extensão do `SeamlessCoop\ds2sc_settings.ini` (`save_file_extension`, ex.: `teste`) quando existir; senão o mais recente entre `DS2SOFS*.sl2` e `DS2SOFS*.co2` em `%APPDATA%\DarkSoulsII\*\`. O save nunca é alterado.
 

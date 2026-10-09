@@ -29,6 +29,8 @@ Essa execução lê a wiki sem ninguém olhando, então roda trancada: sem as su
 
 Vários personagens no mesmo save: **Trocar personagem** (no topo da página) lista os personagens do save, abre a página de cada um ou gera o plano de quem ainda não tem. O retrato é automático (equipamento do save), ou uma foto que você solta no card, ou o último print do DS2 na Steam (F12).
 
+**Mapa:** com o DS2 SotFS instalado, Onde pegar e Passos mostram a área em isométrico com o chão real do jogo (navmesh), as fogueiras, o ponto exato do item e a rota pelo chão. Os dados são lidos dos arquivos do jogo no seu PC e ficam em `~/.buildsmith/cache/ds2/mapas/` (nada do jogo vai para o repositório).
+
 Para ver no celular, publique no Artifact: `/buildsmith:build ds2 publicar`.
 
 Seus dados (perfil, histórico, cache da wiki, link da página) ficam em `~/.buildsmith/`, fora do repositório.

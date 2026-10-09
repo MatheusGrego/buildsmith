@@ -34,11 +34,16 @@ SCRIPTS = {
     "skills/ds2-save/scripts/ds2save.py": {"slots", "snapshot", "levels", "flags-diff"},
     "skills/ds2-save/scripts/ds2calc.py": {"ar", "catalisador", "feitico"},
     "skills/ds2-save/scripts/ds2data.py": {"onde-comprar", "trocas", "custo-upgrade", "acesso"},
+    "skills/ds2-save/scripts/ds2mapa.py": {"areas", "extrair", "onde", "rota"},
     "skills/build-page/scripts/prepare_page.py": None,
     "skills/build-page/scripts/validate_plano.py": None,
     "app/serve.py": {"estado", "responder", "confirmar"},
 }
 SERVE_OPTS = {"--personagem", "--jogo", "--pedido", "--item", "--passo", "--resultado"}
+# ds2mapa sem --game/--cache: sem janela, só a instalação padrão e o cache de ~/.buildsmith.
+MAPA_OPTS = {"--area", "--item", "--de", "--ate"}
+AREA = re.compile(r"^m\d\d_\d\d_\d\d_\d\d$")
+PONTO = re.compile(r"^(fogueira|item|inimigo):\d{1,10}$")
 PYTHONS = {"python", "python3", "py", "python.exe", "python3.exe", "py.exe"}
 PYTHON_FLAGS = {"-u", "-B", "-3", "-Xutf8"}
 ENV_OK = {"PYTHONIOENCODING=utf-8", "PYTHONUTF8=1"}
@@ -189,6 +194,15 @@ def _script(rel: str, args: list[str], ctx: Context) -> None:
     subcommands = SCRIPTS[rel]
     if subcommands is not None and (not args or args[0] not in subcommands):
         raise Deny(f"{Path(rel).name}: subcomando precisa ser um de {sorted(subcommands)}")
+    if rel.endswith("ds2mapa.py"):
+        for name, value in _options(args[1:], MAPA_OPTS):
+            if name == "--area" and not AREA.match(value):
+                raise Deny("--area é um mapa como m10_16_00_00")
+            if name in ("--de", "--ate") and not PONTO.match(value):
+                raise Deny(f"{name} é fogueira:<id>, item:<lote> ou inimigo:<id>")
+            if name == "--item" and len(value) > 80:
+                raise Deny("--item longo demais")
+        return
     if rel == "app/serve.py":
         for name, value in _options(args[1:], SERVE_OPTS):
             if name == "--jogo" and not GAME.match(value):

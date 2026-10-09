@@ -194,3 +194,16 @@ def test_hook_protocol(tmp_path):
     assert out["hookEventName"] == "PreToolUse" and out["permissionDecision"] == "deny"
     assert out["permissionDecisionReason"].startswith("guarda do buildsmith")
     assert hook(b"isto nao e json", tmp_path)["permissionDecision"] == "deny"
+
+
+MAPA = (REPO / "skills" / "ds2-save" / "scripts" / "ds2mapa.py").as_posix()
+
+
+def test_map_commands_allowed_without_redirected_paths(check):
+    for command in (f'python "{MAPA}" areas', f'python "{MAPA}" extrair --area m10_16_00_00',
+                    f'python "{MAPA}" onde --item "Fragrant Branch of Yore" --area m10_16_00_00',
+                    f'python "{MAPA}" rota --area m10_16_00_00 --de fogueira:16675 --ate item:10165010'):
+        assert bash(check, command) == "allow", command
+    for command in (f'python "{MAPA}" apagar', f'python "{MAPA}" extrair --area m10_16_00_00 --cache "{check.tmp.as_posix()}/x"',
+                    f'python "{MAPA}" areas --game "{check.tmp.as_posix()}"', f'python "{MAPA}" extrair --area ../x'):
+        assert bash(check, command) != "allow", command
