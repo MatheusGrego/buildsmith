@@ -33,7 +33,7 @@ Formato do plano: `example/plano.json` desta pasta (versão 2). Spec: `docs/supe
 
 `template/index.html` (esqueleto) + `template/pagina.css` + `template/pagina.js`: o `prepare_page` junta tudo num `index.html` só (o CSP do servidor só aceita script e estilo inline). Layout v2: cabeçalho com retrato e "Trocar personagem", menu lateral (Plano · Coletar · Combate · Registro), lista + detalhe em Passos e Onde pegar. A seleção lista os personagens do save (`GET /api/ds2/personagens`); retrato = foto enviada, último print da Steam ou mosaico do equipamento.
 
-**Mapa:** nós com `ponto` viram mapa isométrico em Onde pegar (por fonte) e em Passos. O `prepare_page` lê a área do jogo instalado (`ds2mapa.py`), calcula a rota pelo chão entre pontos seguidos, grava `mapa` no plano publicado e copia o recorte em `mapas/<area>.json`. Sem jogo instalado: aviso `mapa indisponível` e página sem mapa. Ponto que não existe na área: erro (corrija o `ref`).
+**Mapa:** seção própria no menu (Coletar → Mapa), vista de cima estilo The Division: seletor de área e de andar, grade de 10 m, régua, zoom/arrastar/pinça, todos os itens da área com ícone da wiki (os do plano com moldura âmbar), fogueiras, filtros e clique no ponto. O `prepare_page` faz tudo por script, sem gastar token: lê o jogo instalado (`ds2mapa.py`), gera a planta limpa por andar, acha os ícones (`icones_wiki.py`, cache em `~/.buildsmith/cache/ds2/icones.json`) e copia `mapas/<area>.json` + `mapas/indice.json` (áreas dos pontos e as 4 com mais itens do plano). "Ver no mapa" aparece em cada item (todos os pontos dele) e nas fontes/passos com `ponto` (rota pelo chão). Sem jogo instalado: aviso `mapa indisponível` e a seção diz o motivo. Ponto que não existe na área: erro (corrija o `ref`).
 
 ## Passos
 

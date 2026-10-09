@@ -1,6 +1,6 @@
 # Mapa geral estilo The Division — plano
 
-- Status: em andamento
+- Status: concluído (0.10.0)
 - Data: 2026-10-09
 - Decisor: Matheus (aprovado no chat: 2D de cima, todos os itens com ícone, seção própria + "Ver no mapa")
 - Substitui: o mapa embutido por item da Entrega B (`2026-10-09-buildsmith-v2-selecao-mapa.md`, tarefas 11–12)
@@ -47,7 +47,7 @@
 - [x] **2. Ícones da wiki para todo item** (`build-page/scripts`): achar o ícone pela página do item, cache de nome → URL (inclusive "não achou", com data), baixar pelo `IconStore`. *Pronto quando:* teste com página falsa extrai a URL certa, recusa host de fora e reaproveita o cache.
 - [x] **3. Áreas na pasta da página** (`prepare_page.py`): áreas dos pontos + áreas onde há itens do plano; cada `mapas/<area>.json` com andares, fogueiras, itens (com ícone local e marca "plano"), inimigos; `mapas/indice.json`; pontos do plano ganham o andar. *Pronto quando:* testes mostram área sem triângulos, item do plano marcado, área incluída só pelo nome do item, aviso quando falta o jogo.
 - [x] **4. Seção Mapa** (`mapa.js`, `pagina.js`, `pagina.css`): visualizador 2D com tudo da Decisão 3; "Ver no mapa" nas fontes e passos; sai o mapa embutido. *Pronto quando:* funções puras testadas no node (encaixe da vista, visibilidade por andar) e conferido no navegador em desktop e 375 px.
-- [ ] **5. Docs, versão e publicação**: skills (`build`, `build-page`, `ds2-save`), design system (Mapa), README, plugin 0.10.0, página real refeita, push na `master`, plugin atualizado. *Pronto quando:* suíte verde e página real abrindo a seção Mapa.
+- [x] **5. Docs, versão e publicação**: skills (`build`, `build-page`, `ds2-save`), design system (Mapa), README, plugin 0.10.0, página real refeita, push na `master`, plugin atualizado. *Pronto quando:* suíte verde e página real abrindo a seção Mapa.
 
 ## Glossário
 
