@@ -39,7 +39,7 @@
     const minX = Math.min(...proj.map((p) => p[0])) - 12, maxX = Math.max(...proj.map((p) => p[0])) + 12;
     const minY = Math.min(...proj.map((p) => p[1])) - 18, maxY = Math.max(...proj.map((p) => p[1])) + 12;
     const ys = tris.map((t) => (t[0][1] + t[1][1] + t[2][1]) / 3);
-    const yLo = Math.min(...ys, 0), yHi = Math.max(...ys, 1);
+    const yLo = ys.length ? Math.min(...ys) : 0, yHi = ys.length ? Math.max(...ys) : 1;
     const faixas = Array.from({ length: FAIXAS }, () => []);
     tris.forEach((t, i) => {
       const b = Math.min(FAIXAS - 1, Math.floor((ys[i] - yLo) / ((yHi - yLo) || 1) * FAIXAS));
@@ -87,6 +87,7 @@
   window.buildsmithMapa = function (app, plano) {
     (plano.passos || []).forEach((s) => desenhar(app.querySelector(`[data-mapa-passo="${CSS.escape(s.id)}"]`), s.mapa));
   };
+  window.buildsmithMapa._svg = svgMapa;  // para teste
   window.buildsmithMapaFonte = function (app, plano, itemId, idx) {
     const item = (plano.itens || []).find((it) => it.id === itemId);
     const fonte = item && (item.fontes || [])[idx];
