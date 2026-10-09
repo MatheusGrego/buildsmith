@@ -47,20 +47,42 @@ class IconesWiki:
             self.cache = {}
         self.mudou = False
 
-    def url(self, nome: str) -> str | None:
-        chave = nome.strip().casefold()
-        guardado = self.cache.get(chave)
-        if guardado and (guardado.get("url") or date.fromisoformat(guardado["data"]) > date.today() - REFAZER_FALTA):
-            return guardado.get("url")
+    def _guardado(self, nome: str) -> dict | None:
+        g = self.cache.get(nome.strip().casefold())
+        if g and (g.get("url") or date.fromisoformat(g["data"]) > date.today() - REFAZER_FALTA):
+            return g
+        return None
+
+    def _buscar(self, nome: str) -> str | None:
         try:
-            html = self.fetch(pagina_item(nome)).decode("utf-8", errors="replace")
-            url = icone_da_pagina(html)
+            return icone_da_pagina(self.fetch(pagina_item(nome)).decode("utf-8", errors="replace"))
         except Exception:  # rede, 404: fica sem ícone e tenta de novo depois
-            url = None
-        self.cache[chave] = {"url": url, "data": date.today().isoformat()}
+            return None
+
+    def _guardar(self, nome: str, url: str | None) -> None:
+        self.cache[nome.strip().casefold()] = {"url": url, "data": date.today().isoformat()}
         self.mudou = True
+
+    def url(self, nome: str) -> str | None:
+        g = self._guardado(nome)
+        if g:
+            return g.get("url")
+        url = self._buscar(nome)
+        self._guardar(nome, url)
         self.salvar()
         return url
+
+    def prebuscar(self, nomes, workers: int = 6) -> None:
+        """Busca de uma vez (em paralelo) os ícones que ainda não estão no cache."""
+        from concurrent.futures import ThreadPoolExecutor
+
+        faltam = [n for n in dict.fromkeys(nomes) if n and not self._guardado(n)]
+        if not faltam:
+            return
+        with ThreadPoolExecutor(max_workers=workers) as ex:
+            for nome, url in zip(faltam, ex.map(self._buscar, faltam)):
+                self._guardar(nome, url)
+        self.salvar()
 
     def salvar(self) -> None:
         if not self.mudou:

@@ -100,3 +100,14 @@ def world_save(tmp_path, names):
     path = tmp_path / "DS2SOFS0000.sl2"
     path.write_bytes(build_bnd4({"USER_DATA001": bytes(slot), "USER_DATA011": bytes(world)}))
     return path
+
+
+@pytest.fixture(autouse=True)
+def sem_jogo_no_prepare(monkeypatch):
+    """prepare_page sem área injetada não lê o jogo instalado nos testes (seria lento e dependeria da máquina)."""
+    import prepare_page
+
+    def sem_jogo(*args, **kwargs):
+        raise OSError("jogo desligado nos testes")
+
+    monkeypatch.setattr(prepare_page, "_jogo_instalado", sem_jogo)

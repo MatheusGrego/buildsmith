@@ -18,6 +18,10 @@ class FakeFetch:
         self.calls.append(url)
         if url in self.fail:
             raise OSError("sem rede")
+        if url.startswith("https://darksouls2.wiki.fextralife.com/"):  # página do item: quadro com o ícone
+            nome = url.rsplit("/", 1)[-1]
+            return (f'<div class="infobox"><table><tr><td><img src="https://static0.fextralifeimages.com/file/'
+                    f'darksouls2/x/{nome}.png"></td></tr></table></div>').encode()
         return PNG
 
 
@@ -147,8 +151,9 @@ def faixa_area():
     return {"area": "m10_16_00_00", "nome": "The Lost Bastille", "assinatura": "x", "origem": [0, 0, 0],
             "malhas": [{"v": v, "f": f}],
             "fogueiras": [{"id": 16675, "nome": "Servants' Quarters", "pos": [0.2, 0, 0.3]}],
-            "itens": [{"lote": 10165010, "pos": [2.9, 0, 0.6], "itens": [{"id": 1, "nome": "Soul Vessel", "qtd": 1}]}],
-            "inimigos": []}
+            "itens": [{"lote": 10165010, "pos": [2.9, 0, 0.6], "itens": [{"id": 1, "nome": "Soul Vessel", "qtd": 1}]},
+                      {"lote": 10165020, "pos": [1.5, 0, 0.5], "itens": [{"id": 2, "nome": "Large Titanite Shard", "qtd": 2}]}],
+            "inimigos": [{"id": 145, "pos": [1.0, 0, 0.5]}]}
 
 
 def plano_com_pontos():
@@ -168,8 +173,27 @@ def test_plan_points_become_area_and_route(tmp_path):
     assert mapa["area"] == "m10_16_00_00" and mapa["nome"] == "The Lost Bastille"
     assert [p["tipo"] for p in mapa["pontos"]] == ["fogueira", "item"] and mapa["pontos"][0]["n"] == 1
     assert len(mapa["trechos"]) == 1 and mapa["trechos"][0][0] == [0.2, 0, 0.3] and 2.7 <= mapa["metros"] <= 4
+    assert all("andar" in p for p in mapa["pontos"])
     area = json.loads(Path(out["files"]["mapas/m10_16_00_00.json"]).read_text(encoding="utf-8"))
-    assert area["nome"] == "The Lost Bastille" and len(area["malhas"][0]["f"]) == 18  # o triângulo em x=90 ficou fora do recorte
+    assert area["nome"] == "The Lost Bastille" and "malhas" not in area and area["planta"]["andares"]
+    pontos = {p["lote"]: p for p in area["itens"]}
+    assert pontos[10165020]["plano"] is True and pontos[10165020]["item_id"] == "large-titanite-shard"
+    assert pontos[10165010]["plano"] is False and pontos[10165010]["icone"].startswith("icons/")
+    assert Path(out["files"][pontos[10165020]["icone"]]).exists()
+    assert all("andar" in p for p in area["fogueiras"] + area["itens"] + area["inimigos"])
+    indice = json.loads(Path(out["files"]["mapas/indice.json"]).read_text(encoding="utf-8"))
+    assert indice == [{"area": "m10_16_00_00", "nome": "The Lost Bastille", "itens_plano": 1}]
+
+
+def test_area_is_included_only_by_plan_item_name(tmp_path):
+    outra = {**faixa_area(), "area": "m10_04_00_00", "nome": "Majula",
+             "itens": [{"lote": 9, "pos": [1, 0, 1], "itens": [{"id": 9, "nome": "Rubbish", "qtd": 1}]}]}
+    areas = {"m10_16_00_00": faixa_area(), "m10_04_00_00": outra}
+    src = tmp_path / "p.json"
+    src.write_text(json.dumps(example(), ensure_ascii=False), encoding="utf-8")
+    out = prepare_page.prepare(src, tmp_path / "saida", "ds2", cache_root=tmp_path / "cache", fetch=FakeFetch(),
+                               carregar_area=lambda area: areas[area], listar_areas=lambda: list(areas))
+    assert "mapas/m10_16_00_00.json" in out["files"] and "mapas/m10_04_00_00.json" not in out["files"]
 
 
 def test_unknown_point_is_an_error(tmp_path):
