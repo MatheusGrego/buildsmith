@@ -57,6 +57,7 @@ Base: a wiki do Dark Souls II (Fextralife) e a interface do jogo. Tudo em `skill
 | Nó em linha | `.ni` (`.ni-ic` 20px) + `.fi` | nó dentro de lista, fonte e Agora |
 | Dano em barras | `.dano-l` (`.dano-bar .now/.ganho`) | AR agora → depois; ganho em âmbar |
 | Seleção | `.sel-fundo > .sel` (`.sel-c[aria-current]`, `.sel-ret`) | diálogo de personagens do save; Esc fecha |
+| Mapa | `.mapa` (`.mp-chao.b0..b5`, `.mp-rota`, `.mp-ponto`, `.mp-partida`, `.mp-fim`) | chão do navmesh em isométrico por faixa de altura, fogueira de partida, passos numerados (círculo `--pos`), item = losango `--pos`, rota tracejada `--ember`; legenda com a lista numerada e "rota pelo chão; portas e alavancas não aparecem" |
 | Agora | `.agora2` | até 3 ações imediatas |
 
 ## Textos da forja
