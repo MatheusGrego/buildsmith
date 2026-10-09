@@ -223,3 +223,52 @@ def test_real_route_servants_quarters_to_straid(tmp_path, capsys):
                          "--game", str(GAME), "--cache", str(tmp_path)]) == 0
     r = json.loads(capsys.readouterr().out)
     assert 150 < r["metros"] < 400 and len(r["pontos"]) > 10
+
+
+def quadrado(x0, z0, x1, z1, y):
+    """Dois triângulos cobrindo o retângulo (x0,z0)-(x1,z1) na altura y."""
+    return {"v": [x0, y, z0, x1, y, z0, x1, y, z1, x0, y, z1], "f": [0, 1, 2, 0, 2, 3]}
+
+
+def area_sintetica(malhas, fogueiras=(), itens=()):
+    return {"area": "m10_16_00_00", "nome": "x", "malhas": list(malhas), "fogueiras": list(fogueiras),
+            "itens": list(itens), "inimigos": []}
+
+
+def area_poligono(poly):
+    return abs(sum(poly[i][0] * poly[i - 1][1] - poly[i - 1][0] * poly[i][1] for i in range(len(poly)))) / 2
+
+
+def test_floors_are_detected_by_height():
+    area = ds2mapa.com_planta(area_sintetica(
+        [quadrado(0, 0, 20, 20, 0.0), quadrado(0, 0, 20, 20, 10.0)],
+        fogueiras=[{"id": 1, "nome": "a", "pos": [5, 10.5, 5]}], itens=[{"lote": 2, "pos": [5, 0.2, 5], "itens": []}]))
+    andares = area["planta"]["andares"]
+    assert [round(a["altura"]) for a in andares] == [0, 10]
+    for a in andares:
+        assert len(a["poligonos"]) == 1 and 300 <= area_poligono(a["poligonos"][0]) <= 500
+    assert area["fogueiras"][0]["andar"] == andares[1]["id"] and area["itens"][0]["andar"] == andares[0]["id"]
+
+
+def test_small_gap_between_mesh_pieces_is_closed():
+    area = ds2mapa.com_planta(area_sintetica([quadrado(0, 0, 10, 10, 0.0), quadrado(10.3, 0, 20, 10, 0.0)]))
+    andares = area["planta"]["andares"]
+    assert len(andares) == 1 and len(andares[0]["poligonos"]) == 1
+    assert len(andares[0]["poligonos"][0]) <= 8  # contorno simplificado, não a escadinha da grade
+
+
+def test_floor_plan_is_cached_with_version():
+    area = ds2mapa.com_planta(area_sintetica([quadrado(0, 0, 10, 10, 0.0)]))
+    assert area["planta"]["versao"] == ds2mapa.PLANTA_VERSAO
+    assert ds2mapa.com_planta(area) is area  # já tem a planta desta versão: não refaz
+
+
+@pytest.mark.skipif(not (GAME / "GameDataEbl.bhd").exists(), reason="DS2 SotFS não instalado")
+def test_real_lost_bastille_floors(tmp_path):
+    area = ds2mapa.extrair_area(GAME, "m10_16_00_00", tmp_path)
+    alturas = [a["altura"] for a in area["planta"]["andares"]]
+    for esperada in (-78, 0, 8, 13, 22):
+        assert any(abs(h - esperada) <= 2 for h in alturas), (esperada, alturas)
+    assert all(a["poligonos"] for a in area["planta"]["andares"])
+    ids = {a["id"] for a in area["planta"]["andares"]}
+    assert all(p["andar"] in ids for p in area["fogueiras"] + area["itens"])
