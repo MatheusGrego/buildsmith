@@ -1,3 +1,4 @@
+import json
 import struct
 
 import pytest
@@ -121,3 +122,64 @@ def test_fmg_texts_and_map_name_id():
     assert ds2mapa.nome_mapa_id("m10_16_00_00") == 10160000
     with pytest.raises(ValueError):
         ds2mapa.nome_mapa_id("../x")
+
+
+def test_build_area_classifies_bonfires_items_and_enemies():
+    partes = [{"nome": "n01", "tipo": 4, "pos": (-78.0, 4.0, 562.0), "ref": 0},
+              {"nome": "o00_0100_0000", "tipo": 1, "pos": (-128.1, 27.7, 604.2), "ref": 10160653},
+              {"nome": "o00_0256_0006", "tipo": 1, "pos": (-118.0, 27.7, 601.8), "ref": 10165290},
+              {"nome": "o00_2000_0001", "tipo": 1, "pos": (0.0, 0.0, 0.0), "ref": 999}]
+    area = ds2mapa.montar_area(
+        "m10_16_00_00", "The Lost Bastille", partes,
+        instancias={10160653: 16650}, nomes_fogueira={16650: "Straid's Cell"},
+        lotes={10165290: [(19010000, 1), (60140000, 3)]}, nomes_itens={19010000: "Petrified Dragon Bone", 60140000: "Firebomb"},
+        malhas=[{"v": [(0.04, 0.0, 0.0), (1.0, 0.0, 0.0), (0.0, 0.0, 1.0)], "f": [(0, 1, 2)]}],
+        geradores=[(145, (-49.3, 23.7, 39.1))], assinatura="x")
+    assert area["fogueiras"] == [{"id": 16650, "nome": "Straid's Cell", "pos": [-128.1, 27.7, 604.2]}]
+    assert area["itens"] == [{"lote": 10165290, "pos": [-118.0, 27.7, 601.8],
+                              "itens": [{"id": 19010000, "nome": "Petrified Dragon Bone", "qtd": 1}, {"id": 60140000, "nome": "Firebomb", "qtd": 3}]}]
+    assert area["inimigos"] == [{"id": 145, "pos": [-127.3, 27.7, 601.1]}]
+    assert area["malhas"] == [{"v": [0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 1.0], "f": [0, 1, 2]}]
+    assert area["origem"] == [-78.0, 4.0, 562.0] and area["nome"] == "The Lost Bastille"
+
+
+def test_item_lot_rows():
+    row = bytearray(124)
+    row[4] = 1
+    row[5] = 3
+    struct.pack_into("<10i", row, 0x2C, 19010000, 60140000, *([10] * 8))
+    struct.pack_into("<10f", row, 0x54, 1.0, 1.0, *([0.0] * 8))
+    assert ds2mapa.lotes_itens(build_param([(10165290, bytes(row))])) == {10165290: [(19010000, 1), (60140000, 3)]}
+
+
+GAME = __import__("pathlib").Path(r"C:/Program Files (x86)/Steam/steamapps/common/Dark Souls II Scholar of the First Sin/Game")
+
+
+@pytest.mark.skipif(not (GAME / "GameDataEbl.bhd").exists(), reason="DS2 SotFS não instalado")
+def test_real_lost_bastille(tmp_path):
+    import math
+    area = ds2mapa.extrair_area(GAME, "m10_16_00_00", tmp_path)
+    assert area["nome"] == "The Lost Bastille"
+    fog = {f["nome"]: f["pos"] for f in area["fogueiras"]}
+    assert set(fog) == {"Straid's Cell", "Exile Holding Cells", "The Tower Apart", "Upper Ramparts",
+                        "McDuff's Workshop", "Servants' Quarters", "The Saltfort"}
+    assert math.dist(fog["Straid's Cell"], (-128.1, 27.7, 604.2)) < 1
+    cela = [p for p in area["itens"] if {"Petrified Dragon Bone", "Firebomb"} <= {i["nome"] for i in p["itens"]}]
+    assert cela and math.dist(cela[0]["pos"], fog["Straid's Cell"]) < 15
+    assert (tmp_path / "mapas" / "m10_16_00_00.json").exists()
+    assert ds2mapa.extrair_area(GAME, "m10_16_00_00", tmp_path)["assinatura"] == area["assinatura"]
+    pontos = ds2mapa.onde(GAME, tmp_path, "fragrant branch of yore", areas_filtro=["m10_16_00_00"])
+    assert len(pontos) >= 2 and all(p["area"] == "m10_16_00_00" for p in pontos)
+    assert {"area": "m10_16_00_00", "nome": "The Lost Bastille"} in ds2mapa.areas(GAME)
+
+
+def test_cli_without_game_reports_error(tmp_path, capsys):
+    assert ds2mapa.main(["areas", "--game", str(tmp_path)]) == 1
+    assert "error" in json.loads(capsys.readouterr().out)
+
+
+@pytest.mark.skipif(not (GAME / "GameDataEbl.bhd").exists(), reason="DS2 SotFS não instalado")
+def test_cli_extract_prints_summary(tmp_path, capsys):
+    assert ds2mapa.main(["extrair", "--area", "m10_16_00_00", "--game", str(GAME), "--cache", str(tmp_path)]) == 0
+    out = json.loads(capsys.readouterr().out)
+    assert out["nome"] == "The Lost Bastille" and out["fogueiras"] == 7 and out["itens"] > 50

@@ -12,8 +12,13 @@ Formatos lidos (conferidos contra a Lost Bastille, m10_16_00_00):
   faces em +0x2C, offsets de vértices/atributos/faces em +0x40; face = 3 índices no começo de 12 bytes.
 - FMG (texto do jogo): grupos em 0x0C, textos em 0x10, tabela de offsets em 0x14; grupo = (índice, primeiro, último).
 """
+import argparse
+import json
+import os
 import re
 import struct
+import sys
+from pathlib import Path
 
 AREA = re.compile(r"^m(\d\d)_(\d\d)_(\d\d)_(\d\d)$")
 TIPO_NAVMESH, TIPO_COLISAO, TIPO_OBJETO = 4, 3, 1
@@ -70,7 +75,7 @@ def linhas_param(data: bytes) -> list[tuple[int, bytes]]:
     fim_total = struct.unpack_from("<I", data, 0)[0]
     out = []
     for i, (rid, off, _nome) in enumerate(entradas):
-        fim = entradas[i + 1][1] if i + 1 < count else fim_total
+        fim = entradas[i + 1][1] if i + 1 < count else (fim_total if fim_total > off else len(data))
         out.append((rid, data[off:fim]))
     return out
 
@@ -112,3 +117,151 @@ def nome_mapa_id(area: str) -> int:
     if not m:
         raise ValueError(f"área inválida: {area!r}")
     return int(m.group(1)) * 1_000_000 + int(m.group(2)) * 10_000
+
+
+def lotes_itens(data: bytes) -> dict[int, list[tuple[int, int]]]:
+    """ItemLotParam2_Other: quantidades (10 bytes) em +0x04 e IDs (10 int) em +0x2C; ID <= 10 = vazio."""
+    out = {}
+    for rid, raw in linhas_param(data):
+        if len(raw) < 0x54:
+            continue
+        ids = struct.unpack_from("<10i", raw, 0x2C)
+        out[rid] = [(ids[k], raw[0x04 + k]) for k in range(10) if ids[k] > 10 and raw[0x04 + k]]
+    return out
+
+
+def _r(v) -> list[float]:
+    return [round(float(c), 1) + 0.0 for c in v]
+
+
+def montar_area(area: str, nome: str, partes: list[dict], instancias: dict, nomes_fogueira: dict, lotes: dict,
+                nomes_itens: dict, malhas: list[dict], geradores: list, assinatura: str) -> dict:
+    """Junta o que veio dos arquivos numa área: objeto que aponta para fogueira vira fogueira, para lote com item
+    vira ponto de item; geradores (inimigos/NPCs) vêm em coordenada relativa à origem."""
+    base = origem(partes)
+    fogueiras, itens = [], []
+    for p in partes:
+        if p["tipo"] != TIPO_OBJETO or not p["ref"]:
+            continue
+        fog = instancias.get(p["ref"])
+        if fog in nomes_fogueira:
+            fogueiras.append({"id": fog, "nome": nomes_fogueira[fog], "pos": _r(p["pos"])})
+        elif lotes.get(p["ref"]):
+            itens.append({"lote": p["ref"], "pos": _r(p["pos"]),
+                          "itens": [{"id": i, "nome": nomes_itens.get(i, f"#{i}"), "qtd": q} for i, q in lotes[p["ref"]]]})
+    inimigos = [{"id": gid, "pos": _r(c + base[k] for k, c in enumerate(rel))} for gid, rel in geradores]
+    return {
+        "area": area, "nome": nome, "assinatura": assinatura, "origem": _r(base),
+        "malhas": [{"v": [c for v in m["v"] for c in _r(v)], "f": [i for f in m["f"] for i in f]} for m in malhas],
+        "fogueiras": fogueiras, "itens": itens, "inimigos": inimigos,
+    }
+
+
+def _texto(arq, nome: str) -> dict[int, str]:
+    return textos_fmg(arq.ler(f"/menu/text/english/{nome}.fmg"))
+
+
+def extrair_area(game_dir, area: str, cache_dir, names=None) -> dict:
+    """Extrai uma área para <cache>/mapas/<area>.json (reaproveita se os arquivos do jogo não mudaram)."""
+    import ds2arquivos
+    import ds2regulation
+    import ds2save
+
+    nome_mapa_id(area)  # valida o nome antes de virar caminho
+    destino = Path(cache_dir) / "mapas" / f"{area}.json"
+    assinatura = ds2arquivos.assinatura(game_dir)
+    if destino.is_file():
+        try:
+            pronto = json.loads(destino.read_text(encoding="utf-8"))
+            if pronto.get("assinatura") == assinatura:
+                return pronto
+        except ValueError:
+            pass
+    arq = ds2arquivos.Arquivo(game_dir, "GameData")
+    partes = partes_msb(arq.ler(f"/map/{area}/{area}.msb"))
+    base = origem(partes)
+    malhas = malhas_nvg2(arq.ler(f"/map/{area}/{area}.ngp"), base) if arq.tem(f"/map/{area}/{area}.ngp") else []
+    inst_path = f"/param/mapobjectinstanceparam_{area}.param"
+    instancias = {rid: struct.unpack_from("<i", raw)[0] for rid, raw in linhas_param(arq.ler(inst_path)) if len(raw) >= 4} if arq.tem(inst_path) else {}
+    ger_path = f"/param/generatorlocation_{area}.param"
+    geradores = [(rid, struct.unpack_from("<3f", raw)) for rid, raw in linhas_param(arq.ler(ger_path)) if len(raw) >= 12] if arq.tem(ger_path) else []
+    lotes = lotes_itens(ds2regulation.load_params(ds2regulation.find_regulation(game_dir))["ItemLotParam2_Other"])
+    names = names if names is not None else ds2save.load_item_names()
+    nomes_itens = {i: n for i, (_cat, n) in names.items()}
+    nome = _texto(arq, "mapname").get(nome_mapa_id(area), area)
+    out = montar_area(area, nome, partes, instancias, _texto(arq, "bonfirename"), lotes, nomes_itens, malhas, geradores, assinatura)
+    destino.parent.mkdir(parents=True, exist_ok=True)
+    tmp = destino.with_suffix(".tmp")
+    tmp.write_text(json.dumps(out, ensure_ascii=False, separators=(",", ":")), encoding="utf-8")
+    os.replace(tmp, destino)
+    return out
+
+
+def areas(game_dir) -> list[dict]:
+    """Áreas com mapa e navmesh no jogo, com o nome do próprio jogo (mapname.fmg)."""
+    import ds2arquivos
+
+    arq = ds2arquivos.Arquivo(game_dir, "GameData")
+    out = []
+    for mid, nome in sorted(_texto(arq, "mapname").items()):
+        if mid % 10_000:
+            continue
+        area = f"m{mid // 1_000_000:02d}_{mid // 10_000 % 100:02d}_00_00"
+        if arq.tem(f"/map/{area}/{area}.msb") and arq.tem(f"/map/{area}/{area}.ngp") and all(a["area"] != area for a in out):
+            out.append({"area": area, "nome": nome})
+    return out
+
+
+def onde(game_dir, cache_dir, item: str, areas_filtro=None) -> list[dict]:
+    """Todos os pontos do jogo com o item (nome sem diferença de maiúscula)."""
+    alvo = item.strip().casefold()
+    lista = areas_filtro or [a["area"] for a in areas(game_dir)]
+    out = []
+    for area in lista:
+        dados = extrair_area(game_dir, area, cache_dir)
+        for p in dados["itens"]:
+            if any(i["nome"].casefold() == alvo for i in p["itens"]):
+                out.append({"area": area, "nome_area": dados["nome"], "lote": p["lote"], "pos": p["pos"], "itens": p["itens"]})
+    return out
+
+
+def _cache_padrao() -> Path:
+    return Path(os.environ.get("BUILDSMITH_HOME", Path.home() / ".buildsmith")) / "cache" / "ds2"
+
+
+def main(argv=None) -> int:
+    sys.stdout.reconfigure(encoding="utf-8")
+    import ds2arquivos
+
+    parser = argparse.ArgumentParser(prog="ds2mapa")
+    sub = parser.add_subparsers(dest="cmd", required=True)
+    for nome in ("areas", "extrair", "onde"):
+        p = sub.add_parser(nome)
+        p.add_argument("--game", help="pasta Game do DS2 (padrão: a instalação da Steam)")
+        p.add_argument("--cache", help="pasta do cache (padrão: ~/.buildsmith/cache/ds2)")
+    sub.choices["extrair"].add_argument("--area", required=True)
+    sub.choices["onde"].add_argument("--item", required=True)
+    sub.choices["onde"].add_argument("--area", action="append", help="limita a busca (pode repetir)")
+    args = parser.parse_args(argv)
+    game = Path(args.game) if args.game else ds2arquivos.game_dir_padrao()
+    cache = Path(args.cache) if args.cache else _cache_padrao()
+    try:
+        if game is None:
+            raise MapaError("DS2 SotFS não encontrado; defina BUILDSMITH_DS2_GAME com a pasta Game")
+        if args.cmd == "areas":
+            out = areas(game)
+        elif args.cmd == "extrair":
+            dados = extrair_area(game, args.area, cache)
+            out = {"area": dados["area"], "nome": dados["nome"], "fogueiras": len(dados["fogueiras"]), "itens": len(dados["itens"]),
+                   "inimigos": len(dados["inimigos"]), "malhas": len(dados["malhas"]), "cache": str(cache / "mapas" / f"{args.area}.json")}
+        else:
+            out = onde(game, cache, args.item, args.area)
+    except (MapaError, ds2arquivos.ArquivoError, ValueError, OSError, KeyError) as err:
+        print(json.dumps({"error": str(err)}, ensure_ascii=False))
+        return 1
+    print(json.dumps(out, ensure_ascii=False, indent=2))
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())
