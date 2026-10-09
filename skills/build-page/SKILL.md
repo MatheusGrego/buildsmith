@@ -29,6 +29,10 @@ Formato do plano: `example/plano.json` desta pasta (versão 2). Spec: `docs/supe
 - `progresso` (aba Progresso) e `dano` (aba Dano) são opcionais; estado é texto (`derrotado`/`vivo`, `feito`/`pendente`), a página desenha o selo no estilo da wiki.
 - `feiticos` (aba Feitiços), `agora` (painel no topo), `id` em passos e itens, e requisito `{"texto", "item"}` estão em `example/plano.json` e no spec `2026-10-07-buildsmith-feiticos-fila-ux-design.md`.
 
+## Modelo da página
+
+`template/index.html` (esqueleto) + `template/pagina.css` + `template/pagina.js`: o `prepare_page` junta tudo num `index.html` só (o CSP do servidor só aceita script e estilo inline). Layout v2: cabeçalho com retrato e "Trocar personagem", menu lateral (Plano · Coletar · Combate · Registro), lista + detalhe em Passos e Onde pegar. A seleção lista os personagens do save (`GET /api/ds2/personagens`); retrato = foto enviada, último print da Steam ou mosaico do equipamento.
+
 ## Passos
 
 Padrão: **página local** (sem Artifact, mais barata). Só publique no Artifact quando o pedido tiver `publicar`.
