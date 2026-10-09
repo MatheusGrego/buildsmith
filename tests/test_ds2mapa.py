@@ -272,3 +272,28 @@ def test_real_lost_bastille_floors(tmp_path):
     assert all(a["poligonos"] for a in area["planta"]["andares"])
     ids = {a["id"] for a in area["planta"]["andares"]}
     assert all(p["andar"] in ids for p in area["fogueiras"] + area["itens"])
+
+
+def test_actors_from_generators():
+    loc = {145: (-49.3, 23.7, 39.1), 146: (-52.1, 23.9, 37.9), 300: (10.0, 0.0, 10.0),
+           501: (0.0, 0.0, 0.0), 502: (4.0, 0.0, 0.0), 503: (2.0, 0.0, 6.0), 900: (50.0, 0.0, 50.0)}
+    chr_ = {145: 76800000, 146: 76800001, 300: 75200000, 501: 32500000, 502: 32500001, 503: 32500002, 900: 12500000}
+    npcs, chefes = ds2mapa.montar_atores(loc, chr_, (-78.0, 4.0, 562.0), {7680: "Straid of Olaphis", 7520: "Lucatiel of Mirrah"},
+                                         [{"flag": 100962, "nome": "Ruin Sentinels", "wiki": "w", "familias": [3251, 3252, 3253]},
+                                          {"flag": 1, "nome": "Sem gerador", "wiki": "", "familias": [9990]}])
+    assert sorted(n["nome"] for n in npcs) == ["Lucatiel of Mirrah", "Straid of Olaphis"]  # dois geradores do Straid = um marcador
+    straid = next(n for n in npcs if n["id"] == 7680)
+    assert straid["pos"] == [-127.3, 27.7, 601.1]
+    assert [c["nome"] for c in chefes] == ["Ruin Sentinels"]
+    assert chefes[0]["pos"] == [-76.0, 4.0, 564.0] and chefes[0]["flag"] == 100962
+
+
+@pytest.mark.skipif(not (GAME / "GameDataEbl.bhd").exists(), reason="DS2 SotFS não instalado")
+def test_real_lost_bastille_actors(tmp_path):
+    import math
+    area = ds2mapa.extrair_area(GAME, "m10_16_00_00", tmp_path)
+    fog = {f["nome"]: f["pos"] for f in area["fogueiras"]}
+    npcs = {n["nome"]: n for n in area["npcs"]}
+    assert "Straid of Olaphis" in npcs and math.dist(npcs["Straid of Olaphis"]["pos"], fog["Straid's Cell"]) < 5
+    assert {"Ruin Sentinels", "Belfry Gargoyles"} <= {c["nome"] for c in area["chefes"]}
+    assert all("andar" in a for a in area["npcs"] + area["chefes"])
