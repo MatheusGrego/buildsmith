@@ -92,6 +92,19 @@ def test_multiple_characters_require_slot(tmp_path, names):
     assert ds2save.snapshot(path, slot=2, names=names)["name"] == "B"
 
 
+def test_slot_by_name_picks_character_in_shared_save(tmp_path, capsys):
+    path = tmp_path / "multi.sl2"
+    path.write_bytes(build_bnd4({"USER_DATA001": bytes(make_slot(name="Melatonina Vorcaro")),
+                                 "USER_DATA002": bytes(make_slot(name="Melatonina (teste)", level=10)),
+                                 "USER_DATA011": bytes(0x30000), "USER_DATA012": bytes(0x30000)}))
+    assert ds2save.slot_by_name(path, "melatonina (TESTE)") == 2
+    assert ds2save.slot_by_name(path, "Melatonina Vorcaro") == 1
+    with pytest.raises(ds2save.SaveError, match="1: Melatonina Vorcaro, 2: Melatonina"):
+        ds2save.slot_by_name(path, "Outro")
+    assert ds2save.main(["snapshot", "--save", str(path), "--personagem", "Melatonina (teste)"]) == 0
+    assert json.loads(capsys.readouterr().out)["slot"] == 2
+
+
 def test_find_save_picks_newest(tmp_path):
     folder = tmp_path / "DarkSoulsII" / "0110000100000000"
     folder.mkdir(parents=True)

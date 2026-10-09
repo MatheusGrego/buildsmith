@@ -12,7 +12,7 @@ Script: `scripts/ds2save.py` nesta pasta. Precisa de Python 3 e `pycryptodome` (
 | Comando | Devolve |
 |---|---|
 | `python "<pasta>/scripts/ds2save.py" slots` | personagens do save: slot, nome, nível |
-| `python "<pasta>/scripts/ds2save.py" snapshot [--slot N] [--save CAMINHO]` | ficha completa em JSON |
+| `python "<pasta>/scripts/ds2save.py" snapshot [--personagem NOME \| --slot N] [--save CAMINHO]` | ficha completa em JSON |
 | `python "<pasta>/scripts/ds2save.py" levels --from A --to B` | custo de cada nível de A+1 até B e o total |
 | `python "<pasta>/scripts/ds2save.py" flags-diff --antes A.json --depois B.json` | flags globais que ligaram/desligaram entre dois snapshots |
 | `python "<pasta>/scripts/ds2calc.py" ar --arma Uchigatana --nivel 5 --str 10 --dex 18` | AR físico da arma pelas regras do jogo (bate com o menu) |
@@ -28,7 +28,7 @@ Script: `scripts/ds2save.py` nesta pasta. Precisa de Python 3 e `pycryptodome` (
 ## Regras
 
 - Erro sai como `{"error": "..."}` com código 1. Mostre a mensagem ao usuário; não invente atributos.
-- "mais de um personagem" → rode `slots`, pergunte qual é o personagem e passe `--slot`.
+- "mais de um personagem" → o save tem vários personagens (ex.: Vorcaro no slot 1, (teste) no slot 2). Passe `--personagem "<nome>"`; sem nome, rode `slots` e pergunte.
 - Custo de alma: sempre use `levels`. Nunca some custos de cabeça.
 - `hands` usa `L1 R1 L2 R2 L3 R3` (mão esquerda/direita, slots 1–3). `upgrade` é o +N da arma; `null` em consumíveis.
 - Itens `desconhecido #ID` existem no save mas não estão nas listas de `games/ds2/ids/`; cite como desconhecidos. `3400000` numa mão costuma ser mão vazia.

@@ -7,6 +7,7 @@ import re
 import struct
 import sys
 import time
+import unicodedata
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[3]
@@ -288,6 +289,20 @@ def list_slots(path) -> list[dict]:
     ]
 
 
+def _plain(text: str) -> str:
+    return unicodedata.normalize("NFKD", text).encode("ascii", "ignore").decode().casefold().strip()
+
+
+def slot_by_name(path, name: str) -> int:
+    """Slot do personagem pelo nome (sem diferença de maiúscula/acento). Um save pode ter vários personagens."""
+    found = list_slots(path)
+    for item in found:
+        if _plain(item["name"]) == _plain(name):
+            return item["slot"]
+    options = ", ".join(f'{item["slot"]}: {item["name"]}' for item in found) or "nenhum"
+    raise SaveError(f"personagem {name!r} não está no save (personagens: {options})")
+
+
 def snapshot(path, slot: int | None = None, names=None, regulation=None, learned=None) -> dict:
     """regulation: None = procura o do jogo instalado; False = não usa; caminho = usa esse arquivo."""
     names = names if names is not None else load_item_names()
@@ -331,6 +346,7 @@ def main(argv=None) -> int:
     sn = sub.add_parser("snapshot", help="ficha completa do personagem em JSON")
     sn.add_argument("--save")
     sn.add_argument("--slot", type=int)
+    sn.add_argument("--personagem", help="nome do personagem (escolhe o slot; vale quando o save tem mais de um)")
     fd = sub.add_parser("flags-diff", help="flags globais que ligaram/desligaram entre dois snapshots")
     fd.add_argument("--antes", required=True)
     fd.add_argument("--depois", required=True)
@@ -347,7 +363,11 @@ def main(argv=None) -> int:
             out = {"ligou": sorted(after - before), "desligou": sorted(before - after)}
         else:
             path = Path(args.save) if args.save else find_save()
-            out = list_slots(path) if args.cmd == "slots" else snapshot(path, args.slot)
+            if args.cmd == "slots":
+                out = list_slots(path)
+            else:
+                slot = slot_by_name(path, args.personagem) if args.personagem else args.slot
+                out = snapshot(path, slot)
     except SaveError as err:
         print(json.dumps({"error": str(err)}, ensure_ascii=False))
         return 1
