@@ -1,11 +1,19 @@
 (function () {
   const STATS = ["VGR", "END", "VIT", "ATN", "STR", "DEX", "INT", "FTH", "ADP"];
-  const GRUPOS = [["equipar", "Equipar"], ["explorar", "Explorar"], ["chefe", "Chefes"], ["troca", "Trocas de alma"],
-                  ["compra", "Compras"], ["upgrade", "Upgrades"], ["farm", "Farms"], ["nivel", "Nível"]];
-  const ACESSO = { agora: "Agora", em_breve: "Em breve", tarde: "Tarde" };
+  const GRUPO = { equipar: "Equipar", explorar: "Explorar", chefe: "Chefe", troca: "Troca de alma", compra: "Compra",
+                  upgrade: "Upgrade", farm: "Farm", nivel: "Nível" };
+  const ORDEM_GRUPOS = Object.keys(GRUPO);
+  const ACESSO = { agora: ["Agora", "feito"], em_breve: ["Em breve", ""], tarde: ["Tarde", "apagado"] };
   const DESTAQUE = { mais_cedo: "Mais cedo", mais_rentavel: "Mais rentável" };
   const ESTADO_FEITICO = { equipado: "Equipado", tem: "Tem", sugerido: "Sugerido" };
+  const SECOES = [
+    ["Plano", [["agora", "Agora"], ["passos", "Passos"], ["fases", "Fases"]]],
+    ["Coletar", [["onde", "Onde pegar"], ["fila", "Fila"]]],
+    ["Combate", [["dano", "Dano"], ["feiticos", "Feitiços"], ["atributos", "Atributos"]]],
+    ["Registro", [["ficha", "Ficha"], ["progresso", "Progresso"], ["builds", "Builds"], ["fontes", "Fontes"]]],
+  ];
   const state = { db: null, plano: null, feitos: {}, pedidos: {}, selecao: null };
+  const ui = { secao: null, passo: null, item: null, fonte: {} };
   const slug = (text) => String(text).normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "").slice(0, 180) || "pedido";
   const fogueira = (attr, value, label) => `<button class="fogueira" type="button" ${attr}="${esc(value)}" aria-pressed="false" aria-label="${esc(label)}" title="${esc(label)}" hidden><img src="icons/fogueira.png" alt=""></button>`;
   const pesq = (texto, origem) => `<button class="pesq" type="button" data-q="${esc(texto)}" data-origem="${esc(origem)}">Pesquisar</button>`;
@@ -29,7 +37,7 @@
   const icon = (src, name) => localIcon(src) ? `<img class="ic" src="${esc(src)}" alt="" data-ini="${esc(letter(name))}">` : initial(name);
   function fallbackIcons(root) {
     root.querySelectorAll("img.ic").forEach((img) => {
-      const swap = () => { const s = document.createElement("span"); s.className = "ini"; s.setAttribute("aria-hidden", "true"); s.textContent = img.dataset.ini; img.replaceWith(s); };
+      const swap = () => { const s = document.createElement("span"); s.className = img.classList.contains("ni-ic") ? "ni-ic" : "ini"; s.setAttribute("aria-hidden", "true"); s.textContent = img.dataset.ini; img.replaceWith(s); };
       if (img.complete && img.naturalWidth === 0) swap(); else img.addEventListener("error", swap);
     });
   }
@@ -40,6 +48,14 @@
     return n.link ? ext(n.link, inner, `node${solo}`) : `<span class="node${solo}">${inner}</span>`;
   }
   const flow = (nodes) => (nodes && nodes.length) ? `<div class="flow">${nodes.map(node).join('<span class="arrow" aria-hidden="true">&#10142;</span>')}</div>` : "";
+  // Nó em linha (lista + detalhe): ícone de 20px ou inicial, nome, legenda.
+  function noInline(n, semLink) {
+    const ic = localIcon(n.icone) ? `<img class="ic ni-ic" src="${esc(n.icone)}" alt="" data-ini="${esc(letter(n.nome))}">` : `<span class="ni-ic" aria-hidden="true">${esc(letter(n.nome))}</span>`;
+    const inner = `${ic}<span class="ni-nm">${esc(n.nome)}</span>${n.sub ? `<span class="ni-sub">${esc(n.sub)}</span>` : ""}`;
+    return n.link && !semLink ? ext(n.link, inner, "ni") : `<span class="ni ni-sem">${inner}</span>`;
+  }
+  const fluxoInline = (nodes, semLink) => `<span class="fi">${(nodes || []).map((n, i) => `<span class="fi-passo">${i ? '<span class="arrow" aria-hidden="true">&#10142;</span>' : ""}${noInline(n, semLink)}</span>`).join("")}</span>`;
+  const selo = (text, extra) => `<span class="estado${extra ? " " + extra : ""}">${esc(text)}</span>`;
 
   function rows(lines, heads) {
     if (!lines || !lines.length) return "";
@@ -47,18 +63,137 @@
     return `<div class="tw"><table><thead><tr>${heads.map((h) => `<th>${h}</th>`).join("")}</tr></thead><tbody>${body}</tbody></table></div>`;
   }
 
-  function top(p) {
+  function grid(heads, lines, right = []) {
+    const th = heads.map((h, i) => `<th${right.includes(i) ? ' class="r"' : ""}>${h}</th>`).join("");
+    const body = lines.map((cells) => `<tr>${cells.map((c, i) => `<td${right.includes(i) ? ' class="r"' : ""}>${c}</td>`).join("")}</tr>`).join("");
+    return `<div class="tw"><table><thead><tr>${th}</tr></thead><tbody>${body}</tbody></table></div>`;
+  }
+
+  // ---- Cabeçalho ----------------------------------------------------------
+  function topo(p) {
     const c = p.personagem;
-    return `<header class="top">
-      <p class="meta">${esc(p.jogo)} · atualizado ${when(p.gerado_em)}</p>
-      <h1>${esc(c.name)}</h1>
-      <div class="legend"><span class="l-pos">ganho</span><span class="l-neg">perda / falta</span><span class="l-link">link da wiki</span></div>
+    return `<header class="topo">
+      <div class="topo-pers">
+        <div class="retrato" id="retrato" aria-hidden="true">${retratoEquipamento(c.equipado)}</div>
+        <div class="topo-id"><p class="meta">${esc(p.jogo)} · atualizado ${when(p.gerado_em)}</p><h1>${esc(c.name)}</h1>
+          <button class="trocar" type="button" id="trocar" hidden>Trocar personagem</button></div>
+      </div>
+      <div class="topo-meta"><span>Nível <b>${fmt.format(c.level)}</b></span><span>Almas <b>${fmt.format(c.souls)}</b></span><span>Soul memory <b>${fmt.format(c.soul_memory)}</b></span>
+        <span class="legend"><span class="l-pos">ganho</span><span class="l-neg">perda / falta</span><span class="l-link">link da wiki</span></span></div>
       <div class="acoes" id="forja-acoes" hidden>
         <button class="acao" type="button" data-rodar="plano"><img src="icons/fogueira.png" alt="">Atualizar plano</button>
         <button class="acao" type="button" data-rodar="fila"><img src="icons/fogueira.png" alt="">Responder fila<span class="count" id="forja-fila" hidden></span></button>
       </div>
-      <div class="forja" id="forja" hidden></div>
-    </header>`;
+    </header>
+    <div class="forja" id="forja" hidden></div>`;
+  }
+
+  // Retrato sem foto: mosaico com os ícones do equipamento (cabeça, peito, mão direita, mão esquerda).
+  const ORDEM_RETRATO = [/^cabe/i, /^peito/i, /^R1/, /^L1/];
+  function retratoEquipamento(equipado) {
+    const lista = Array.isArray(equipado) ? equipado : [];
+    const escolhidos = ORDEM_RETRATO.map((re) => lista.find((n) => re.test(String(n.sub || "")))).filter(Boolean);
+    const pecas = (escolhidos.length ? escolhidos : lista).slice(0, 4);
+    if (!pecas.length) return '<span class="retrato-vazio">Foto</span>';
+    return `<span class="mosaico m${pecas.length}">${pecas.map((n) => localIcon(n.icone) ? `<img class="ic" src="${esc(n.icone)}" alt="" data-ini="${esc(letter(n.nome))}">` : initial(n.nome)).join("")}</span>`;
+  }
+
+  function menu(p) {
+    const counts = {
+      passos: p.passos.length, fases: p.fases.length, onde: p.itens.length, dano: (p.dano || []).length || null,
+      feiticos: p.feiticos ? p.feiticos.lista.length : null, progresso: p.progresso ? p.progresso.chefes.filter((c) => c.estado === "derrotado").length : null,
+      builds: p.comparacao.length, fontes: p.fontes.length, ficha: p.mudancas.length || null,
+    };
+    return `<nav class="menu" aria-label="Seções">${SECOES.map(([g, itens]) => `<div class="menu-g"><div class="menu-gt">${g}</div>
+      ${itens.filter(([id]) => id !== "agora" || p.agora).map(([id, l]) => `<button class="menu-i" type="button" data-secao="${id}">${l}${counts[id] ? `<span class="count">${counts[id]}</span>` : id === "fila" ? '<span class="count" id="menu-fila" hidden></span>' : ""}</button>`).join("")}
+    </div>`).join("")}</nav>`;
+  }
+
+  // ---- Lista + detalhe ------------------------------------------------------
+  function mestreDetalhe(tipo, itens, linha, detalhe, largura) {
+    return `<div class="md" style="grid-template-columns:${largura} minmax(0,1fr)">
+      <ul class="md-lista">${itens.map((it) => `<li><div class="md-i" role="button" tabindex="0" data-md="${tipo}" data-md-id="${esc(it.id)}">${linha(it)}</div></li>`).join("")}</ul>
+      <div class="md-det">${itens.map((it) => `<div class="md-pane" data-md-pane="${tipo}" data-md-id="${esc(it.id)}" hidden>${detalhe(it)}</div>`).join("")}</div>
+    </div>`;
+  }
+
+  function secaoAgora(p) {
+    const a = p.agora;
+    if (!a) return '<section><h2>Agora</h2><p class="empty">Este plano não tem ações imediatas.</p></section>';
+    const byId = Object.fromEntries(p.passos.map((s) => [s.id, s]));
+    const acoes = a.acoes.map((id) => byId[id]).filter(Boolean).map((s) => `<li class="agora2-i">
+      ${fogueira("data-passo", s.id, "Marcar como feito")}
+      <div><a class="agora2-t" href="#passo-${esc(s.id)}" data-goto-passo="${esc(s.id)}">${esc(s.titulo)}</a>${fluxoInline(s.fluxo)}</div>
+    </li>`).join("");
+    const faltam = (a.faltam || []).length ? `<span>Faltam:</span>${fluxoInline(a.faltam)}` : "";
+    return `<section class="agora2 grande" aria-label="Próximas ações"><h2>Agora</h2><ol>${acoes}</ol>
+      <div class="agora2-res">${typeof a.almas === "number" ? `<span>Almas pra essas ações: <span class="${a.almas > 0 ? "neg" : ""}">${fmt.format(a.almas)}</span></span>` : ""}${faltam}</div>
+    </section>`;
+  }
+
+  function secaoPassos(p) {
+    if (!p.passos.length) return '<section><h2>Próximos passos</h2><p class="empty">Nenhum passo pendente.</p></section>';
+    const ordenados = [...p.passos].sort((a, b) => ORDEM_GRUPOS.indexOf(a.tipo) - ORDEM_GRUPOS.indexOf(b.tipo));
+    const numero = Object.fromEntries(ordenados.map((s, i) => [s.id, i + 1]));
+    return `<section><h2>Próximos passos<small id="passos-feitos"></small></h2>${mestreDetalhe("passo", ordenados,
+      (s) => `<div class="md-l1"><span class="md-fog">${fogueira("data-passo", s.id, "Marcar como feito")}</span><span class="step-no">${numero[s.id]}</span><span class="md-t">${esc(s.titulo)}</span></div>
+        <div class="md-l2"><span class="label">${esc(GRUPO[s.tipo] || s.tipo)}</span><span class="confirmado" data-confirma="${esc(s.id)}"></span></div>`,
+      (s) => `<div class="det-head" id="passo-${esc(s.id)}"><span class="det-tit">${esc(s.titulo)}</span>${selo(GRUPO[s.tipo] || s.tipo)}</div>
+        ${flow(s.fluxo)}
+        <div class="mapa-slot" data-mapa-passo="${esc(s.id)}" hidden></div>
+        ${rows(s.dados, ["Dado", "Agora", "Depois", "Efeito"])}`, "21rem")}</section>`;
+  }
+
+  function maisCedo(it) {
+    return (it.fontes || []).find((f) => (f.destaques || []).includes("mais_cedo")) || (it.fontes || [])[0];
+  }
+
+  function secaoOnde(p) {
+    if (!p.itens.length) return '<section><h2>Onde pegar</h2><p class="empty">Nenhum item pendente.</p></section>';
+    return `<section><h2>Onde pegar<small>mais cedo e mais rentável a partir de onde você está</small></h2>${mestreDetalhe("item", p.itens,
+      (it) => {
+        const m = maisCedo(it);
+        const a = m ? ACESSO[m.acesso] || [m.acesso, ""] : null;
+        return `<div class="md-l1">${noInline(it.item, true)}</div>
+          <div class="md-l2">${a ? selo(a[0], a[1]) : ""}<span>${esc(m ? m.rendimento || "" : "")}</span><span class="md-fim">${(it.fontes || []).length} fontes</span></div>`;
+      },
+      (it) => `<div class="det-head" id="item-${esc(it.id)}">${node({ ...it.item, sub: `${(it.fontes || []).length} fontes` })}${it.fonte ? ext(it.fonte, "fonte na wiki", "muted") : ""}</div>
+        <div class="mapa-slot" data-mapa-item="${esc(it.id)}" hidden></div>
+        <ol class="fontes-v">${(it.fontes || []).map((f, i) => {
+          const a = ACESSO[f.acesso] || [f.acesso, ""];
+          return `<li class="fonte-v sel" role="button" tabindex="0" data-fonte-item="${esc(it.id)}" data-fonte="${i}">
+            <div class="fonte-top"><span class="step-no">${i + 1}</span>${selo(a[0], a[1])}${(f.destaques || []).map((d) => selo(DESTAQUE[d] || d, "destaque")).join("")}<span class="fonte-rend">${esc(f.rendimento || "—")}</span></div>
+            ${fluxoInline(f.fluxo)}
+            <div class="fonte-req"><span class="label">Requisito</span>${requisito(f.requisito, it.item.nome)}</div>
+          </li>`;
+        }).join("")}</ol>
+        ${rows(it.dados, ["Dado", "Agora", "Com o item", "Efeito"])}`, "18rem")}</section>`;
+  }
+
+  function secaoDano(p) {
+    const list = p.dano || [];
+    if (!list.length) return '<section><h2>Dano</h2><p class="empty">Este plano não tem cálculo de dano.</p></section>';
+    const nums = list.flatMap((d) => [d.agora, d.depois]).filter((v) => typeof v === "number");
+    const max = Math.max(1, ...nums) * 1.08;
+    const pc = (v) => `${(v / max * 100).toFixed(2)}%`;
+    const grupos = [];
+    list.forEach((d) => {
+      const g = grupos.find((x) => x.nome === d.arma.nome);
+      if (g) g.linhas.push(d); else grupos.push({ nome: d.arma.nome, arma: d.arma, linhas: [d] });
+    });
+    return `<section><h2>Dano<small>AR pelas regras do jogo</small></h2><div class="dano">${grupos.map((g) => `<div class="dano-arma">
+      <div class="det-head">${node(g.arma)}</div>
+      ${g.linhas.map((d) => {
+        const num = typeof d.agora === "number" && typeof d.depois === "number";
+        const diff = num ? d.depois - d.agora : 0;
+        return `<div class="dano-l">
+          <span class="dano-rot">${esc(d.detalhe || "—")}</span>
+          <div class="dano-bar" role="img" aria-label="${num ? `AR ${d.agora} para ${d.depois}` : "sem cálculo"}">${num ? `<div class="now" style="width:${pc(Math.min(d.agora, d.depois))}"></div>${diff > 0 ? `<div class="ganho" style="left:${pc(d.agora)};width:${pc(diff)}"></div>` : ""}` : ""}</div>
+          <span class="dano-val">${num ? `${fmt.format(d.agora)} → <span class="${diff > 0 ? "pos" : diff < 0 ? "neg" : ""}">${fmt.format(d.depois)} (${diff > 0 ? "+" : diff < 0 ? "−" : ""}${fmt.format(Math.abs(diff))})</span>` : "—"}</span>
+          ${(d.por_causa || []).length ? `<div class="dano-causa"><span class="label">Por causa de</span>${fluxoInline(d.por_causa)}</div>` : ""}
+        </div>`;
+      }).join("")}
+    </div>`).join("")}</div></section>`;
   }
 
   function sheet(p) {
@@ -72,19 +207,6 @@
 
   function changes(p) {
     return `<section><h2>Desde a última vez</h2>${p.mudancas.length ? rows(p.mudancas, ["Dado", "Antes", "Agora", "Efeito"]) : '<p class="empty">Primeira leitura do save.</p>'}</section>`;
-  }
-
-  function steps(p) {
-    const groups = GRUPOS.map(([tipo, titulo]) => [titulo, p.passos.filter((s) => s.tipo === tipo)]).filter(([, list]) => list.length);
-    if (!groups.length) return '<section><h2>Próximos passos</h2><p class="empty">Nenhum passo pendente.</p></section>';
-    return `<section><h2>Próximos passos</h2>${groups.map(([titulo, list]) => `<div class="grupo">
-      <h3>${titulo}<small>${list.length}</small></h3>
-      <ol class="steps">${list.map((s, i) => `<li class="step">
-        <div class="step-head" id="passo-${esc(s.id)}">${fogueira("data-passo", s.id, "Marcar como feito")}<span class="step-no">${i + 1}</span><span class="step-title">${esc(s.titulo)}</span><span class="confirmado" data-confirma="${esc(s.id)}"></span></div>
-        ${flow(s.fluxo)}
-        ${rows(s.dados, ["Dado", "Agora", "Depois", "Efeito"])}
-      </li>`).join("")}</ol>
-    </div>`).join("")}</section>`;
   }
 
   function stats(p) {
@@ -116,33 +238,6 @@
     </table></div></section>`;
   }
 
-  function items(p) {
-    const selo = (text, cls) => `<span class="estado ${cls}">${esc(text)}</span>`;
-    const list = p.itens.map((it) => {
-      const line = (f, i) => [
-        String(i + 1),
-        flow(f.fluxo),
-        requisito(f.requisito, it.item.nome),
-        selo(ACESSO[f.acesso] || f.acesso, f.acesso === "agora" ? "feito" : f.acesso === "tarde" ? "apagado" : ""),
-        esc(f.rendimento || "—"),
-        (f.destaques || []).map((d) => selo(DESTAQUE[d] || d, "destaque")).join("") || "",
-      ];
-      const heads = ["#", "Como", "Requisito", "Acesso", "Rendimento", "Destaque"];
-      const fontes = (it.fontes || []).map((f, i) => [f, i]);
-      const top = fontes.filter(([f]) => (f.destaques || []).length);
-      const rest = fontes.filter(([f]) => !(f.destaques || []).length);
-      const fix = (html) => html.replace(/<td>(<span class="estado)/g, '<td class="selos">$1');
-      const table = fix(grid(heads, (top.length ? top : fontes).map(([f, i]) => line(f, i))))
-        + (top.length && rest.length ? `<details class="mais"><summary>Ver todas as fontes (${fontes.length})</summary>${fix(grid(heads, rest.map(([f, i]) => line(f, i))))}</details>` : "");
-      return `<div class="block" id="item-${esc(it.id)}">
-        <div class="block-head">${node(it.item)}${it.fonte ? ext(it.fonte, "fonte", "muted") : ""}</div>
-        ${table}
-        ${rows(it.dados, ["Dado", "Agora", "Com o item", "Efeito"])}
-      </div>`;
-    }).join("");
-    return `<section><h2>Onde pegar<small>mais cedo e mais rentável a partir de onde você está</small></h2>${list ? `<div class="blocks">${list}</div>` : '<p class="empty">Nenhum item pendente.</p>'}</section>`;
-  }
-
   function builds(p) {
     const list = p.comparacao.map((b) => `<div class="block">
       <div class="block-head"><span class="step-title">${b.link ? ext(b.link, esc(b.build)) : esc(b.build)}</span></div>
@@ -150,12 +245,6 @@
       ${b.ajuste && b.ajuste.length ? `<span class="label">Ajuste sugerido</span>${flow(b.ajuste)}` : ""}
     </div>`).join("");
     return `<section><h2>Outras builds</h2>${list ? `<div class="blocks">${list}</div>` : '<p class="empty">Nenhuma comparação ainda.</p>'}</section>`;
-  }
-
-  function grid(heads, lines, right = []) {
-    const th = heads.map((h, i) => `<th${right.includes(i) ? ' class="r"' : ""}>${h}</th>`).join("");
-    const body = lines.map((cells) => `<tr>${cells.map((c, i) => `<td${right.includes(i) ? ' class="r"' : ""}>${c}</td>`).join("")}</tr>`).join("");
-    return `<div class="tw"><table><thead><tr>${th}</tr></thead><tbody>${body}</tbody></table></div>`;
   }
 
   const ESTADO = { derrotado: "Derrotado", vivo: "Vivo", feito: "Feito", pendente: "Pendente" };
@@ -173,33 +262,6 @@
     return `<section><h2>Chefes<small>${killed} de ${pr.chefes.length} derrotados</small></h2>${bosses}</section>
       <section><h2>Compras<small>${pr.compras.length}</small></h2>${buys}</section>
       <section><h2>Eventos</h2>${events}</section>`;
-  }
-
-  function damage(p) {
-    const list = p.dano || [];
-    if (!list.length) return '<section><h2>Dano</h2><p class="empty">Este plano não tem cálculo de dano.</p></section>';
-    const value = (v) => typeof v === "number" ? fmt.format(v) : "—";
-    const lines = list.map((d) => {
-      const diff = typeof d.agora === "number" && typeof d.depois === "number" ? d.depois - d.agora : null;
-      const shown = diff === null ? "—" : `<span class="${diff > 0 ? "pos" : diff < 0 ? "neg" : ""}">${diff > 0 ? "+" : ""}${fmt.format(diff)}</span>`;
-      return [node(d.arma), value(d.agora), value(d.depois), shown, esc(d.detalhe || ""), flow(d.por_causa) || "—"];
-    });
-    return `<section><h2>Dano<small>AR físico pelas regras do jogo</small></h2>${grid(["Arma", "Agora", "Depois", "Diferença", "Mudança", "Por causa de"], lines, [1, 2, 3])}</section>`;
-  }
-
-  function nowPanel(p) {
-    const a = p.agora;
-    if (!a) return "";
-    const byId = Object.fromEntries(p.passos.map((s) => [s.id, s]));
-    const acoes = a.acoes.map((id) => byId[id]).filter(Boolean).map((s) => `<div class="agora-acao">
-      ${fogueira("data-passo", s.id, "Marcar como feito")}
-      <a class="step-title" href="#passo-${esc(s.id)}" data-goto-passo="${esc(s.id)}">${esc(s.titulo)}</a>
-      ${flow(s.fluxo)}
-    </div>`).join("");
-    const faltam = (a.faltam || []).length ? `<span>Faltam:</span>${flow(a.faltam)}` : "";
-    return `<section class="agora" aria-label="Próximas ações"><h2>Agora</h2>${acoes}
-      <div class="agora-resumo">${typeof a.almas === "number" ? `<span>Almas pra essas ações: <span class="neg">${fmt.format(a.almas)}</span></span>` : ""}${faltam}</div>
-    </section>`;
   }
 
   function spells(p) {
@@ -224,7 +286,7 @@
   }
 
   function queue() {
-    return `<section><h2>Fila de pesquisa<small>${forja.rodar ? "o botão Responder fila (no topo) responde agora" : "respondida no próximo /buildsmith:build"}</small></h2>
+    return `<section><h2>Fila de pesquisa<small id="fila-sub">${forja.rodar ? "o botão Responder fila (no topo) responde agora" : "respondida no próximo /buildsmith:build"}</small></h2>
       <form class="fila-form" id="fila-form">
         <label class="sr-only" for="fila-texto">O que você quer saber</label>
         <input id="fila-texto" type="text" maxlength="120" placeholder="Onde farmar Bonfire Ascetic" autocomplete="off">
@@ -239,55 +301,60 @@
   }
 
   const app = document.getElementById("app");
-  const KEY = "buildsmith-aba";
+  const KEY = "buildsmith-secao";
 
   function render(p) {
-    const tabs = [
-      { id: "ficha", label: "Ficha", count: p.mudancas.length || null, html: sheet(p) + changes(p) },
-      { id: "passos", label: "Passos", count: p.passos.length, html: steps(p) },
-      { id: "progresso", label: "Progresso", count: p.progresso ? p.progresso.chefes.filter((c) => c.estado === "derrotado").length : null, html: progress(p) },
-      { id: "dano", label: "Dano", count: (p.dano || []).length || null, html: damage(p) },
-      { id: "feiticos", label: "Feitiços", count: p.feiticos ? p.feiticos.lista.length : null, html: spells(p) },
-      { id: "atributos", label: "Atributos", count: null, html: stats(p) },
-      { id: "fases", label: "Fases", count: p.fases.length, html: phases(p) },
-      { id: "onde", label: "Onde pegar", count: p.itens.length, html: items(p) },
-      { id: "builds", label: "Builds", count: p.comparacao.length, html: builds(p) },
-      { id: "fila", label: "Fila", count: null, html: queue() },
-      { id: "fontes", label: "Fontes", count: p.fontes.length, html: sources(p) },
-    ];
+    state.plano = p;
+    const secoes = {
+      agora: secaoAgora(p), passos: secaoPassos(p), fases: phases(p), onde: secaoOnde(p), fila: queue(),
+      dano: secaoDano(p), feiticos: spells(p), atributos: stats(p), ficha: sheet(p) + changes(p), progresso: progress(p),
+      builds: builds(p), fontes: sources(p),
+    };
+    if (!p.agora) delete secoes.agora;
+    app.innerHTML = topo(p)
+      + `<div class="corpo">${menu(p)}<div class="conteudo" id="conteudo">${Object.entries(secoes).map(([id, html]) => `<div class="secao" data-pane="${id}" hidden>${html}</div>`).join("")}</div></div>`;
     let saved = null;
     try { saved = localStorage.getItem(KEY); } catch (e) { saved = null; }
-    const fromHash = location.hash.slice(1);
-    const start = [fromHash, saved, "passos"].find((id) => tabs.some((t) => t.id === id));
-    state.plano = p;
-    app.innerHTML = top(p) + nowPanel(p)
-      + `<nav class="tabs" role="tablist" aria-label="Seções">${tabs.map((t) => `<button class="tab" role="tab" id="aba-${t.id}" aria-controls="painel-${t.id}" aria-selected="${t.id === start}" data-tab="${t.id}">${t.label}${t.count ? `<span class="count">${t.count}</span>` : ""}</button>`).join("")}</nav>`
-      + tabs.map((t) => `<div class="tab-panel" role="tabpanel" id="painel-${t.id}" aria-labelledby="aba-${t.id}"${t.id === start ? "" : " hidden"}>${t.html}</div>`).join("");
-    app.querySelector(".tabs").addEventListener("click", (ev) => {
-      const btn = ev.target.closest(".tab");
-      if (!btn) return;
-      select(btn.dataset.tab);
-    });
-    app.querySelector(".tabs").addEventListener("keydown", (ev) => {
-      if (ev.key !== "ArrowRight" && ev.key !== "ArrowLeft") return;
-      const list = [...app.querySelectorAll(".tab")];
-      const i = list.indexOf(document.activeElement);
-      const next = list[(i + (ev.key === "ArrowRight" ? 1 : list.length - 1)) % list.length];
-      next.focus();
-      select(next.dataset.tab);
-    });
+    const pedida = [location.hash.slice(1), saved, p.agora ? "agora" : "passos"].find((id) => id in secoes);
+    ui.passo = ui.passo && p.passos.some((s) => s.id === ui.passo) ? ui.passo : (p.passos[0] || {}).id;
+    ui.item = ui.item && p.itens.some((it) => it.id === ui.item) ? ui.item : (p.itens[0] || {}).id;
+    mostrar(pedida);
+    escolher("passo", ui.passo);
+    escolher("item", ui.item);
+    p.itens.forEach((it) => marcarFonte(it.id, ui.fonte[it.id] ?? Math.max(0, (it.fontes || []).findIndex((f) => (f.destaques || []).includes("mais_cedo")))));
+    if (typeof window.buildsmithMapa === "function") window.buildsmithMapa(app, p);
   }
 
-  function select(id) {
-    app.querySelectorAll(".tab").forEach((b) => b.setAttribute("aria-selected", String(b.dataset.tab === id)));
-    app.querySelectorAll(".tab-panel").forEach((panel) => { panel.hidden = panel.id !== `painel-${id}`; });
-    try { localStorage.setItem(KEY, id); } catch (e) { /* armazenamento bloqueado: só não lembra a aba */ }
+  function mostrar(id) {
+    const panes = [...app.querySelectorAll("[data-pane]")];
+    if (!panes.some((el) => el.dataset.pane === id)) id = panes.length ? panes[0].dataset.pane : id;
+    ui.secao = id;
+    panes.forEach((el) => { el.hidden = el.dataset.pane !== id; });
+    app.querySelectorAll(".menu-i").forEach((b) => { if (b.dataset.secao === id) b.setAttribute("aria-current", "page"); else b.removeAttribute("aria-current"); });
+    try { localStorage.setItem(KEY, id); } catch (e) { /* armazenamento bloqueado: só não lembra a seção */ }
     if (history.replaceState) history.replaceState(null, "", `#${id}`);
   }
-  function goTo(tab, targetId) {
-    select(tab);
-    const el = document.getElementById(targetId);
-    if (el) el.scrollIntoView({ behavior: "smooth", block: "start" });
+
+  function escolher(tipo, id) {
+    if (!id) return;
+    if (tipo === "passo") ui.passo = id; else ui.item = id;
+    app.querySelectorAll(`[data-md="${tipo}"]`).forEach((el) => { if (el.dataset.mdId === id) el.setAttribute("aria-current", "true"); else el.removeAttribute("aria-current"); });
+    app.querySelectorAll(`[data-md-pane="${tipo}"]`).forEach((el) => { el.hidden = el.dataset.mdId !== id; });
+  }
+
+  function marcarFonte(itemId, idx) {
+    ui.fonte[itemId] = idx;
+    app.querySelectorAll(`[data-fonte-item="${CSS.escape(itemId)}"]`).forEach((el) => {
+      if (Number(el.dataset.fonte) === idx) el.setAttribute("aria-current", "true"); else el.removeAttribute("aria-current");
+    });
+    if (typeof window.buildsmithMapaFonte === "function") window.buildsmithMapaFonte(app, state.plano, itemId, idx);
+  }
+
+  function goTo(secao, tipo, id) {
+    mostrar(secao);
+    if (tipo) escolher(tipo, id);
+    const alvo = app.querySelector(".conteudo");
+    if (alvo && window.matchMedia("(max-width: 760px)").matches) alvo.scrollIntoView({ block: "start" });
   }
 
   function selectedSpells() {
@@ -304,6 +371,8 @@
       const f = state.feitos[el.dataset.confirma];
       el.textContent = f && f.marcado ? (f.confirmado === true ? "confirmado pelo save" : f.confirmado === false ? "o save ainda não mostra" : "confirma no próximo /build") : "";
     });
+    const feitosEl = document.getElementById("passos-feitos");
+    if (feitosEl && state.plano) feitosEl.textContent = `${state.plano.passos.filter((s) => state.feitos[s.id] && state.feitos[s.id].marcado).length} de ${state.plano.passos.length} feitos`;
     const chosen = selectedSpells();
     app.querySelectorAll("[data-feitico]").forEach((b) => b.setAttribute("aria-pressed", String(chosen.includes(b.dataset.feitico))));
     const used = (state.plano.feiticos ? state.plano.feiticos.lista : []).filter((sp) => chosen.includes(sp.id)).reduce((n, sp) => n + sp.slots, 0);
@@ -324,9 +393,9 @@
         ped.item_id ? `<a class="req-link" href="#item-${esc(ped.item_id)}" data-goto-item="${esc(ped.item_id)}">ver em Onde pegar</a>` : "—",
       ])).replace(/<td>(<span class="estado)/g, '<td class="selos">$1');
     }
-    const tab = document.querySelector('[data-tab="fila"]');
     const open = list.filter((ped) => ped.estado !== "respondido").length;
-    if (tab) tab.innerHTML = `Fila${open ? `<span class="count">${open}</span>` : ""}`;
+    const contador = document.getElementById("menu-fila");
+    if (contador) { contador.hidden = !open; contador.textContent = String(open); }
     paintActions();
   }
 
@@ -395,17 +464,19 @@
     const atual = st.etapas.findIndex((e) => e.estado === "atual");
     box.classList.toggle("erro", st.estado === "erro" || st.estado === "cancelado");
     const nomes = TITULO[st.modo] || TITULO.plano;
-    const titulo = !daqui(st) && rodando ? `Rodando para ${st.alvo.personagem.replace(/-/g, " ")}`
+    const outro = !daqui(st) && st.alvo ? st.alvo.personagem.replace(/-/g, " ") : "";
+    const titulo = outro && rodando ? `Rodando para ${outro}`
       : rodando ? nomes[0]
-      : st.estado === "ok" ? nomes[1]
+      : st.estado === "ok" ? (outro ? `${nomes[1]}: ${outro}` : nomes[1])
       : st.estado === "cancelado" ? "Cancelado" : "A forja apagou";
     box.querySelector(".forja-titulo").textContent = titulo;
     box.querySelector(".forja-etapa").textContent = rodando && atual >= 0 ? `${st.etapas[atual].nome} · ${atual + 1} de ${st.etapas.length}` : "";
     paintClock();
     if (box.dataset.estado !== st.estado) {
       box.dataset.estado = st.estado;
+      const abrir = st.estado === "ok" && outro ? `<a class="pesq" href="/p/${esc(st.alvo.jogo)}/${esc(st.alvo.personagem)}/">Abrir página</a>` : "";
       box.querySelector(".forja-botoes").innerHTML = rodando ? '<button class="pesq" type="button" data-forja="cancelar">Cancelar</button>'
-        : `${st.estado === "ok" ? "" : '<button class="pesq" type="button" data-forja="repetir">Tentar de novo</button>'}<button class="pesq" type="button" data-forja="fechar">Fechar</button>`;
+        : `${abrir}${st.estado === "ok" ? "" : '<button class="pesq" type="button" data-forja="repetir">Tentar de novo</button>'}<button class="pesq" type="button" data-forja="fechar">Fechar</button>`;
       const msg = box.querySelector(".forja-msg");
       msg.textContent = rodando ? "" : st.estado === "ok" ? (st.resposta || "") : (st.mensagem || "");
       msg.hidden = !msg.textContent;
@@ -442,13 +513,14 @@
     else terminou();
   }
 
-  async function rodar(modo) {
-    if (!forja.base) return;
+  // base: /api/<jogo>/<personagem> do personagem que vai rodar (o desta página ou outro da seleção).
+  async function rodar(modo, base = forja.base) {
+    if (!base) return;
     Object.assign(forja, { visivel: true, linhas: [], desde: -1, fechou: false });
     const box = document.getElementById("forja");
     if (box) box.innerHTML = "";
     try {
-      const r = await fetch(`${forja.base}/rodar`, { method: "POST", headers: HEADERS, body: JSON.stringify({ modo }) });
+      const r = await fetch(`${base}/rodar`, { method: "POST", headers: HEADERS, body: JSON.stringify({ modo }) });
       ingest(await r.json());
     } catch (e) {
       ingest({ estado: "erro", modo, mensagem: "O servidor local não respondeu. Abra pelo atalho Forja de Build.", etapas: [{ id: "fim", nome: "Concluído", estado: "pendente" }], eventos: [], segundos: 0 });
@@ -471,6 +543,7 @@
       if (state.db) app.querySelectorAll(".fogueira").forEach((b) => { b.hidden = false; });
       applyState();
       paintForja();
+      if (typeof window.buildsmithSelecao === "function") window.buildsmithSelecao.atualizar();
     } catch (e) { /* plano novo ilegível: a página antiga continua */ }
   }
 
@@ -534,6 +607,7 @@
     app.addEventListener("click", async (ev) => {
       const passo = ev.target.closest("[data-passo]");
       if (passo && state.db) {
+        ev.stopPropagation();
         const id = passo.dataset.passo;
         const cur = state.feitos[id];
         passo.disabled = true;
@@ -561,12 +635,31 @@
         else { forja.visivel = false; paintForja(); }
         return;
       }
-      const ask = ev.target.closest(".pesq");
+      const ask = ev.target.closest(".pesq[data-q]");
       if (ask) { enqueue(ask.dataset.q, ask.dataset.origem, ask); return; }
+      const sec = ev.target.closest("[data-secao]");
+      if (sec) { mostrar(sec.dataset.secao); return; }
       const item = ev.target.closest("[data-goto-item]");
-      if (item) { ev.preventDefault(); goTo("onde", `item-${item.dataset.gotoItem}`); return; }
+      if (item) { ev.preventDefault(); goTo("onde", "item", item.dataset.gotoItem); return; }
       const step = ev.target.closest("[data-goto-passo]");
-      if (step) { ev.preventDefault(); goTo("passos", `passo-${step.dataset.gotoPasso}`); }
+      if (step) { ev.preventDefault(); goTo("passos", "passo", step.dataset.gotoPasso); return; }
+      if (ev.target.closest("a, button, input")) return;
+      const fonte = ev.target.closest("[data-fonte-item]");
+      if (fonte) { marcarFonte(fonte.dataset.fonteItem, Number(fonte.dataset.fonte)); return; }
+      const md = ev.target.closest("[data-md]");
+      if (md) {
+        escolher(md.dataset.md, md.dataset.mdId);
+        // Lista e detalhe empilhados (tela estreita): leva até o detalhe escolhido.
+        const pane = window.matchMedia("(max-width: 1180px)").matches && md.closest(".md").querySelector(".md-det");
+        if (pane) pane.scrollIntoView({ block: "start" });
+      }
+    });
+    app.addEventListener("keydown", (ev) => {
+      if (ev.key !== "Enter" && ev.key !== " ") return;
+      const alvo = ev.target.closest("[data-md], [data-fonte-item]");
+      if (!alvo || ev.target !== alvo) return;
+      ev.preventDefault();
+      alvo.click();
     });
     app.addEventListener("submit", (ev) => {
       if (ev.target.id !== "fila-form") return;
@@ -588,6 +681,8 @@
     } catch (e) { return null; }
     const base = `/api/${m[1]}/${m[2]}`;
     forja.base = base;
+    forja.jogo = m[1];
+    forja.personagem = m[2];
     const listeners = [];
     let last = null;
     const publish = (st) => { last = st; listeners.forEach((fn) => fn(st)); };
@@ -619,9 +714,10 @@
     state.db = db;
     app.querySelectorAll(".fogueira").forEach((b) => { b.hidden = false; });
     if (forja.base) {
-      const sub = document.querySelector("#painel-fila h2 small");
+      const sub = document.getElementById("fila-sub");
       if (sub && forja.rodar) sub.textContent = "o botão Responder fila (no topo) responde agora";
       iniciarForja();
+      if (typeof window.buildsmithSelecao === "function") window.buildsmithSelecao({ app, forja, rodar, esc, fmt, letter, HEADERS });
     }
     const fail = () => { /* sem banco: a página segue só leitura */ };
     db.collection("feitos").onSnapshot((snap) => { state.feitos = Object.fromEntries(snap.docs.map((d) => [d.id, d.data()])); applyState(); }, fail);
