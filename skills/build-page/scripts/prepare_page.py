@@ -85,7 +85,7 @@ class IconStore:
         return rel
 
 
-TEMPLATE_JS = ("pagina.js",)
+TEMPLATE_JS = ("pagina.js", "mapa.js")
 DS2_SCRIPTS = ROOT / "skills" / "ds2-save" / "scripts"
 MARGEM_MAPA = 40.0  # metros de chão em volta dos pontos e da rota que vão para a página
 
