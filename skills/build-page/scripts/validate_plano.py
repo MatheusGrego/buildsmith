@@ -13,6 +13,8 @@ ACESSOS = ["agora", "em_breve", "tarde"]
 DESTAQUES = {"mais_cedo", "mais_rentavel"}
 ESTADOS_FEITICO = {"equipado", "tem", "sugerido"}
 TIPOS_NO = {"item", "chefe", "inimigo", "npc", "local", "bau", "almas", "atributo"}
+TIPOS_PONTO = {"fogueira", "item", "inimigo"}  # ponto do mapa do jogo (ds2mapa.py)
+AREA = re.compile(r"^m\d\d_\d\d_\d\d_\d\d$")
 SINAIS = {"+", "-", ""}
 ESTADOS_CHEFE = {"derrotado", "vivo"}
 ESTADOS_EVENTO = {"feito", "pendente"}
@@ -35,6 +37,13 @@ def _node(where: str, node, problems: list) -> None:
         problems.append(f"{where} sem 'nome'")
     if len(node.get("sub") or "") > 30:
         problems.append(f"{where}.sub passa de 30 caracteres")
+    if "ponto" in node:
+        ponto = node["ponto"]
+        ok = (isinstance(ponto, dict) and set(ponto) == {"area", "tipo", "ref"} and isinstance(ponto["area"], str)
+              and AREA.match(ponto["area"]) and ponto["tipo"] in TIPOS_PONTO
+              and isinstance(ponto["ref"], int) and not isinstance(ponto["ref"], bool) and ponto["ref"] > 0)
+        if not ok:
+            problems.append(f"{where}.ponto deveria ser {{area: mXX_YY_ZZ_WW, tipo: {'/'.join(sorted(TIPOS_PONTO))}, ref: inteiro}}")
 
 
 def _flow(where: str, flow, problems: list) -> None:

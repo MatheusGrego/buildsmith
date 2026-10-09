@@ -139,3 +139,56 @@ def test_assembly_refuses_part_that_closes_its_own_tag(tmp_path):
     (tmp_path / "pagina.js").write_text("x() </script><script>alert(1)", encoding="utf-8")
     with pytest.raises(ValueError):
         prepare_page.montar_index(tmp_path)
+
+
+def faixa_area():
+    v = [0, 0, 0, 0, 0, 1, 1, 0, 0, 1, 0, 1, 2, 0, 0, 2, 0, 1, 3, 0, 0, 3, 0, 1, 90, 0, 90, 91, 0, 90, 90, 0, 91]
+    f = [0, 2, 1, 1, 2, 3, 2, 4, 3, 3, 4, 5, 4, 6, 5, 5, 6, 7, 8, 9, 10]
+    return {"area": "m10_16_00_00", "nome": "The Lost Bastille", "assinatura": "x", "origem": [0, 0, 0],
+            "malhas": [{"v": v, "f": f}],
+            "fogueiras": [{"id": 16675, "nome": "Servants' Quarters", "pos": [0.2, 0, 0.3]}],
+            "itens": [{"lote": 10165010, "pos": [2.9, 0, 0.6], "itens": [{"id": 1, "nome": "Soul Vessel", "qtd": 1}]}],
+            "inimigos": []}
+
+
+def plano_com_pontos():
+    plano = example()
+    fonte = plano["itens"][0]["fontes"][0]
+    fonte["fluxo"][0]["ponto"] = {"area": "m10_16_00_00", "tipo": "fogueira", "ref": 16675}
+    fonte["fluxo"][-1]["ponto"] = {"area": "m10_16_00_00", "tipo": "item", "ref": 10165010}
+    return plano
+
+
+def test_plan_points_become_area_and_route(tmp_path):
+    src = tmp_path / "p.json"
+    src.write_text(json.dumps(plano_com_pontos(), ensure_ascii=False), encoding="utf-8")
+    out = prepare_page.prepare(src, tmp_path / "saida", "ds2", cache_root=tmp_path / "cache", fetch=FakeFetch(),
+                               carregar_area=lambda area: faixa_area())
+    mapa = final_plan(tmp_path)["itens"][0]["fontes"][0]["mapa"]
+    assert mapa["area"] == "m10_16_00_00" and mapa["nome"] == "The Lost Bastille"
+    assert [p["tipo"] for p in mapa["pontos"]] == ["fogueira", "item"] and mapa["pontos"][0]["n"] == 1
+    assert len(mapa["trechos"]) == 1 and mapa["trechos"][0][0] == [0.2, 0, 0.3] and 2.7 <= mapa["metros"] <= 4
+    area = json.loads(Path(out["files"]["mapas/m10_16_00_00.json"]).read_text(encoding="utf-8"))
+    assert area["nome"] == "The Lost Bastille" and len(area["malhas"][0]["f"]) == 18  # o triângulo em x=90 ficou fora do recorte
+
+
+def test_unknown_point_is_an_error(tmp_path):
+    plano = plano_com_pontos()
+    plano["itens"][0]["fontes"][0]["fluxo"][-1]["ponto"]["ref"] = 999
+    src = tmp_path / "p.json"
+    src.write_text(json.dumps(plano, ensure_ascii=False), encoding="utf-8")
+    with pytest.raises(ValueError, match="item:999"):
+        prepare_page.prepare(src, tmp_path / "saida", "ds2", cache_root=tmp_path / "cache", fetch=FakeFetch(),
+                             carregar_area=lambda area: faixa_area())
+
+
+def test_without_game_the_page_has_no_map_and_a_warning(tmp_path):
+    def sem_jogo(area):
+        raise OSError("DS2 SotFS não encontrado")
+
+    src = tmp_path / "p.json"
+    src.write_text(json.dumps(plano_com_pontos(), ensure_ascii=False), encoding="utf-8")
+    out = prepare_page.prepare(src, tmp_path / "saida", "ds2", cache_root=tmp_path / "cache", fetch=FakeFetch(),
+                               carregar_area=sem_jogo)
+    assert any("mapa indisponível" in a for a in out["avisos"])
+    assert "mapa" not in final_plan(tmp_path)["itens"][0]["fontes"][0]
