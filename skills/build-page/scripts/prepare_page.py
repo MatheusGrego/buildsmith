@@ -86,6 +86,110 @@ class IconStore:
 
 
 TEMPLATE_JS = ("pagina.js",)
+DS2_SCRIPTS = ROOT / "skills" / "ds2-save" / "scripts"
+MARGEM_MAPA = 40.0  # metros de chão em volta dos pontos e da rota que vão para a página
+
+
+def _ds2mapa():
+    if str(DS2_SCRIPTS) not in sys.path:
+        sys.path.insert(0, str(DS2_SCRIPTS))
+    import ds2mapa
+
+    return ds2mapa
+
+
+def carregar_area_do_jogo(cache_root: Path, jogo: str):
+    def carregar(area: str) -> dict:
+        _ds2mapa()
+        import ds2arquivos
+        import ds2mapa
+
+        game = ds2arquivos.game_dir_padrao()
+        if game is None:
+            raise OSError("DS2 SotFS não encontrado (defina BUILDSMITH_DS2_GAME)")
+        return ds2mapa.extrair_area(game, area, Path(cache_root) / jogo)
+    return carregar
+
+
+def _alvos_mapa(plano: dict):
+    for passo in plano["passos"]:
+        yield passo, passo.get("fluxo", [])
+    for item in plano["itens"]:
+        for fonte in item.get("fontes", []):
+            yield fonte, fonte.get("fluxo", [])
+
+
+def _recorte(dados: dict, pontos: list) -> dict:
+    """Só o chão e as fogueiras perto dos pontos e da rota (margem MARGEM_MAPA), para a página não pesar."""
+    xs = [p[0] for p in pontos]
+    zs = [p[2] for p in pontos]
+    x0, x1, z0, z1 = min(xs) - MARGEM_MAPA, max(xs) + MARGEM_MAPA, min(zs) - MARGEM_MAPA, max(zs) + MARGEM_MAPA
+    dentro = lambda x, z: x0 <= x <= x1 and z0 <= z <= z1  # noqa: E731
+    malhas = []
+    for m in dados["malhas"]:
+        v, f = m["v"], m["f"]
+        novo, mapa_idx, faces = [], {}, []
+        for i in range(0, len(f), 3):
+            tri = f[i:i + 3]
+            if not any(dentro(v[3 * k], v[3 * k + 2]) for k in tri):
+                continue
+            for k in tri:
+                if k not in mapa_idx:
+                    mapa_idx[k] = len(novo) // 3
+                    novo += v[3 * k:3 * k + 3]
+                faces.append(mapa_idx[k])
+        if faces:
+            malhas.append({"v": novo, "f": faces})
+    return {"area": dados["area"], "nome": dados["nome"], "malhas": malhas,
+            "fogueiras": [f for f in dados["fogueiras"] if dentro(f["pos"][0], f["pos"][2])]}
+
+
+def preparar_mapas(plano: dict, out_dir: Path, carregar_area) -> dict:
+    """Para cada passo e fonte com nós de `ponto`: posição de cada ponto, rota pelo chão entre pontos seguidos
+    (na área do primeiro ponto) e o recorte da área em mapas/<area>.json. Ponto que não existe = ValueError."""
+    ds2mapa = _ds2mapa()
+    cache, usados, atribuir = {}, {}, []
+
+    def area_de(area_id):
+        if area_id not in cache:
+            cache[area_id] = carregar_area(area_id)
+        return cache[area_id]
+
+    for alvo, fluxo in _alvos_mapa(plano):
+        nos = [(i + 1, n) for i, n in enumerate(fluxo) if isinstance(n, dict) and isinstance(n.get("ponto"), dict)]
+        if not nos:
+            continue
+        area_id = nos[0][1]["ponto"]["area"]
+        dados = area_de(area_id)
+        pontos, nomes_areas = [], []
+        for n_idx, node in nos:
+            pt = node["ponto"]
+            nome_area = area_de(pt["area"])["nome"]
+            if nome_area not in nomes_areas:
+                nomes_areas.append(nome_area)
+            if pt["area"] != area_id:
+                continue
+            try:
+                pos = ds2mapa.ponto_de(dados, pt["tipo"], pt["ref"])
+            except KeyError:
+                raise ValueError(f"ponto {pt['tipo']}:{pt['ref']} não existe em {area_id}") from None
+            pontos.append({"n": n_idx, "tipo": pt["tipo"], "ref": pt["ref"], "pos": pos, "nome": node.get("nome", "")})
+        trechos = [ds2mapa.rota(dados, a["pos"], b["pos"]) for a, b in zip(pontos, pontos[1:])]
+        mapa = {"area": area_id, "nome": dados["nome"], "pontos": pontos,
+                "trechos": [t["pontos"] if t else None for t in trechos],
+                "metros": round(sum(t["metros"] for t in trechos if t), 1), "areas": nomes_areas}
+        atribuir.append((alvo, mapa))
+        usados.setdefault(area_id, []).extend([p["pos"] for p in pontos] + [q for t in trechos if t for q in t["pontos"]])
+
+    files = {}
+    for area_id, pts in usados.items():
+        destino = out_dir / "mapas" / f"{area_id}.json"
+        destino.parent.mkdir(parents=True, exist_ok=True)
+        destino.write_text(json.dumps(_recorte(cache[area_id], pts), ensure_ascii=False, separators=(",", ":")), encoding="utf-8")
+        files[f"mapas/{area_id}.json"] = str(destino)
+    for alvo, mapa in atribuir:
+        alvo["mapa"] = mapa
+    return files
 
 
 def montar_index(template_dir: Path) -> str:
@@ -128,7 +232,7 @@ def _nodes(plano: dict):
             yield spell["no"]
 
 
-def prepare(plano_path, out_dir, jogo: str, cache_root=None, fetch=default_fetch) -> dict:
+def prepare(plano_path, out_dir, jogo: str, cache_root=None, fetch=default_fetch, carregar_area=None) -> dict:
     plano = json.loads(Path(plano_path).read_text(encoding="utf-8"))
     problems = validate_plano.validate(plano)
     if problems:
@@ -154,11 +258,20 @@ def prepare(plano_path, out_dir, jogo: str, cache_root=None, fetch=default_fetch
     store.get(extras["almas"], "almas.png")
     store.get(extras["fogueira"], "fogueira.png")
 
+    for alvo, _fluxo in _alvos_mapa(plano):
+        alvo.pop("mapa", None)  # o mapa é sempre recalculado a partir dos pontos
+    map_files = {}
+    try:
+        map_files = preparar_mapas(plano, out_dir, carregar_area or carregar_area_do_jogo(cache_root, jogo))
+    except ValueError:
+        raise
+    except Exception as err:  # jogo ausente, arquivo trocado por atualização: página sem mapa, com aviso
+        store.avisos.append(f"mapa indisponível: {err}")
     (out_dir / "index.html").write_text(montar_index(SKILL_DIR / "template"), encoding="utf-8")
     (out_dir / "plano.json").write_text(json.dumps(plano, ensure_ascii=False, indent=2), encoding="utf-8")
     return {
         "index": str(out_dir / "index.html"),
-        "files": {"plano.json": str(out_dir / "plano.json"), **store.files},
+        "files": {"plano.json": str(out_dir / "plano.json"), **store.files, **map_files},
         "avisos": store.avisos,
     }
 

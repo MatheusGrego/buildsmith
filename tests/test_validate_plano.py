@@ -172,3 +172,14 @@ def test_links_must_be_http_and_icons_https_or_local():
     assert "fontes[0].url deveria ser um link http(s)" in problems
     node["link"], node["icone"], plano["fontes"][0]["url"] = "https://darksouls2.wiki.fextralife.com/X", "icons/x.png", ""
     assert validate_plano.validate(plano) == []
+
+
+def test_point_on_node_must_be_well_formed():
+    for ponto in ({"area": "../x", "tipo": "fogueira", "ref": 1}, {"area": "m10_16_00_00", "tipo": "baú", "ref": 1},
+                  {"area": "m10_16_00_00", "tipo": "item", "ref": "10165010"}, {"area": "m10_16_00_00", "tipo": "item", "ref": True}, "m10_16"):
+        plano = example()
+        plano["passos"][0]["fluxo"][0]["ponto"] = ponto
+        assert any("ponto" in p for p in validate_plano.validate(plano)), ponto
+    plano = example()
+    plano["passos"][0]["fluxo"][0]["ponto"] = {"area": "m10_16_00_00", "tipo": "fogueira", "ref": 16675}
+    assert validate_plano.validate(plano) == []
