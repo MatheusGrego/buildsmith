@@ -298,20 +298,24 @@ def test_only_buildsmith_skills(check, skill, decision):
 
 
 @pytest.mark.skipif(shutil.which("node") is None, reason="sem node para rodar o JS da página")
-def test_map_shading_uses_the_real_height_range(tmp_path):
+def test_map_view_helpers(tmp_path):
     script = tmp_path / "mapa.js"
     script.write_text(r'''
 global.window = {}; global.CSS = { escape: (s) => s };
 eval(require("fs").readFileSync(process.argv[2], "utf8"));
-const v = [], f = [];
-for (let i = 0; i < 6; i++) { const y = 50 + i * 2; v.push(i, y, 0, i + 1, y, 0, i, y, 1); f.push(3 * i, 3 * i + 1, 3 * i + 2); }
-const area = { malhas: [{ v, f }], fogueiras: [] };
-const mapa = { nome: "x", metros: 1, areas: [], trechos: [[[0, 50, 0], [5, 60, 0]]],
-               pontos: [{ n: 1, tipo: "item", ref: 1, pos: [0, 50, 0], nome: "a" }, { n: 2, tipo: "item", ref: 2, pos: [5, 60, 0], nome: "b" }] };
-const svg = window.buildsmithMapa._svg(area, mapa);
-console.log(JSON.stringify([...new Set(svg.match(/mp-chao b\d/g))].sort()));
+const t = window.buildsmithMapa._teste;
+const cx = t.caixa([[0, 0], [100, 50]]);
+const v = t.ajustar(cx, 500, 500);
+console.log(JSON.stringify({
+  centro: [v.cx, v.cz], s: v.s, pequeno: t.ajustar(t.caixa([[10, 10], [11, 11]]), 600, 600, 30).s,
+  regua: [t.regua(1), t.regua(10)], icone: [t.tamanhoIcone(0.6), t.tamanhoIcone(40)],
+  andar: [t.estadoAndar(2, 2), t.estadoAndar(1, 2), t.estadoAndar(1, "todos"), t.estadoAndar(null, 2)],
+}));
 ''', encoding="utf-8")
     out = subprocess.run(["node", str(script), str(ROOT / "skills/build-page/template/mapa.js")],
                          capture_output=True, text=True, timeout=20, check=True)
-    faixas = json.loads(out.stdout)
-    assert "mp-chao b0" in faixas and "mp-chao b5" in faixas, faixas
+    r = json.loads(out.stdout)
+    assert r["centro"] == [50, 25] and r["s"] == pytest.approx(4.5)  # 100 m cabem em 500 px com 10% de folga
+    assert r["pequeno"] == pytest.approx(18)  # foco pequeno abre no mínimo 30 m
+    assert r["regua"] == [100, 10] and r["icone"] == [16, 34]
+    assert r["andar"] == ["cheio", "apagado", "cheio", "cheio"]

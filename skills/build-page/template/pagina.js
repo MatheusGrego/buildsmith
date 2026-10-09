@@ -8,7 +8,7 @@
   const ESTADO_FEITICO = { equipado: "Equipado", tem: "Tem", sugerido: "Sugerido" };
   const SECOES = [
     ["Plano", [["agora", "Agora"], ["passos", "Passos"], ["fases", "Fases"]]],
-    ["Coletar", [["onde", "Onde pegar"], ["fila", "Fila"]]],
+    ["Coletar", [["onde", "Onde pegar"], ["mapa", "Mapa"], ["fila", "Fila"]]],
     ["Combate", [["dano", "Dano"], ["feiticos", "Feitiços"], ["atributos", "Atributos"]]],
     ["Registro", [["ficha", "Ficha"], ["progresso", "Progresso"], ["builds", "Builds"], ["fontes", "Fontes"]]],
   ];
@@ -138,9 +138,8 @@
     return `<section><h2>Próximos passos<small id="passos-feitos"></small></h2>${mestreDetalhe("passo", ordenados,
       (s) => `<div class="md-l1"><span class="md-fog">${fogueira("data-passo", s.id, "Marcar como feito")}</span><span class="step-no">${numero[s.id]}</span><span class="md-t">${esc(s.titulo)}</span></div>
         <div class="md-l2"><span class="label">${esc(GRUPO[s.tipo] || s.tipo)}</span><span class="confirmado" data-confirma="${esc(s.id)}"></span></div>`,
-      (s) => `<div class="det-head" id="passo-${esc(s.id)}"><span class="det-tit">${esc(s.titulo)}</span>${selo(GRUPO[s.tipo] || s.tipo)}</div>
+      (s) => `<div class="det-head" id="passo-${esc(s.id)}"><span class="det-tit">${esc(s.titulo)}</span>${selo(GRUPO[s.tipo] || s.tipo)}${s.mapa ? `<button class="pesq" type="button" data-ver-mapa="passo" data-passo-id="${esc(s.id)}">Ver no mapa</button>` : ""}</div>
         ${flow(s.fluxo)}
-        <div class="mapa-slot" data-mapa-passo="${esc(s.id)}" hidden></div>
         ${rows(s.dados, ["Dado", "Agora", "Depois", "Efeito"])}`, "21rem")}</section>`;
   }
 
@@ -157,12 +156,11 @@
         return `<div class="md-l1">${noInline(it.item, true)}</div>
           <div class="md-l2">${a ? selo(a[0], a[1]) : ""}<span>${esc(m ? m.rendimento || "" : "")}</span><span class="md-fim">${(it.fontes || []).length} fontes</span></div>`;
       },
-      (it) => `<div class="det-head" id="item-${esc(it.id)}">${node({ ...it.item, sub: `${(it.fontes || []).length} fontes` })}${it.fonte ? ext(it.fonte, "fonte na wiki", "muted") : ""}</div>
-        <div class="mapa-slot" data-mapa-item="${esc(it.id)}" hidden></div>
+      (it) => `<div class="det-head" id="item-${esc(it.id)}">${node({ ...it.item, sub: `${(it.fontes || []).length} fontes` })}${it.fonte ? ext(it.fonte, "fonte na wiki", "muted") : ""}<button class="pesq" type="button" data-ver-mapa="item" data-item="${esc(it.id)}">Ver no mapa</button></div>
         <ol class="fontes-v">${(it.fontes || []).map((f, i) => {
           const a = ACESSO[f.acesso] || [f.acesso, ""];
           return `<li class="fonte-v sel" role="button" tabindex="0" data-fonte-item="${esc(it.id)}" data-fonte="${i}">
-            <div class="fonte-top"><span class="step-no">${i + 1}</span>${selo(a[0], a[1])}${(f.destaques || []).map((d) => selo(DESTAQUE[d] || d, "destaque")).join("")}<span class="fonte-rend">${esc(f.rendimento || "—")}</span></div>
+            <div class="fonte-top"><span class="step-no">${i + 1}</span>${selo(a[0], a[1])}${(f.destaques || []).map((d) => selo(DESTAQUE[d] || d, "destaque")).join("")}<span class="fonte-rend">${esc(f.rendimento || "—")}</span>${f.mapa ? `<button class="pesq" type="button" data-ver-mapa="fonte" data-item="${esc(it.id)}" data-fonte="${i}">Ver rota no mapa</button>` : ""}</div>
             ${fluxoInline(f.fluxo)}
             <div class="fonte-req"><span class="label">Requisito</span>${requisito(f.requisito, it.item.nome)}</div>
           </li>`;
@@ -307,6 +305,7 @@
     state.plano = p;
     const secoes = {
       agora: secaoAgora(p), passos: secaoPassos(p), fases: phases(p), onde: secaoOnde(p), fila: queue(),
+      mapa: '<section class="mapa-secao"><h2>Mapa<small>chão do jogo, andar por andar</small></h2><div id="mapa-app"></div></section>',
       dano: secaoDano(p), feiticos: spells(p), atributos: stats(p), ficha: sheet(p) + changes(p), progresso: progress(p),
       builds: builds(p), fontes: sources(p),
     };
@@ -322,7 +321,6 @@
     escolher("passo", ui.passo);
     escolher("item", ui.item);
     p.itens.forEach((it) => marcarFonte(it.id, ui.fonte[it.id] ?? Math.max(0, (it.fontes || []).findIndex((f) => (f.destaques || []).includes("mais_cedo")))));
-    if (typeof window.buildsmithMapa === "function") window.buildsmithMapa(app, p);
   }
 
   function mostrar(id) {
@@ -333,6 +331,30 @@
     app.querySelectorAll(".menu-i").forEach((b) => { if (b.dataset.secao === id) b.setAttribute("aria-current", "page"); else b.removeAttribute("aria-current"); });
     try { localStorage.setItem(KEY, id); } catch (e) { /* armazenamento bloqueado: só não lembra a seção */ }
     if (history.replaceState) history.replaceState(null, "", `#${id}`);
+    if (id === "mapa") return abrirMapa();
+    return Promise.resolve();
+  }
+
+  function abrirMapa() {
+    const raiz = document.getElementById("mapa-app");
+    return raiz && window.buildsmithMapa ? window.buildsmithMapa.montar(raiz, state.plano) : Promise.resolve();
+  }
+
+  async function verNoMapa(b) {
+    await mostrar("mapa");
+    const p = state.plano;
+    if (b.dataset.verMapa === "passo") {
+      const s = p.passos.find((x) => x.id === b.dataset.passoId);
+      if (s && s.mapa) window.buildsmithMapa.ver({ mapa: s.mapa });
+    } else if (b.dataset.verMapa === "fonte") {
+      const it = p.itens.find((x) => x.id === b.dataset.item);
+      const f = it && (it.fontes || [])[Number(b.dataset.fonte)];
+      if (f && f.mapa) window.buildsmithMapa.ver({ mapa: f.mapa });
+    } else {
+      window.buildsmithMapa.ver({ item_id: b.dataset.item });
+    }
+    const raiz = document.getElementById("mapa-app");
+    if (raiz) raiz.scrollIntoView({ block: "start" });
   }
 
   function escolher(tipo, id) {
@@ -347,7 +369,6 @@
     app.querySelectorAll(`[data-fonte-item="${CSS.escape(itemId)}"]`).forEach((el) => {
       if (Number(el.dataset.fonte) === idx) el.setAttribute("aria-current", "true"); else el.removeAttribute("aria-current");
     });
-    if (typeof window.buildsmithMapaFonte === "function") window.buildsmithMapaFonte(app, state.plano, itemId, idx);
   }
 
   function goTo(secao, tipo, id) {
@@ -757,6 +778,8 @@
         else { forja.visivel = false; paintForja(); }
         return;
       }
+      const vm = ev.target.closest("[data-ver-mapa]");
+      if (vm) { verNoMapa(vm); return; }
       const ask = ev.target.closest(".pesq[data-q]");
       if (ask) { enqueue(ask.dataset.q, ask.dataset.origem, ask); return; }
       const sec = ev.target.closest("[data-secao]");

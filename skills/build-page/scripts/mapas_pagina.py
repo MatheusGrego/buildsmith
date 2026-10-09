@@ -25,7 +25,8 @@ def area_para_pagina(dados: dict, nomes_plano: dict, icone_local) -> dict:
         nomes = [i["nome"] for i in p["itens"]]
         do_plano = [nomes_plano[n.casefold()] for n in nomes if n.casefold() in nomes_plano]
         principal = next((n for n in nomes if n.casefold() in nomes_plano), nomes[0] if nomes else None)
-        return {"lote": p["lote"], "pos": p["pos"], "andar": p.get("andar"), "itens": p["itens"],
+        itens = sorted(p["itens"], key=lambda i: i["nome"].casefold() not in nomes_plano)  # o do plano primeiro
+        return {"lote": p["lote"], "pos": p["pos"], "andar": p.get("andar"), "itens": itens,
                 "icone": icone_local(principal) if principal else None, "plano": bool(do_plano),
                 "item_id": do_plano[0] if do_plano else None}
 
