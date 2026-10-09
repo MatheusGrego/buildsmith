@@ -28,6 +28,9 @@ ARMOR_ITEM_OFFSET = 10_000_000  # o slot guarda o ID da ArmorParam; o item (e o 
 OFF_RINGS = 0x1D0
 OFF_SPELLS = 0x208
 SPELL_SLOTS = 14
+OFF_POS = 0x3A0  # posição do personagem (3 floats, coordenadas do mapa)
+OFF_MAPA = 0x3C0  # mapa onde ele está: bytes cc dd BB AA = mAA_BB_dd_cc. Conferido em 2 personagens: o ponto cai no
+                  # chão (navmesh) do mapa indicado, a menos de 0,2 m
 OFF_NAME = 0x3C4
 NAME_CHARS = 32
 OFF_INVENTORY = 0x1E30
@@ -308,6 +311,20 @@ def slot_by_name(path, name: str) -> int:
     raise SaveError(f"personagem {name!r} não está no save (personagens: {options})")
 
 
+def posicao_do_slot(slot: bytes) -> dict:
+    cc, dd, bb, aa = slot[OFF_MAPA:OFF_MAPA + 4]
+    x, y, z = struct.unpack_from("<3f", slot, OFF_POS)
+    return {"area": f"m{aa:02d}_{bb:02d}_{dd:02d}_{cc:02d}", "pos": [round(x, 2), round(y, 2), round(z, 2)]}
+
+
+def posicao(path, slot: int) -> dict:
+    """Mapa e posição do personagem na última vez que o jogo gravou o save."""
+    occupied = dict(_occupied(_read_entries(path)))
+    if slot not in occupied:
+        raise SaveError(f"slot {slot} vazio")
+    return posicao_do_slot(occupied[slot])
+
+
 def personagens(path, names=None) -> list[dict]:
     """Personagens do save com o que a seleção da página mostra: nível, soul memory e o equipamento do retrato."""
     names = names if names is not None else load_item_names()
@@ -366,6 +383,10 @@ def main(argv=None) -> int:
     sn.add_argument("--save")
     sn.add_argument("--slot", type=int)
     sn.add_argument("--personagem", help="nome do personagem (escolhe o slot; vale quando o save tem mais de um)")
+    po = sub.add_parser("posicao", help="mapa e posição do personagem (última gravação do save)")
+    po.add_argument("--save")
+    po.add_argument("--slot", type=int)
+    po.add_argument("--personagem")
     fd = sub.add_parser("flags-diff", help="flags globais que ligaram/desligaram entre dois snapshots")
     fd.add_argument("--antes", required=True)
     fd.add_argument("--depois", required=True)
@@ -386,7 +407,12 @@ def main(argv=None) -> int:
                 out = list_slots(path)
             else:
                 slot = slot_by_name(path, args.personagem) if args.personagem else args.slot
-                out = snapshot(path, slot)
+                if args.cmd == "posicao":
+                    if slot is None:
+                        raise SaveError("use --personagem ou --slot")
+                    out = posicao(path, slot)
+                else:
+                    out = snapshot(path, slot)
     except SaveError as err:
         print(json.dumps({"error": str(err)}, ensure_ascii=False))
         return 1

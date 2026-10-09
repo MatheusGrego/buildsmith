@@ -243,3 +243,20 @@ def test_page_area_has_zones_plan_npcs_and_boss_state(tmp_path):
     assert npcs["Straid of Olaphis"]["retrato"].startswith("icons/")
     chefe = area["chefes"][0]
     assert chefe["estado"] == "derrotado" and chefe["retrato"].startswith("icons/")
+
+
+def test_page_enemies_carry_game_data_and_the_player_area_comes_in(tmp_path):
+    area = faixa_area()
+    area["inimigos"] = [{"id": 145, "pos": [1.0, 0, 0.5], "tipo": 152002, "papel": None},
+                        {"id": 146, "pos": [2.5, 0, 0.5], "tipo": 768000, "papel": "npc"}]
+    area["tipos_inimigo"] = {"152002": {"hp": 450, "almas": 180, "drops": ["Royal Greatsword"]}}
+    areas = {"m10_16_00_00": area, "m10_04_00_00": {**faixa_area(), "area": "m10_04_00_00", "nome": "Majula", "itens": []}}
+    src = tmp_path / "p.json"
+    src.write_text(json.dumps(plano_com_pontos(), ensure_ascii=False), encoding="utf-8")
+    out = prepare_page.prepare(src, tmp_path / "saida", "ds2", cache_root=tmp_path / "cache", fetch=FakeFetch(),
+                               carregar_area=lambda a: areas[a], area_jogador="m10_04_00_00")
+    doc = json.loads(Path(out["files"]["mapas/m10_16_00_00.json"]).read_text(encoding="utf-8"))
+    assert [e["tipo"] for e in doc["inimigos"]] == ["152002"]  # gerador de NPC não vira inimigo
+    assert doc["tipos_inimigo"]["152002"] == {"nome": None, "wiki": None, "prova": None, "n": 1, "hp": 450, "almas": 180,
+                                              "drops": ["Royal Greatsword"]}
+    assert "mapas/m10_04_00_00.json" in out["files"]

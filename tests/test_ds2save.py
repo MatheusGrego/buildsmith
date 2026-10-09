@@ -171,3 +171,25 @@ def test_slot_by_slug_and_character_list(tmp_path, names):
     lista = ds2save.personagens(path, names=names)
     assert [(p["slot"], p["slug"], p["nivel"]) for p in lista] == [(1, "melatonina-vorcaro", 65), (2, "melatonina-teste", 10)]
     assert set(lista[0]["equipado"]) == {"cabeca", "peito", "maos", "pernas", "R1", "L1"}
+
+
+def test_position_and_map_from_slot(tmp_path, capsys):
+    slot = make_slot(name="A")
+    struct.pack_into("<3f", slot, ds2save.OFF_POS, -150.72, 12.32, 481.19)
+    slot[ds2save.OFF_MAPA:ds2save.OFF_MAPA + 4] = bytes([0, 0, 0x10, 0x0A])  # m10_16_00_00
+    path = tmp_path / "a.sl2"
+    path.write_bytes(build_bnd4({"USER_DATA001": bytes(slot), "USER_DATA011": bytes(0x30000)}))
+    assert ds2save.posicao(path, 1) == {"area": "m10_16_00_00", "pos": [-150.72, 12.32, 481.19]}
+    assert ds2save.main(["posicao", "--save", str(path), "--personagem", "A"]) == 0
+    assert json.loads(capsys.readouterr().out)["area"] == "m10_16_00_00"
+    with pytest.raises(ds2save.SaveError, match="vazio"):
+        ds2save.posicao(path, 2)
+
+
+@pytest.mark.skipif(_real_save() is None, reason="sem save real do DS2 nesta máquina")
+def test_real_save_position_is_on_a_known_map():
+    import re
+    path = _real_save()
+    for s in ds2save.list_slots(path):
+        p = ds2save.posicao(path, s["slot"])
+        assert re.match(r"^m\d\d_\d\d_\d\d_\d\d$", p["area"]) and all(abs(c) < 5000 for c in p["pos"])

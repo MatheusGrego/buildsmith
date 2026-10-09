@@ -111,3 +111,4 @@ def sem_jogo_no_prepare(monkeypatch):
         raise OSError("jogo desligado nos testes")
 
     monkeypatch.setattr(prepare_page, "_jogo_instalado", sem_jogo)
+    monkeypatch.setattr(prepare_page, "area_do_jogador", lambda plano: None)

@@ -4,7 +4,9 @@
   primeiro ponto), gravados em `mapa` no plano publicado. Ponto que não existe na área = ValueError.
 - Áreas copiadas: as dos pontos e as MAX_AREAS_POR_NOME com mais itens do plano (pelo nome do item no jogo).
 - `mapas/<area>.json`: nome, planta (andares com polígonos), fogueiras, itens (com ícone local e marca do plano),
-  inimigos — sem os triângulos do navmesh. `mapas/indice.json`: áreas na ordem do seletor.
+  inimigos comuns (gerador de NPC e de chefe fica de fora) e os tipos deles (HP, almas e drops do jogo; nome só quando
+  a wiki confirma, com a prova) — sem os triângulos do navmesh. `mapas/indice.json`: áreas na ordem do seletor.
+- Área onde o personagem está (posição do save) entra sempre.
 """
 import json
 from pathlib import Path
@@ -44,8 +46,23 @@ def estado_chefes(plano: dict) -> dict:
             if isinstance(c, dict) and isinstance(c.get("no"), dict) and c["no"].get("nome")}
 
 
+def tipos_para_pagina(dados: dict, nomes: dict) -> dict:
+    """tipo -> HP, almas e drops do jogo, quantos há na área e o nome confirmado pela wiki (ou None)."""
+    contagem = {}
+    for e in dados.get("inimigos", []):
+        if e.get("tipo") and not e.get("papel"):
+            contagem[str(e["tipo"])] = contagem.get(str(e["tipo"]), 0) + 1
+    out = {}
+    for t, n in contagem.items():
+        jogo = dados.get("tipos_inimigo", {}).get(t, {})
+        wiki = nomes.get(t) or {}
+        out[t] = {"nome": wiki.get("nome"), "wiki": wiki.get("wiki"), "prova": wiki.get("prova"), "n": n,
+                  "hp": jogo.get("hp"), "almas": jogo.get("almas"), "drops": jogo.get("drops", [])}
+    return out
+
+
 def area_para_pagina(dados: dict, nomes_plano: dict, icone_local, precisa: dict | None = None, chefes: dict | None = None,
-                     pagina_wiki=None) -> dict:
+                     pagina_wiki=None, nomes_inimigo: dict | None = None) -> dict:
     def ponto_item(p):
         nomes = [i["nome"] for i in p["itens"]]
         do_plano = [nomes_plano[n.casefold()] for n in nomes if n.casefold() in nomes_plano]
@@ -61,7 +78,9 @@ def area_para_pagina(dados: dict, nomes_plano: dict, icone_local, precisa: dict 
         "area": dados["area"], "nome": dados["nome"], "planta": {"andares": andares},
         "fogueiras": [{"id": f["id"], "nome": f["nome"], "pos": f["pos"], "andar": f.get("andar"), "zona": f.get("zona")} for f in dados["fogueiras"]],
         "itens": [ponto_item(p) for p in dados["itens"]],
-        "inimigos": [{"id": e["id"], "pos": e["pos"], "andar": e.get("andar"), "zona": e.get("zona")} for e in dados.get("inimigos", [])],
+        "inimigos": [{"id": e["id"], "pos": e["pos"], "andar": e.get("andar"), "zona": e.get("zona"), "tipo": str(e["tipo"])}
+                     for e in dados.get("inimigos", []) if e.get("tipo") and not e.get("papel")],
+        "tipos_inimigo": tipos_para_pagina(dados, nomes_inimigo or {}),
         "npcs": [{"id": n["id"], "nome": n["nome"], "pos": n["pos"], "andar": n.get("andar"), "zona": n.get("zona"),
                   "retrato": icone_local(n["nome"]), "plano": bool(precisa.get(n["nome"].casefold())),
                   "precisa": precisa.get(n["nome"].casefold(), [])} for n in dados.get("npcs", [])],
@@ -73,7 +92,8 @@ def area_para_pagina(dados: dict, nomes_plano: dict, icone_local, precisa: dict 
     }
 
 
-def preparar(plano: dict, out_dir: Path, carregar_area, listar_areas, icone_local, prebuscar=None, pagina_wiki=None) -> dict:
+def preparar(plano: dict, out_dir: Path, carregar_area, listar_areas, icone_local, prebuscar=None, pagina_wiki=None,
+             nomes_inimigos=None, area_jogador: str | None = None) -> dict:
     import ds2mapa
     import ds2planta
 
@@ -121,6 +141,12 @@ def preparar(plano: dict, out_dir: Path, carregar_area, listar_areas, icone_loca
     for area_id in sorted(contagem, key=lambda a: -contagem[a])[:MAX_AREAS_POR_NOME]:
         if area_id not in ordem:
             ordem.append(area_id)
+    if area_jogador and area_jogador not in ordem:
+        try:
+            area_de(area_jogador)
+            ordem.append(area_jogador)
+        except Exception:  # área sem mapa no jogo (ou nome estranho no save): fica sem
+            pass
 
     if prebuscar:  # ícones de itens, NPCs e chefes das áreas, de uma vez (em paralelo, com cache)
         prebuscar(sorted({i["nome"] for a in ordem for p in area_de(a)["itens"] for i in p["itens"][:1]}
@@ -129,7 +155,14 @@ def preparar(plano: dict, out_dir: Path, carregar_area, listar_areas, icone_loca
                          | {x["nome"] for a in ordem for x in area_de(a).get("npcs", []) + area_de(a).get("chefes", [])}))
     files, indice = {}, []
     for area_id in ordem:
-        doc = area_para_pagina(area_de(area_id), nomes_plano, icone_local, precisa_de_npc(plano), estado_chefes(plano), pagina_wiki)
+        dados = area_de(area_id)
+        nomes = {}
+        if nomes_inimigos:
+            try:
+                nomes = nomes_inimigos(dados.get("tipos_inimigo", {}), dados["nome"])
+            except Exception:  # wiki fora do ar: inimigos ficam sem nome confirmado
+                nomes = {}
+        doc = area_para_pagina(dados, nomes_plano, icone_local, precisa_de_npc(plano), estado_chefes(plano), pagina_wiki, nomes)
         destino = Path(out_dir) / "mapas" / f"{area_id}.json"
         destino.parent.mkdir(parents=True, exist_ok=True)
         destino.write_text(json.dumps(doc, ensure_ascii=False, separators=(",", ":")), encoding="utf-8")
