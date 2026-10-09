@@ -29,7 +29,7 @@ Essa execução lê a wiki sem ninguém olhando, então roda trancada: sem as su
 
 Vários personagens no mesmo save: **Trocar personagem** (no topo da página) lista os personagens do save, abre a página de cada um ou gera o plano de quem ainda não tem. O retrato é automático (equipamento do save), ou uma foto que você solta no card, ou o último print do DS2 na Steam (F12).
 
-**Mapa:** com o DS2 SotFS instalado, a seção Mapa mostra cada área vista de cima, andar por andar, com o chão real do jogo (navmesh limpo em planta), grade, zoom, todos os itens da área com ícone e as fogueiras; "Ver no mapa" leva ao item ou à rota de um passo. Tudo é gerado por script no seu PC e fica em `~/.buildsmith/cache/ds2/` (nada do jogo vai para o repositório).
+**Mapa:** com o DS2 SotFS instalado, a seção Mapa mostra cada área vista de cima, andar por andar, com o chão real do jogo (navmesh limpo em planta), grade, zoom, todos os itens da área com ícone e as fogueiras; a área fica dividida em zonas de fogueira coloridas em sequência (dourado na entrada até brasa no fim, pela distância a pé), com chefes (retrato, vivo ou derrotado pelo save) e NPCs (os que o plano usa, como o Straid, com aro âmbar e o que você precisa deles) e o painel "Rota da área"; "Ver no mapa" leva ao item ou à rota de um passo. Tudo é gerado por script no seu PC e fica em `~/.buildsmith/cache/ds2/` (nada do jogo vai para o repositório).
 
 Para ver no celular, publique no Artifact: `/buildsmith:build ds2 publicar`.
 
