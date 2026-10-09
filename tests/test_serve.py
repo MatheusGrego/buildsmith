@@ -215,3 +215,64 @@ def test_cli_refuses_odd_game_names(tmp_path):
     with pytest.raises(SystemExit):
         serve.main(["estado", "--home", str(tmp_path), "--jogo", "../../x", "--personagem", "Melatonina"])
     assert not (tmp_path / "estado").exists()
+
+
+def area_faixa(area):
+    v = [0, 0, 0, 0, 0, 1, 1, 0, 0, 1, 0, 1, 2, 0, 0, 2, 0, 1]
+    return {"area": area, "malhas": [{"v": v, "f": [0, 2, 1, 1, 2, 3, 2, 4, 3, 3, 4, 5]}]}
+
+
+@pytest.fixture
+def server_mapa(tmp_path):
+    import struct
+    slot = make_slot(name="Melatonina (teste)")
+    struct.pack_into("<3f", slot, 0x3A0, -150.5, 12.25, 481.0)
+    slot[0x3C0:0x3C4] = bytes([0, 0, 0x10, 0x0A])
+    save = tmp_path / "DS2SOFS0000.co2"
+    save.write_bytes(build_bnd4({"USER_DATA001": bytes(slot), "USER_DATA011": bytes(0x30000)}))
+    chamadas = []
+
+    def carregar(area):
+        chamadas.append(area)
+        return area_faixa(area)
+
+    httpd = serve.make_server(tmp_path, port=0, runner=serve.Runner(command=lambda p: [sys.executable, "-c", "0"], cwd=tmp_path),
+                              save=save, mapa=serve.MapaVivo(tmp_path, save, carregar_area=carregar))
+    threading.Thread(target=httpd.serve_forever, daemon=True).start()
+    yield f"http://127.0.0.1:{httpd.server_address[1]}", chamadas
+    httpd.shutdown()
+
+
+def test_position_comes_from_the_save(server_mapa):
+    base, _ = server_mapa
+    p = json.loads(get(f"{base}/api/ds2/melatonina-teste/posicao")[2])
+    assert p["area"] == "m10_16_00_00" and p["pos"] == [-150.5, 12.25, 481.0] and p["slot"] == 1 and p["gravado_em"]
+    with pytest.raises(urllib.error.HTTPError) as err:
+        get(f"{base}/api/ds2/outro/posicao")
+    assert err.value.code == 404
+
+
+def test_route_on_the_floor_keeps_the_area_in_memory(server_mapa):
+    base, chamadas = server_mapa
+    url = f"{base}/api/ds2/rota?area=m10_16_00_00&de=0.2,0,0.3&ate=1.8,0,0.6"
+    r = json.loads(get(url)[2])
+    assert r["rota"]["pontos"][0] == [0.2, 0.0, 0.3] and r["rota"]["pontos"][-1] == [1.8, 0.0, 0.6] and r["rota"]["metros"] > 1.5
+    get(url)
+    assert chamadas == ["m10_16_00_00"]
+
+
+@pytest.mark.parametrize("query", ["area=../x&de=0,0,0&ate=1,0,0", "area=m10_16_00_00&de=0,0&ate=1,0,0",
+                                   "area=m10_16_00_00&de=nan,0,0&ate=1,0,0", "area=m10_16_00_00&de=0,0,0&ate=1e9,0,0"])
+def test_route_rejects_bad_input(server_mapa, query):
+    base, _ = server_mapa
+    with pytest.raises(urllib.error.HTTPError) as err:
+        get(f"{base}/api/ds2/rota?{query}")
+    assert err.value.code == 400
+
+
+def test_route_and_position_refuse_other_hosts(server_mapa):
+    base, _ = server_mapa
+    req = urllib.request.Request(f"{base}/api/ds2/melatonina-teste/posicao", headers={"Host": "evil.example"})
+    with pytest.raises(urllib.error.HTTPError) as err:
+        urllib.request.urlopen(req, timeout=5)
+    assert err.value.code == 400

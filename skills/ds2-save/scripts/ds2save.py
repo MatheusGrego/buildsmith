@@ -325,6 +325,15 @@ def posicao(path, slot: int) -> dict:
     return posicao_do_slot(occupied[slot])
 
 
+def posicoes(path) -> dict[str, dict]:
+    """slug do personagem -> slot, nome, mapa e posição (uma leitura do save para todos)."""
+    out = {}
+    for number, slot in _occupied(_read_entries(path)):
+        nome = _utf16z(slot, OFF_NAME, NAME_CHARS)
+        out[_slug(nome)] = {"slot": number, "nome": nome, **posicao_do_slot(slot)}
+    return out
+
+
 def personagens(path, names=None) -> list[dict]:
     """Personagens do save com o que a seleção da página mostra: nível, soul memory e o equipamento do retrato."""
     names = names if names is not None else load_item_names()
