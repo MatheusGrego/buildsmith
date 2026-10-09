@@ -1,6 +1,6 @@
 # Mapa: zonas de fogueira, chefes e NPCs — plano
 
-- Status: em andamento
+- Status: concluído
 - Data: 2026-10-09
 - Decisor: Matheus (aprovado no chat: zonas por distância a pé desde a entrada, chefes e NPCs do jogo com retrato da wiki, destaque do plano, painel Rota da área)
 - Continua: `2026-10-09-buildsmith-mapa-geral.md`
@@ -47,7 +47,7 @@
 - [x] **2. Zonas de fogueira**: Dijkstra com várias origens, ordem pelo início do mapa, contorno por zona e andar, zona de cada ponto. *Pronto quando:* teste sintético de duas fogueiras e teste da Lost Bastille passam.
 - [x] **3. Dados da página**: zonas, NPCs (marca do plano e o que o plano precisa dele), chefes (estado pelo save), retratos da wiki. *Pronto quando:* testes do `prepare_page` cobrem NPC do plano, chefe derrotado e zonas no JSON.
 - [x] **4. Mapa na página**: cores por zona, rótulos, marcadores por tipo, popovers, filtros novos, painel Rota da área. *Pronto quando:* funções puras testadas no node e conferido no navegador em desktop e 375 px.
-- [ ] **5. Docs, versão 0.11.0 e publicação**: skills, design system, README, página real refeita, push, plugin atualizado.
+- [x] **5. Docs, versão 0.11.0 e publicação**: skills, design system, README, página real refeita, push, plugin atualizado.
 
 ## Glossário
 
