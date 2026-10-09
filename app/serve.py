@@ -11,6 +11,7 @@ Só biblioteca padrão. Escuta apenas em 127.0.0.1.
   python serve.py confirmar ...    grava a confirmação de um passo marcado como feito
 
 Os botões "Atualizar plano" e "Responder fila" da página rodam a skill sem janela (claude -p) pelo runner.py.
+O mapa da página pergunta a posição do personagem (relida do save) e a rota pelo chão até um ponto.
 Pedidos que gravam ou rodam algo exigem o cabeçalho X-Buildsmith: 1 e Host/Origin locais.
 """
 import argparse
@@ -21,8 +22,10 @@ import os
 import re
 import sys
 import threading
+import math
 import unicodedata
 import urllib.request
+from collections import OrderedDict
 import webbrowser
 from datetime import datetime, timezone
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
@@ -41,6 +44,9 @@ GAME_OK = re.compile(r"^[a-z0-9]+$")
 COLLECTIONS = {"feitos", "pedidos", "config"}
 MODOS = {"plano", "fila"}
 MAX_BODY = 4 * 1024
+AREA_OK = re.compile(r"^m\d\d_\d\d_\d\d_\d\d$")
+COORD_MAX = 10000.0
+AREAS_EM_MEMORIA = 4
 MAX_FILA = 50  # pedidos na_fila ao mesmo tempo
 TEXTO_MAX = 160
 CONTROLE = re.compile(r"[\x00-\x1f\x7f-\x9f\u2028\u2029]")
@@ -176,11 +182,75 @@ def personagens(home: Path, jogo: str, save=None, steam_dirs=None) -> dict:
     return {"personagens": out, "print": retrato.ultimo_print(steam_dirs) is not None}
 
 
+def coords(texto) -> tuple[float, float, float] | None:
+    """"x,y,z" com números finitos e dentro do mapa; qualquer outra coisa = None."""
+    try:
+        v = tuple(float(c) for c in str(texto).split(","))
+    except ValueError:
+        return None
+    return v if len(v) == 3 and all(math.isfinite(c) and abs(c) <= COORD_MAX for c in v) else None
+
+
+class MapaVivo:
+    """Posição do personagem (relê o save só quando o arquivo muda) e rota pelo chão (grafo do navmesh em memória)."""
+
+    def __init__(self, home: Path, save=None, carregar_area=None):
+        self.home, self.save = Path(home), save
+        self.carregar_area = carregar_area  # área -> dados com malhas; None = jogo instalado + cache de ~/.buildsmith
+        self._save = (None, {})
+        self._areas: OrderedDict = OrderedDict()
+        self._lock = threading.Lock()
+
+    def posicao(self, slug_: str) -> dict | None:
+        import ds2save
+
+        path = Path(self.save) if self.save else ds2save.find_save()
+        st = path.stat()
+        chave = (str(path), st.st_mtime_ns, st.st_size)
+        with self._lock:
+            if self._save[0] != chave:
+                self._save = (chave, ds2save.posicoes(path))
+            p = self._save[1].get(slug_)
+        if p is None:
+            return None
+        return {**p, "gravado_em": datetime.fromtimestamp(st.st_mtime, timezone.utc).isoformat(timespec="seconds")}
+
+    def _area(self, area: str):
+        with self._lock:
+            if area in self._areas:
+                self._areas.move_to_end(area)
+                return self._areas[area]
+        import ds2mapa
+
+        if self.carregar_area:
+            dados = self.carregar_area(area)
+        else:
+            import ds2arquivos
+
+            game = ds2arquivos.game_dir_padrao()
+            if game is None:
+                raise OSError("DS2 SotFS não encontrado")
+            dados = ds2mapa.extrair_area(game, area, self.home / "cache" / "ds2")
+        par = (dados, ds2mapa._grafo(dados))
+        with self._lock:
+            self._areas[area] = par
+            while len(self._areas) > AREAS_EM_MEMORIA:
+                self._areas.popitem(last=False)
+        return par
+
+    def rota(self, area: str, de, ate) -> dict | None:
+        import ds2mapa
+
+        dados, grafo = self._area(area)
+        return ds2mapa.rota(dados, de, ate, grafo)
+
+
 class Handler(BaseHTTPRequestHandler):
     home: Path = default_home()
     runner: Runner | None = None
     save: Path | None = None  # None = o save ativo do jogo (ds2save.find_save)
     steam_dirs: list | None = None  # None = pastas padrão da Steam
+    mapa: "MapaVivo | None" = None
     server_version = "buildsmith"
 
     def log_message(self, *args):  # sem log no console (roda com pythonw)
@@ -240,6 +310,10 @@ class Handler(BaseHTTPRequestHandler):
             return self._json({"app": "buildsmith", "ok": True, "rodar": self.runner is not None})
         if len(parts) == 3 and parts[0] == "api" and parts[2] == "personagens" and parts[1] == "ds2":
             return self._json(personagens(self.home, parts[1], self.save, self.steam_dirs))
+        if parts == ["api", "ds2", "rota"]:
+            return self._rota()
+        if len(parts) == 4 and parts[:2] == ["api", "ds2"] and parts[3] == "posicao" and SEGMENT.match(parts[2]):
+            return self._posicao(parts[2])
         if len(parts) == 4 and parts[0] == "api" and parts[3] == "retrato" and all(SEGMENT.match(p) for p in parts[1:3]):
             foto = retrato.achar(self.home, parts[1], parts[2])
             if foto is None:
@@ -287,6 +361,27 @@ class Handler(BaseHTTPRequestHandler):
             if abertos >= MAX_FILA:
                 return self._send(409, b"fila cheia", "text/plain; charset=utf-8")
         return self._json(write_doc(self.home, jogo, personagem, collection, doc_id, data))
+
+    def _posicao(self, personagem: str):
+        try:
+            p = self.mapa.posicao(personagem)
+        except Exception as err:  # sem save, save sendo gravado, pycryptodome ausente
+            return self._json({"erro": f"não consegui ler o save ({type(err).__name__})"}, status=503)
+        if p is None:
+            return self._json({"erro": "personagem não está no save"}, status=404)
+        return self._json(p)
+
+    def _rota(self):
+        q = parse_qs(urlsplit(self.path).query)
+        area = q.get("area", [""])[0]
+        de, ate = coords(q.get("de", [""])[0]), coords(q.get("ate", [""])[0])
+        if not AREA_OK.match(area) or de is None or ate is None:
+            return self._send(400, b"area, de ou ate invalido", "text/plain; charset=utf-8")
+        try:
+            r = self.mapa.rota(area, de, ate)
+        except Exception as err:  # jogo ausente, área sem navmesh
+            return self._json({"erro": f"rota indisponível ({type(err).__name__})"}, status=503)
+        return self._json({"area": area, "rota": r})
 
     def _body(self) -> dict | None:
         try:
@@ -370,10 +465,11 @@ class Handler(BaseHTTPRequestHandler):
         return self._send(200, DOCTYPE + body.encode("utf-8") + b"</body></html>", "text/html; charset=utf-8", CSP_INICIO)
 
 
-def make_server(home: Path, port: int = PORT, runner: Runner | None = None, save=None, steam_dirs=None) -> ThreadingHTTPServer:
+def make_server(home: Path, port: int = PORT, runner: Runner | None = None, save=None, steam_dirs=None,
+                mapa: MapaVivo | None = None) -> ThreadingHTTPServer:
     runner = runner or Runner(cwd=Path(home), log_path=Path(home) / "execucoes" / "ultima.jsonl")
     handler = type("BuildsmithHandler", (Handler,), {"home": Path(home), "runner": runner, "save": save,
-                                                     "steam_dirs": steam_dirs})
+                                                     "steam_dirs": steam_dirs, "mapa": mapa or MapaVivo(home, save)})
     return ThreadingHTTPServer(("127.0.0.1", port), handler)
 
 

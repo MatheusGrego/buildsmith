@@ -427,11 +427,12 @@ def _dist(a, b) -> float:
     return ((a[0] - b[0]) ** 2 + (a[1] - b[1]) ** 2 + (a[2] - b[2]) ** 2) ** 0.5
 
 
-def rota(area: dict, de, ate) -> dict | None:
-    """Caminho mais curto pelo chão (centróides dos triângulos) de um ponto a outro; None se não há caminho."""
+def rota(area: dict, de, ate, grafo=None) -> dict | None:
+    """Caminho mais curto pelo chão (centróides dos triângulos) de um ponto a outro; None se não há caminho.
+    grafo: o de _grafo(area), para quem calcula várias rotas na mesma área (o servidor guarda em memória)."""
     import heapq
 
-    centros, vizinhos = _grafo(area)
+    centros, vizinhos = grafo or _grafo(area)
     if not centros:
         return None
     perto = lambda p: min(range(len(centros)), key=lambda t: _dist(centros[t], p))  # noqa: E731
