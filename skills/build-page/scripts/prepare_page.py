@@ -85,6 +85,22 @@ class IconStore:
         return rel
 
 
+TEMPLATE_JS = ("pagina.js",)
+
+
+def montar_index(template_dir: Path) -> str:
+    """Junta o esqueleto, o CSS e o JS num index.html só: o CSP da página só aceita script e estilo inline."""
+    template_dir = Path(template_dir)
+    html = (template_dir / "index.html").read_text(encoding="utf-8")
+    css = (template_dir / "pagina.css").read_text(encoding="utf-8")
+    js = "\n".join((template_dir / name).read_text(encoding="utf-8") for name in TEMPLATE_JS if (template_dir / name).exists())
+    if "<!--CSS-->" not in html or "<!--JS-->" not in html:
+        raise ValueError("template sem os marcadores <!--CSS--> e <!--JS-->")
+    if "</style" in css.lower() or "</script" in js.lower():
+        raise ValueError("CSS ou JS do template fecha a própria tag")
+    return html.replace("<!--CSS-->", f"<style>\n{css}</style>", 1).replace("<!--JS-->", f"<script>\n{js}</script>", 1)
+
+
 def _nodes(plano: dict):
     yield from plano["personagem"].get("equipado", [])
     for step in plano["passos"]:
@@ -138,7 +154,7 @@ def prepare(plano_path, out_dir, jogo: str, cache_root=None, fetch=default_fetch
     store.get(extras["almas"], "almas.png")
     store.get(extras["fogueira"], "fogueira.png")
 
-    shutil.copyfile(SKILL_DIR / "template" / "index.html", out_dir / "index.html")
+    (out_dir / "index.html").write_text(montar_index(SKILL_DIR / "template"), encoding="utf-8")
     (out_dir / "plano.json").write_text(json.dumps(plano, ensure_ascii=False, indent=2), encoding="utf-8")
     return {
         "index": str(out_dir / "index.html"),

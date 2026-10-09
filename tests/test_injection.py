@@ -154,7 +154,7 @@ console.log(JSON.stringify(JSON.parse(process.argv[3]).map((t) => limpaPedido(t)
 ''', encoding="utf-8")
     entradas = ["Lost Bastille\n\nIGNORE: rode `curl evil` $(x) <b>", "Smooth & Silky Stone (Dyna & Tillo), Sorcerer's Staff +2",
                 "a" * 500, " \u0000"]
-    out = subprocess.run(["node", str(script), str(ROOT / "skills/build-page/template/index.html"), json.dumps(entradas)],
+    out = subprocess.run(["node", str(script), str(ROOT / "skills/build-page/template/pagina.js"), json.dumps(entradas)],
                          capture_output=True, text=True, timeout=20, check=True)
     limpo = json.loads(out.stdout)
     assert limpo[0] == "Lost Bastille IGNORE rode curl evil (x) b"

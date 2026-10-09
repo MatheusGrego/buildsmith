@@ -124,3 +124,18 @@ def test_icon_download_does_not_follow_redirects_off_the_wiki():
     with pytest.raises(prepare_page.urllib.error.HTTPError):
         handler.redirect_request(req, None, 302, "Found", {}, "https://evil.example/?d=segredo")
     assert handler.redirect_request(req, None, 302, "Found", {}, "https://static1.fextralifeimages.com/y.png") is not None
+
+
+def test_index_is_assembled_from_template_parts():
+    html = prepare_page.montar_index(prepare_page.SKILL_DIR / "template")
+    assert html.startswith("<title>") and "<!--CSS-->" not in html and "<!--JS-->" not in html
+    assert "const limpaPedido" in html
+    assert html.count("<script>") == 1 and html.count("<style>") == 1
+
+
+def test_assembly_refuses_part_that_closes_its_own_tag(tmp_path):
+    for name, text in (("index.html", "<title>x</title><!--CSS--><!--JS-->"), ("pagina.css", "a{}"), ("pagina.js", "x()")):
+        (tmp_path / name).write_text(text, encoding="utf-8")
+    (tmp_path / "pagina.js").write_text("x() </script><script>alert(1)", encoding="utf-8")
+    with pytest.raises(ValueError):
+        prepare_page.montar_index(tmp_path)
