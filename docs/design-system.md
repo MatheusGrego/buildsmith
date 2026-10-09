@@ -15,7 +15,7 @@ Base: a wiki do Dark Souls II (Fextralife) e a interface do jogo. Tudo em `skill
 | Token | Valor | Uso |
 |---|---|---|
 | `--bg` | `#101013` | fundo da página |
-| `--panel` | `#181818` | painel principal, abas |
+| `--panel` | `#181818` | painel principal, menu |
 | `--th` | `#111111` | cabeçalho de tabela, caixas (Agora, Forja, selos) |
 | `--td` | `rgba(45,45,45,.85)` | célula, nó |
 | `--line` | `#333333` | bordas finas |
@@ -23,7 +23,7 @@ Base: a wiki do Dark Souls II (Fextralife) e a interface do jogo. Tudo em `skill
 | `--track` | `#2b2b2b` | trilho de barra vazia |
 | `--text` | `#b4b2b0` | texto comum |
 | `--head` | `#ffffff` | títulos, valores |
-| `--dim` | `#7a7875` | apagado, tempo, rótulo pendente |
+| `--dim` | `#8a8885` | apagado, tempo, rótulo pendente (v2: passa 4,5:1) |
 | `--link` | `#ab966f` | link, feito, etapa concluída |
 | `--pos` | `#f0b54a` | ganho, destaque |
 | `--neg` | `#6fa3d8` | perda, falta, erro |
@@ -50,8 +50,14 @@ Base: a wiki do Dark Souls II (Fextralife) e a interface do jogo. Tudo em `skill
 | Barra de etapas | `.etapas > .etapa` (`.feita`, `.atual`, `.pulada`) | segmentos; atual = brasa animada |
 | Microtexto | `.microtexto > .linha-<tipo>` | 6 linhas rolando: `acao` (›), `texto`, `pensamento` (itálico), `etapa` (Marcellus âmbar), `erro` |
 | Faixa | `.faixa` | aviso de fim no estilo "BONFIRE LIT": texto dourado sobre faixa escura, some em 2,8 s |
-| Abas | `.tabs > .tab` | uma seção por vez |
-| Agora | `.agora` | até 3 ações imediatas no topo |
+| Cabeçalho | `.topo` (`.retrato`, `.topo-meta`, `.acoes`) | retrato 56×72 (foto, ou `.mosaico` 2×2 com o equipamento), nome, Trocar personagem, nível/almas/soul memory |
+| Menu lateral | `.menu > .menu-g > .menu-i[aria-current]` | uma seção por vez, agrupada (Plano · Coletar · Combate · Registro); vira faixa horizontal abaixo de 760px |
+| Lista + detalhe | `.md` (`.md-lista > .md-i[aria-current]`, `.md-det > .md-pane`) | Passos e Onde pegar; empilha abaixo de 1180px |
+| Fonte | `.fonte-v[aria-current]` | uma fonte de item, clicável (escolhe a rota do mapa) |
+| Nó em linha | `.ni` (`.ni-ic` 20px) + `.fi` | nó dentro de lista, fonte e Agora |
+| Dano em barras | `.dano-l` (`.dano-bar .now/.ganho`) | AR agora → depois; ganho em âmbar |
+| Seleção | `.sel-fundo > .sel` (`.sel-c[aria-current]`, `.sel-ret`) | diálogo de personagens do save; Esc fecha |
+| Agora | `.agora2` | até 3 ações imediatas |
 
 ## Textos da forja
 
