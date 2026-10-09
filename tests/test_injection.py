@@ -310,6 +310,7 @@ console.log(JSON.stringify({
   centro: [v.cx, v.cz], s: v.s, pequeno: t.ajustar(t.caixa([[10, 10], [11, 11]]), 600, 600, 30).s,
   regua: [t.regua(1), t.regua(10)], icone: [t.tamanhoIcone(0.6), t.tamanhoIcone(40)],
   andar: [t.estadoAndar(2, 2), t.estadoAndar(1, 2), t.estadoAndar(1, "todos"), t.estadoAndar(null, 2)],
+  zona: [t.corZona(1, 7), t.corZona(7, 7), t.corZona(1, 1)],
 }));
 ''', encoding="utf-8")
     out = subprocess.run(["node", str(script), str(ROOT / "skills/build-page/template/mapa.js")],
@@ -319,3 +320,4 @@ console.log(JSON.stringify({
     assert r["pequeno"] == pytest.approx(18)  # foco pequeno abre no mínimo 30 m
     assert r["regua"] == [100, 10] and r["icone"] == [16, 34]
     assert r["andar"] == ["cheio", "apagado", "cheio", "cheio"]
+    assert r["zona"] == ["hsl(46 62% 62%)", "hsl(8 72% 38%)", "hsl(46 62% 62%)"]  # zona 1 dourada, última brasa
