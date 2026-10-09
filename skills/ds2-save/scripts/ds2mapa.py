@@ -11,6 +11,9 @@ Formatos lidos (conferidos contra a Lost Bastille, m10_16_00_00):
 - NVG2: malhas em 0x08; em 0x20 vêm malhas+4 offsets (4 seções de ligação e as malhas); malha: vértices em +0x28,
   faces em +0x2C, offsets de vértices/atributos/faces em +0x40; face = 3 índices no começo de 12 bytes.
 - FMG (texto do jogo): grupos em 0x0C, textos em 0x10, tabela de offsets em 0x14; grupo = (índice, primeiro, último).
+- Inimigo: `generatorregistparam_<mapa>` (linha = personagem do gerador, +8 do generatorparam) dá a linha do EnemyParam
+  no 1º int. EnemyParam: HP em +0x28, almas em +0xD0, lotes de drop (ItemLotParam2_Chr) em +0x4C e +0x134.
+  Conferido com a wiki: Ruin Sentinel 2330 HP; Royal Swordsman 180 almas e drops do set Royal Swordsman.
 """
 import argparse
 from collections import defaultdict
@@ -24,7 +27,8 @@ from pathlib import Path
 from ds2planta import PLANTA_VERSAO  # noqa: F401 (versão da planta guardada no cache)
 
 AREA = re.compile(r"^m(\d\d)_(\d\d)_(\d\d)_(\d\d)$")
-EXTRACAO_VERSAO = 3  # 2: NPCs e chefes; 3: início do mapa (zonas); muda quando o que sai do jogo muda
+EXTRACAO_VERSAO = 4  # 2: NPCs e chefes; 3: início do mapa (zonas); 4: tipo de inimigo (HP, almas, drops)
+EP_HP, EP_ALMAS, EP_LOTES = 0x28, 0xD0, (0x4C, 0x134)  # EnemyParam
 INICIO_MAPA = "マップ開始地点"  # nome do ponto de início no MSB (texto do próprio jogo)
 JUNTAR_NPC = 15.0  # metros: geradores do mesmo NPC mais perto que isso viram um marcador só
 TIPO_NAVMESH, TIPO_COLISAO, TIPO_OBJETO = 4, 3, 1
@@ -170,7 +174,8 @@ def montar_atores(locais: dict, personagens: dict, base: tuple, nomes_npc: dict,
         if not pts:
             continue
         media = tuple(sum(p[k] for p in pts) / len(pts) for k in range(3))
-        chefes.append({"flag": c["flag"], "nome": c["nome"], "wiki": c.get("wiki", ""), "pos": _r(media)})
+        chefes.append({"flag": c["flag"], "nome": c["nome"], "wiki": c.get("wiki", ""), "pos": _r(media),
+                       "familias": sorted(familias)})
     return npcs, chefes
 
 
@@ -233,6 +238,35 @@ def lotes_itens(data: bytes) -> dict[int, list[tuple[int, int]]]:
     return out
 
 
+def tipos_inimigo(enemy_param: bytes, lotes_chr: dict, nomes_itens: dict, tipos) -> dict:
+    """Linhas do EnemyParam usadas na área: HP, almas e nomes dos itens dos lotes de drop (sem repetir)."""
+    linhas = dict(linhas_param(enemy_param))
+    out = {}
+    for ep in sorted(set(tipos)):
+        raw = linhas.get(ep)
+        if raw is None or len(raw) < EP_ALMAS + 4:
+            continue
+        drops = []
+        for off in EP_LOTES:
+            for item_id, _qtd in lotes_chr.get(struct.unpack_from("<i", raw, off)[0], []):
+                nome = nomes_itens.get(item_id)
+                if nome and nome not in drops:
+                    drops.append(nome)
+        out[str(ep)] = {"hp": struct.unpack_from("<i", raw, EP_HP)[0], "almas": struct.unpack_from("<i", raw, EP_ALMAS)[0],
+                        "drops": drops}
+    return out
+
+
+def papel_gerador(personagem: int, tipo: int | None, nomes_npc: dict, chefes: list) -> str | None:
+    """"npc", "chefe" ou None (inimigo comum), pelas mesmas regras de montar_atores. Fantasma de NPC (convocação ou
+    invasor) usa a linha do EnemyParam do próprio NPC: 813001 // 100 = 8130 (Felicia the Brave no npcmenu)."""
+    if personagem // 10000 in nomes_npc or (tipo and tipo // 100 in nomes_npc):
+        return "npc"
+    if any(personagem // 100000 in c.get("familias", []) for c in chefes):
+        return "chefe"
+    return None
+
+
 def _r(v) -> list[float]:
     return [round(float(c), 1) + 0.0 for c in v]
 
@@ -293,7 +327,8 @@ def extrair_area(game_dir, area: str, cache_dir, names=None) -> dict:
     instancias = {rid: struct.unpack_from("<i", raw)[0] for rid, raw in linhas_param(arq.ler(inst_path)) if len(raw) >= 4} if arq.tem(inst_path) else {}
     ger_path = f"/param/generatorlocation_{area}.param"
     geradores = [(rid, struct.unpack_from("<3f", raw)) for rid, raw in linhas_param(arq.ler(ger_path)) if len(raw) >= 12] if arq.tem(ger_path) else []
-    lotes = lotes_itens(ds2regulation.load_params(ds2regulation.find_regulation(game_dir))["ItemLotParam2_Other"])  # noqa: E501
+    params = ds2regulation.load_params(ds2regulation.find_regulation(game_dir))
+    lotes = lotes_itens(params["ItemLotParam2_Other"])
     names = names if names is not None else ds2save.load_item_names()
     nomes_itens = {i: n for i, (_cat, n) in names.items()}
     nome = _texto(arq, "mapname").get(nome_mapa_id(area), area)
@@ -301,9 +336,17 @@ def extrair_area(game_dir, area: str, cache_dir, names=None) -> dict:
     gen_path = f"/param/generatorparam_{area}.param"
     personagens = {rid: struct.unpack_from("<i", raw, 8)[0] for rid, raw in linhas_param(arq.ler(gen_path)) if len(raw) >= 12} if arq.tem(gen_path) else {}
     bosses = json.loads((ds2save.GAME_DIR / "bosses.json").read_text(encoding="utf-8"))["chefes"]
-    params = ds2regulation.load_params(ds2regulation.find_regulation(game_dir))
-    out["npcs"], out["chefes"] = montar_atores(dict(geradores), personagens, base, _texto(arq, "npcmenu"),
+    nomes_npc = _texto(arq, "npcmenu")
+    out["npcs"], out["chefes"] = montar_atores(dict(geradores), personagens, base, nomes_npc,
                                                chefes_do_mapa(params["BossBattleParam"], area, bosses))
+    reg_path = f"/param/generatorregistparam_{area}.param"
+    registro = {rid: struct.unpack_from("<i", raw)[0] for rid, raw in linhas_param(arq.ler(reg_path)) if len(raw) >= 4} if arq.tem(reg_path) else {}
+    for e in out["inimigos"]:
+        e["personagem"] = personagens.get(e["id"], 0)
+        e["tipo"] = registro.get(e["personagem"])
+        e["papel"] = papel_gerador(e["personagem"], e["tipo"], nomes_npc, out["chefes"])
+    out["tipos_inimigo"] = tipos_inimigo(params["EnemyParam"], lotes_itens(params["ItemLotParam2_Chr"]), nomes_itens,
+                                         [e["tipo"] for e in out["inimigos"] if e["tipo"] and not e["papel"]])
     inicio = [q["pos"] for q in pontos_msb(arq.ler(f"/map/{area}/{area}.msb")) if q["nome"] == INICIO_MAPA]
     out["inicio"] = _r(inicio[0]) if inicio else None
     out["versao_extracao"] = EXTRACAO_VERSAO

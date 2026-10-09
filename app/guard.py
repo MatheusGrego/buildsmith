@@ -31,7 +31,7 @@ REPO = Path(__file__).resolve().parents[1]
 
 # script (relativo ao repositório) → subcomandos aceitos (None = sem subcomando)
 SCRIPTS = {
-    "skills/ds2-save/scripts/ds2save.py": {"slots", "snapshot", "levels", "flags-diff"},
+    "skills/ds2-save/scripts/ds2save.py": {"slots", "snapshot", "levels", "flags-diff", "posicao"},
     "skills/ds2-save/scripts/ds2calc.py": {"ar", "catalisador", "feitico"},
     "skills/ds2-save/scripts/ds2data.py": {"onde-comprar", "trocas", "custo-upgrade", "acesso"},
     "skills/ds2-save/scripts/ds2mapa.py": {"areas", "extrair", "onde", "rota"},

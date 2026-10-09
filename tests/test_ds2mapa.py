@@ -327,3 +327,38 @@ def test_real_lost_bastille_zones(tmp_path):
 def test_area_without_bonfires_has_no_zones():
     area = ds2mapa.com_zonas(area_sintetica([quadrado(0, 0, 10, 10, 0.0)], itens=[{"lote": 9, "pos": [3, 0, 5], "itens": []}]))
     assert area["zonas"]["lista"] == [] and area["itens"][0]["zona"] is None
+
+
+def test_enemy_types_from_enemy_param():
+    def linha(hp, almas, lote_a, lote_b):
+        raw = bytearray(360)
+        struct.pack_into("<i", raw, ds2mapa.EP_HP, hp)
+        struct.pack_into("<i", raw, ds2mapa.EP_ALMAS, almas)
+        struct.pack_into("<i", raw, ds2mapa.EP_LOTES[0], lote_a)
+        struct.pack_into("<i", raw, ds2mapa.EP_LOTES[1], lote_b)
+        return bytes(raw)
+
+    param = build_param([(152002, linha(450, 180, 15200000, 15200100)), (999, linha(1, 1, 0, 0))])
+    lotes = {15200000: [(1, 1), (2, 1)], 15200100: [(2, 1), (3, 1)]}
+    nomes = {1: "Royal Swordsman Helm", 2: "Royal Greatsword", 3: "Lifegem"}
+    tipos = ds2mapa.tipos_inimigo(param, lotes, nomes, [152002, 152002, 777])
+    assert tipos == {"152002": {"hp": 450, "almas": 180, "drops": ["Royal Swordsman Helm", "Royal Greatsword", "Lifegem"]}}
+
+
+def test_generator_role_npc_boss_or_enemy():
+    npcs = {7680: "Straid of Olaphis", 8130: "Felicia the Brave"}
+    chefes = [{"familias": [325]}]
+    assert ds2mapa.papel_gerador(76800000, 768000, npcs, chefes) == "npc"
+    assert ds2mapa.papel_gerador(85000000, 813001, npcs, chefes) == "npc"  # fantasma de NPC usa a linha do NPC
+    assert ds2mapa.papel_gerador(32500001, 325000, npcs, chefes) == "chefe"
+    assert ds2mapa.papel_gerador(15200000, 152002, npcs, chefes) is None
+
+
+@pytest.mark.skipif(not (GAME / "GameDataEbl.bhd").exists(), reason="DS2 SotFS não instalado")
+def test_real_lost_bastille_enemy_types(tmp_path):
+    area = ds2mapa.extrair_area(GAME, "m10_16_00_00", tmp_path)
+    tipos = area["tipos_inimigo"]
+    assert tipos["152002"]["hp"] == 450 and tipos["152002"]["almas"] == 180  # Royal Swordsman: 180 almas na wiki
+    assert "Royal Greatsword" in tipos["152002"]["drops"]
+    papeis = {e["tipo"]: e["papel"] for e in area["inimigos"] if e["tipo"]}
+    assert papeis[768000] == "npc" and papeis[325000] == "chefe" and papeis[152002] is None

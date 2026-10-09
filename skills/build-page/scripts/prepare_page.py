@@ -11,6 +11,7 @@ from pathlib import Path
 from urllib.parse import urlsplit
 
 import icones_wiki
+import inimigos_wiki
 import mapas_pagina
 import validate_plano
 
@@ -157,8 +158,20 @@ def _nodes(plano: dict):
             yield spell["no"]
 
 
+def area_do_jogador(plano: dict) -> str | None:
+    """Mapa onde o personagem do plano está agora, pelo save (None sem save ou sem o personagem)."""
+    _ds2mapa()
+    import ds2save
+
+    try:
+        save = ds2save.find_save()
+        return ds2save.posicao(save, ds2save.slot_by_name(save, plano["personagem"]["nome"]))["area"]
+    except Exception:  # sem save, personagem renomeado: a página sai sem a área do jogador
+        return None
+
+
 def prepare(plano_path, out_dir, jogo: str, cache_root=None, fetch=default_fetch, carregar_area=None,
-            listar_areas=None) -> dict:
+            listar_areas=None, area_jogador=None) -> dict:
     plano = json.loads(Path(plano_path).read_text(encoding="utf-8"))
     problems = validate_plano.validate(plano)
     if problems:
@@ -197,8 +210,11 @@ def prepare(plano_path, out_dir, jogo: str, cache_root=None, fetch=default_fetch
         _ds2mapa()
         if carregar_area is None:
             carregar_area, listar_areas = carregar_area_do_jogo(cache_root, jogo), listar_areas or listar_areas_do_jogo
+        inimigos = inimigos_wiki.InimigosWiki(cache_root / jogo / "inimigos_wiki.json", fetch)
+        if area_jogador is None:
+            area_jogador = area_do_jogador(plano) if jogo == "ds2" else None
         map_files = mapas_pagina.preparar(plano, out_dir, carregar_area, listar_areas or (lambda: []), icone_local,
-                                          icones.prebuscar, icones.pagina)
+                                          icones.prebuscar, icones.pagina, inimigos.nomes, area_jogador or None)
     except ValueError:
         raise
     except Exception as err:  # jogo ausente, arquivo trocado por atualização: página sem mapa, com aviso
