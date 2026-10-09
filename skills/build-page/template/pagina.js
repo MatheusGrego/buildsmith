@@ -543,7 +543,7 @@
       if (state.db) app.querySelectorAll(".fogueira").forEach((b) => { b.hidden = false; });
       applyState();
       paintForja();
-      if (typeof window.buildsmithSelecao === "function") window.buildsmithSelecao.atualizar();
+      carregarPersonagens();
     } catch (e) { /* plano novo ilegível: a página antiga continua */ }
   }
 
@@ -603,8 +603,130 @@
     }
   }
 
+  // Seleção de personagem (só no servidor local): personagens do save, retrato por foto, último print ou equipamento.
+  const sel = { lista: [], print: false, aberta: false, volta: null };
+  const URL_RETRATO = /^\/api\/[a-z0-9]+\/[a-z0-9._-]+\/retrato(\?v=\d+)?$/;
+  const URL_ICONE = /^\/p\/[a-z0-9._-]+\/[a-z0-9._-]+\/icons\/[A-Za-z0-9._-]+$/;
+
+  function retratoDe(p, grande) {
+    if (p.retrato && URL_RETRATO.test(p.retrato)) return `<img src="${esc(p.retrato)}" alt="">`;
+    const icones = (p.equipado_icones || []).filter((n) => URL_ICONE.test(n.icone));
+    const escolhidos = ORDEM_RETRATO.map((re) => icones.find((n) => re.test(n.sub))).filter(Boolean);
+    const pecas = (escolhidos.length ? escolhidos : icones).slice(0, 4);
+    if (pecas.length) return `<span class="mosaico m${pecas.length}">${pecas.map((n) => `<img src="${esc(n.icone)}" alt="">`).join("")}</span>`;
+    const nomes = ["cabeca", "peito", "R1", "L1"].map((k) => p.equipado && p.equipado[k]).filter((n) => n && n.name && !/^desconhecido/.test(n.name));
+    if (nomes.length) return `<span class="mosaico m${nomes.length}">${nomes.map((n) => initial(n.name)).join("")}</span>`;
+    return `<span class="retrato-vazio">${grande ? "Foto do personagem" : "Foto"}</span>`;
+  }
+
+  async function carregarPersonagens() {
+    if (!forja.base) return;
+    try {
+      const r = await fetch(`/api/${forja.jogo}/personagens`, { cache: "no-store" });
+      if (!r.ok) return;
+      const data = await r.json();
+      sel.lista = data.personagens || [];
+      sel.print = Boolean(data.print);
+    } catch (e) { return; }
+    const eu = sel.lista.find((p) => p.slug === forja.personagem);
+    const box = document.getElementById("retrato");
+    if (box && eu && eu.retrato) box.innerHTML = retratoDe(eu);
+    else if (box && state.plano) box.innerHTML = retratoEquipamento(state.plano.personagem.equipado);
+    if (sel.aberta) desenharSelecao();
+  }
+
+  function desenharSelecao() {
+    let fundo = document.getElementById("sel-fundo");
+    if (!fundo) {
+      fundo = document.createElement("div");
+      fundo.id = "sel-fundo";
+      fundo.className = "sel-fundo";
+      document.body.append(fundo);
+      fundo.addEventListener("click", cliqueSelecao);
+      fundo.addEventListener("change", (ev) => { const f = ev.target.files && ev.target.files[0]; if (f) enviarRetrato(ev.target.dataset.envio, f); });
+      fundo.addEventListener("dragover", (ev) => { if (ev.target.closest("[data-soltar]")) ev.preventDefault(); });
+      fundo.addEventListener("drop", (ev) => {
+        const alvo = ev.target.closest("[data-soltar]");
+        const f = ev.dataTransfer && ev.dataTransfer.files[0];
+        if (!alvo || !f) return;
+        ev.preventDefault();
+        enviarRetrato(alvo.dataset.soltar, f);
+      });
+    }
+    const cards = sel.lista.map((p) => {
+      const atual = p.slug === forja.personagem;
+      const acoes = atual
+        ? `<span class="sel-atual">Em uso</span>
+           <label class="pesq sel-arq">Enviar foto<input type="file" accept="image/png,image/jpeg" data-envio="${esc(p.slug)}" hidden></label>
+           ${sel.print ? `<button class="pesq" type="button" data-sel="print" data-slug="${esc(p.slug)}">Usar último print</button>` : ""}
+           ${p.retrato ? `<button class="pesq" type="button" data-sel="limpar" data-slug="${esc(p.slug)}">Usar equipamento</button>` : ""}`
+        : p.url ? `<a class="acao" href="${esc(p.url)}">Carregar</a>`
+        : `<button class="acao" type="button" data-sel="gerar" data-slug="${esc(p.slug)}">Gerar plano</button>`;
+      return `<li class="sel-c"${atual ? ' aria-current="true"' : ""}>
+        <div class="sel-ret" data-soltar="${esc(p.slug)}">${retratoDe(p, true)}</div>
+        <div class="sel-nome">${esc(p.nome)}</div>
+        <div class="sel-meta"><span>Slot <b>${fmt.format(p.slot)}</b></span><span>Nível <b>${fmt.format(p.nivel)}</b></span><span>Soul memory <b>${fmt.format(p.soul_memory)}</b></span></div>
+        <div class="sel-acoes">${acoes}</div>
+      </li>`;
+    }).join("");
+    fundo.innerHTML = `<div class="sel" role="dialog" aria-modal="true" aria-labelledby="sel-tit">
+      <div class="sel-topo"><h2 id="sel-tit">Selecionar personagem</h2><button class="sel-x" type="button" data-sel="fechar" aria-label="Fechar">&#10005;</button></div>
+      <p class="sel-dica">Personagens do save. Solte uma imagem sobre um retrato para trocar a foto.${sel.print ? "" : " Para usar um print do jogo, aperte F12 na Steam."}</p>
+      <ul class="sel-grade">${cards || '<li class="empty">Não achei o save do DS2.</li>'}</ul>
+      <p class="sel-erro neg" id="sel-erro" hidden></p>
+    </div>`;
+    fundo.hidden = false;
+  }
+
+  function abrirSelecao() {
+    sel.aberta = true;
+    sel.volta = document.activeElement;
+    desenharSelecao();
+    const fechar = document.querySelector("#sel-fundo .sel-x");
+    if (fechar) fechar.focus();
+    carregarPersonagens();
+  }
+
+  function fecharSelecao() {
+    sel.aberta = false;
+    const fundo = document.getElementById("sel-fundo");
+    if (fundo) fundo.hidden = true;
+    if (sel.volta && sel.volta.focus) sel.volta.focus();
+  }
+
+  function erroSelecao(texto) {
+    const el = document.getElementById("sel-erro");
+    if (el) { el.textContent = texto; el.hidden = !texto; }
+  }
+
+  async function enviarRetrato(slugAlvo, arquivo) {
+    if (!/^image\/(png|jpeg)$/.test(arquivo.type)) { erroSelecao("Só PNG ou JPEG."); return; }
+    if (arquivo.size > 2 * 1024 * 1024) { erroSelecao("Imagem maior que 2 MB."); return; }
+    const r = await fetch(`/api/${forja.jogo}/${slugAlvo}/retrato`, { method: "POST", headers: { "Content-Type": arquivo.type, "X-Buildsmith": "1" }, body: arquivo }).catch(() => null);
+    if (!r || !r.ok) { erroSelecao("Não consegui gravar a foto."); return; }
+    erroSelecao("");
+    carregarPersonagens();
+  }
+
+  async function cliqueSelecao(ev) {
+    if (ev.target.id === "sel-fundo") { fecharSelecao(); return; }
+    const b = ev.target.closest("[data-sel]");
+    if (!b) return;
+    const acao = b.dataset.sel;
+    if (acao === "fechar") { fecharSelecao(); return; }
+    if (acao === "gerar") { fecharSelecao(); rodar("plano", `/api/${forja.jogo}/${b.dataset.slug}`); return; }
+    const rota = acao === "print" ? "retrato-print" : "retrato-limpar";
+    b.disabled = true;
+    const r = await fetch(`/api/${forja.jogo}/${b.dataset.slug}/${rota}`, { method: "POST", headers: HEADERS, body: "{}" }).catch(() => null);
+    if (!r || !r.ok) erroSelecao(acao === "print" ? "Nenhum print do DS2 na Steam." : "Não consegui voltar ao equipamento.");
+    carregarPersonagens();
+  }
+
+  document.addEventListener("keydown", (ev) => { if (ev.key === "Escape" && sel.aberta) fecharSelecao(); });
+
   function wire() {
     app.addEventListener("click", async (ev) => {
+      if (ev.target.closest("#trocar")) { abrirSelecao(); return; }
       const passo = ev.target.closest("[data-passo]");
       if (passo && state.db) {
         ev.stopPropagation();
@@ -717,7 +839,9 @@
       const sub = document.getElementById("fila-sub");
       if (sub && forja.rodar) sub.textContent = "o botão Responder fila (no topo) responde agora";
       iniciarForja();
-      if (typeof window.buildsmithSelecao === "function") window.buildsmithSelecao({ app, forja, rodar, esc, fmt, letter, HEADERS });
+      const trocar = document.getElementById("trocar");
+      if (trocar) trocar.hidden = false;
+      carregarPersonagens();
     }
     const fail = () => { /* sem banco: a página segue só leitura */ };
     db.collection("feitos").onSnapshot((snap) => { state.feitos = Object.fromEntries(snap.docs.map((d) => [d.id, d.data()])); applyState(); }, fail);
