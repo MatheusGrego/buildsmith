@@ -336,3 +336,30 @@ a.agora2-t:hover { text-decoration: underline; }
   .dano-val { text-align: left; }
   .dano-causa { grid-column: 1; }
 }
+
+/* Seleção de personagem (diálogo) */
+.sel-fundo { position: fixed; inset: 0; background: rgba(0, 0, 0, 0.72); display: grid; place-items: center; padding: 24px; z-index: 50; }
+.sel-fundo[hidden] { display: none; }
+.sel { width: min(980px, 100%); max-height: calc(100vh - 48px); overflow: auto; background: var(--panel); border: 1px solid var(--line); padding: 20px 24px 24px; display: grid; gap: 12px; }
+.sel-topo { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+.sel-topo h2 { border: 0; padding: 0; font-size: 26px; }
+.sel-x { background: none; border: 1px solid var(--line); color: var(--text); width: 32px; height: 32px; cursor: pointer; }
+.sel-x:hover { color: var(--head); border-color: var(--link); }
+.sel-x:focus-visible { outline: 2px solid var(--link); outline-offset: 2px; }
+.sel-dica { margin: 0; font-size: 13px; color: var(--dim); }
+.sel-grade { list-style: none; margin: 0; padding: 0; display: grid; grid-template-columns: repeat(auto-fill, minmax(200px, 1fr)); gap: 14px; }
+.sel-c { display: grid; gap: 8px; align-content: start; padding: 10px; background: var(--th); border: 1px solid var(--line); }
+.sel-c[aria-current] { border-color: var(--link); background: linear-gradient(180deg, var(--acao-tint), var(--th) 60%); }
+.sel-ret { height: 220px; border: 1px solid var(--line); background: var(--th); display: grid; place-items: center; overflow: hidden; }
+.sel-ret > img { width: 100%; height: 100%; object-fit: cover; object-position: center top; }
+.sel-ret .mosaico > .ini { font-size: 28px; }
+.sel-nome { font: 18px var(--display); color: var(--head); }
+.sel-meta { display: flex; flex-wrap: wrap; gap: 4px 12px; font-size: 12px; }
+.sel-meta b { color: var(--head); font-weight: 500; }
+.sel-acoes { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 8px; }
+.sel-acoes .pesq { margin: 0; }
+.sel-acoes a.acao { text-decoration: none; }
+.sel-atual { font: 13px var(--display); color: var(--pos); letter-spacing: 0.04em; }
+.sel-arq { display: inline-flex; align-items: center; }
+.sel-erro[hidden] { display: none; }
+@media (max-width: 760px) { .sel-fundo { padding: 8px; } .sel { padding: 14px; } .sel-ret { height: 180px; } }
