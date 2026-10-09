@@ -29,7 +29,11 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from urllib.parse import parse_qs, unquote, urlsplit
 
+import retrato
 from runner import Busy, Runner
+
+REPO = Path(__file__).resolve().parents[1]
+sys.path.insert(0, str(REPO / "skills" / "ds2-save" / "scripts"))
 
 PORT = 8642
 SEGMENT = re.compile(r"^[a-z0-9][a-z0-9._-]{0,180}$")
@@ -142,9 +146,41 @@ def pages(home: Path) -> list[tuple[str, str, float]]:
     return found
 
 
+def personagens(home: Path, jogo: str, save=None, steam_dirs=None) -> dict:
+    """Personagens do save cruzados com as páginas: o que a seleção da página mostra."""
+    import ds2save  # só aqui: o servidor sobe mesmo sem pycryptodome
+
+    try:
+        lista = ds2save.personagens(Path(save) if save else ds2save.find_save())
+    except (ds2save.SaveError, OSError, ImportError) as err:
+        return {"personagens": [], "erro": str(err), "print": False}
+    out = []
+    for p in lista:
+        slug_ = p["slug"]
+        plano_path = Path(home) / "paginas" / jogo / slug_ / "plano.json"
+        icones = []
+        if SEGMENT.match(slug_) and plano_path.is_file():
+            try:
+                equipado = json.loads(plano_path.read_text(encoding="utf-8"))["personagem"].get("equipado", [])
+            except (OSError, ValueError, KeyError, TypeError):
+                equipado = []
+            for node in equipado if isinstance(equipado, list) else []:
+                icone = node.get("icone") if isinstance(node, dict) else None
+                if isinstance(icone, str) and re.fullmatch(r"icons/[A-Za-z0-9._-]+", icone):
+                    icones.append({"nome": str(node.get("nome", "")), "sub": str(node.get("sub", "")),
+                                   "icone": f"/p/{jogo}/{slug_}/{icone}"})
+        foto = retrato.achar(home, jogo, slug_) if SEGMENT.match(slug_) else None
+        out.append({**p, "pagina": plano_path.is_file(), "url": f"/p/{jogo}/{slug_}/" if plano_path.is_file() else None,
+                    "retrato": f"/api/{jogo}/{slug_}/retrato?v={int(foto.stat().st_mtime)}" if foto else None,
+                    "equipado_icones": icones})
+    return {"personagens": out, "print": retrato.ultimo_print(steam_dirs) is not None}
+
+
 class Handler(BaseHTTPRequestHandler):
     home: Path = default_home()
     runner: Runner | None = None
+    save: Path | None = None  # None = o save ativo do jogo (ds2save.find_save)
+    steam_dirs: list | None = None  # None = pastas padrão da Steam
     server_version = "buildsmith"
 
     def log_message(self, *args):  # sem log no console (roda com pythonw)
@@ -191,9 +227,24 @@ class Handler(BaseHTTPRequestHandler):
         if not self._local_host():
             return self._send(400, b"host invalido", "text/plain; charset=utf-8")
         if not parts:
+            found = pages(self.home)
+            if found and "lista" not in parse_qs(urlsplit(self.path).query):
+                jogo, personagem, _ = max(found, key=lambda x: x[2])
+                self.send_response(302)
+                self.send_header("Location", f"/p/{jogo}/{personagem}/")
+                self.send_header("Content-Length", "0")
+                self.end_headers()
+                return None
             return self._index()
         if parts == ["api", "ping"]:
             return self._json({"app": "buildsmith", "ok": True, "rodar": self.runner is not None})
+        if len(parts) == 3 and parts[0] == "api" and parts[2] == "personagens" and parts[1] == "ds2":
+            return self._json(personagens(self.home, parts[1], self.save, self.steam_dirs))
+        if len(parts) == 4 and parts[0] == "api" and parts[3] == "retrato" and all(SEGMENT.match(p) for p in parts[1:3]):
+            foto = retrato.achar(self.home, parts[1], parts[2])
+            if foto is None:
+                return self._send(404, b"sem retrato", "text/plain; charset=utf-8")
+            return self._send(200, foto.read_bytes(), retrato.TIPOS[foto.suffix[1:]])
         if len(parts) == 4 and parts[0] == "api" and all(SEGMENT.match(p) for p in parts[1:3]):
             if parts[3] == "estado":
                 return self._json(read_state(self.home, parts[1], parts[2]))
@@ -216,6 +267,9 @@ class Handler(BaseHTTPRequestHandler):
         if (parts and len(parts) == 4 and parts[0] == "api" and parts[3] in ("rodar", "cancelar")
                 and self.runner is not None and all(SEGMENT.match(p) for p in parts[1:3])):
             return self._run(parts[1], parts[2], parts[3])
+        if (parts and len(parts) == 4 and parts[0] == "api" and parts[3] in ("retrato", "retrato-print", "retrato-limpar")
+                and all(SEGMENT.match(p) for p in parts[1:3])):
+            return self._retrato(parts[1], parts[2], parts[3])
         if parts == ["api", "desligar"]:
             self._json({"ok": True})
             threading.Thread(target=self.server.shutdown, daemon=True).start()
@@ -246,6 +300,38 @@ class Handler(BaseHTTPRequestHandler):
         except (json.JSONDecodeError, UnicodeDecodeError):
             return None
         return data if isinstance(data, dict) else None
+
+    def _retrato(self, jogo: str, personagem: str, acao: str):
+        if acao == "retrato-limpar":
+            retrato.limpar(self.home, jogo, personagem)
+            return self._json({"ok": True})
+        if acao == "retrato-print":
+            shot = retrato.ultimo_print(self.steam_dirs)
+            if shot is None:
+                return self._send(404, b"nenhum print do DS2 na Steam", "text/plain; charset=utf-8")
+            data = shot.read_bytes()
+        else:
+            try:
+                length = int(self.headers.get("Content-Length") or 0)
+            except ValueError:
+                return self._send(400, b"tamanho invalido", "text/plain; charset=utf-8")
+            if length > retrato.MAX_RETRATO:
+                # Lê e descarta (até 16 MB) antes de responder: fechar com o corpo pela metade derruba a conexão no Windows.
+                restante = min(length, 16 * 1024 * 1024)
+                while restante > 0:
+                    bloco = self.rfile.read(min(restante, 64 * 1024))
+                    if not bloco:
+                        break
+                    restante -= len(bloco)
+                self.close_connection = True
+                return self._send(413, b"imagem maior que 2 MB", "text/plain; charset=utf-8")
+            data = self.rfile.read(length) if length > 0 else b""
+        try:
+            retrato.gravar(self.home, jogo, personagem, data)
+        except ValueError as err:
+            status = 413 if "2 MB" in str(err) else 400
+            return self._send(status, str(err).encode("utf-8"), "text/plain; charset=utf-8")
+        return self._json({"ok": True})
 
     def _run(self, jogo: str, personagem: str, acao: str):
         if acao == "cancelar":
@@ -284,9 +370,10 @@ class Handler(BaseHTTPRequestHandler):
         return self._send(200, DOCTYPE + body.encode("utf-8") + b"</body></html>", "text/html; charset=utf-8", CSP_INICIO)
 
 
-def make_server(home: Path, port: int = PORT, runner: Runner | None = None) -> ThreadingHTTPServer:
+def make_server(home: Path, port: int = PORT, runner: Runner | None = None, save=None, steam_dirs=None) -> ThreadingHTTPServer:
     runner = runner or Runner(cwd=Path(home), log_path=Path(home) / "execucoes" / "ultima.jsonl")
-    handler = type("BuildsmithHandler", (Handler,), {"home": Path(home), "runner": runner})
+    handler = type("BuildsmithHandler", (Handler,), {"home": Path(home), "runner": runner, "save": save,
+                                                     "steam_dirs": steam_dirs})
     return ThreadingHTTPServer(("127.0.0.1", port), handler)
 
 
