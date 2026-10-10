@@ -120,6 +120,8 @@ def validate(plano: dict) -> list[str]:
         _now(plano, problems)
     if "feiticos" in plano:
         _spells(plano["feiticos"], problems)
+    if "equipamento" in plano:
+        _equipment(plano["equipamento"], problems)
     _requirement_links(plano, problems)
     _urls(plano, "", problems)
     _single_line(plano, "", problems)
@@ -129,6 +131,29 @@ def validate(plano: dict) -> list[str]:
     if not problems:
         _closure(plano, problems)
     return problems
+
+
+GRUPOS_EQUIP = {"direita", "esquerda", "armadura", "aneis"}
+
+
+def _equipment(eq, problems: list) -> None:
+    """Bloco gerado pelo ds2equip.py: slots (agora × plano), sintonia e resumo."""
+    if not isinstance(eq, dict) or not isinstance(eq.get("slots"), list):
+        problems.append("equipamento.slots deveria ser lista")
+        return
+    for i, s in enumerate(eq["slots"]):
+        if not isinstance(s, dict) or not isinstance(s.get("slot"), str) or s.get("grupo") not in GRUPOS_EQUIP:
+            problems.append(f"equipamento.slots[{i}] deveria ter slot e grupo ({'/'.join(sorted(GRUPOS_EQUIP))})")
+            continue
+        for lado in ("agora", "plano"):
+            p = s.get(lado)
+            if p is not None and not (isinstance(p, dict) and isinstance(p.get("nome"), str) and p["nome"]):
+                problems.append(f"equipamento.slots[{i}].{lado} deveria ser peça com nome ou null")
+    for lado in ("agora", "plano"):
+        for i, f in enumerate(eq.get("sintonia", {}).get(lado, [])):
+            if not isinstance(f, dict) or not isinstance(f.get("nome"), str):
+                problems.append(f"equipamento.sintonia.{lado}[{i}] sem nome")
+    _rows("equipamento.resumo", eq.get("resumo", []), problems)
 
 
 def _ids(where: str, entries: list, problems: list) -> None:

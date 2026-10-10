@@ -10,6 +10,7 @@ import urllib.request
 from pathlib import Path
 from urllib.parse import urlsplit
 
+import escala_wiki
 import icones_wiki
 import inimigos_wiki
 import mapas_pagina
@@ -131,6 +132,35 @@ def montar_index(template_dir: Path) -> str:
     return html.replace("<!--CSS-->", f"<style>\n{css}</style>", 1).replace("<!--JS-->", f"<script>\n{js}</script>", 1)
 
 
+def completar_equipamento(eq: dict, escala, icone_local, prebuscar=None) -> None:
+    """Ícone (wiki) de cada peça e feitiço e letras de escala (wiki) de armas, escudos e catalisadores."""
+    pecas = [s[lado] for s in eq.get("slots", []) for lado in ("agora", "plano") if isinstance(s.get(lado), dict)]
+    pecas += [f for lado in ("agora", "plano") for f in eq.get("sintonia", {}).get(lado, []) if isinstance(f, dict)]
+    nomes = sorted({p["nome"] for p in pecas if p.get("nome") and not p["nome"].startswith("#")})
+    if prebuscar:
+        prebuscar(nomes)
+    letras = {}
+    for p in pecas:
+        nome = p.get("nome", "")
+        if not nome or nome.startswith("#"):
+            continue
+        icone = icone_local(nome)
+        if icone:
+            p["icone"] = icone
+        else:
+            p.pop("icone", None)
+        if p.get("tipo") in ("arma", "escudo", "catalisador"):
+            chave = (nome, int(p.get("nivel") or 0))
+            if chave not in letras:
+                try:
+                    letras[chave] = escala.letras(*chave)
+                except Exception:  # wiki fora do ar: fica sem letra
+                    letras[chave] = None
+            r = letras[chave]
+            if r:
+                p["escala"], p["escala_nivel"], p["escala_fonte"] = r["letras"], r["nivel"], r["fonte"]
+
+
 def _nodes(plano: dict):
     yield from plano["personagem"].get("equipado", [])
     for step in plano["passos"]:
@@ -204,6 +234,10 @@ def prepare(plano_path, out_dir, jogo: str, cache_root=None, fetch=default_fetch
     def icone_local(nome: str) -> str | None:
         url = icones.url(nome)
         return store.get(url) if url else None
+
+    if isinstance(plano.get("equipamento"), dict):
+        completar_equipamento(plano["equipamento"], escala_wiki.EscalaWiki(cache_root / jogo / "escala.json", fetch),
+                              icone_local, icones.prebuscar)
 
     map_files = {}
     try:
