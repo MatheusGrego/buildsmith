@@ -66,3 +66,19 @@ def test_cli_equipment(tmp_path, capsys):
     out = json.loads(capsys.readouterr().out)
     assert out["atributos"]["plano"]["INT"] == 40
     assert ds2equip.main(["--snapshot", str(snap), "--troca", "L9=Lizard Staff"]) == 1
+
+
+@pytest.mark.skipif(_real() is None, reason="DS2 não instalado nesta máquina")
+def test_real_magic_weapon_shows_its_elemental_ar():
+    calc = ds2calc.load()
+    out = ds2equip.equipamento(calc, load_item_names(), snapshot_vorcaro(), {"R1": ("Moonlight Greatsword", 5)}, atributos={"STR": 18})
+    r1 = {s["slot"]: s for s in out["slots"]}["R1"]["plano"]
+    assert r1["ar"] == {"magico": 510} and r1["partes"]["magico"]["atributos"] == 130  # só mágico, escala com INT 39
+    assert r1["requisito_ok"] and r1["requisito"] == {"STR": 18, "DEX": 18, "INT": 18}
+
+
+@pytest.mark.skipif(_real() is None, reason="DS2 não instalado nesta máquina")
+def test_southern_ritual_band_adds_a_slot():
+    calc = ds2calc.load()
+    out = ds2equip.equipamento(calc, load_item_names(), snapshot_vorcaro(), {"anel2": ("Southern Ritual Band", 0)})
+    assert out["sintonia"]["total_agora"] == 6 and out["sintonia"]["total"] == 7  # ATN 30 = 6 slots; anel +1 (wiki)

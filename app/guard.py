@@ -33,7 +33,7 @@ REPO = Path(__file__).resolve().parents[1]
 SCRIPTS = {
     "skills/ds2-save/scripts/ds2save.py": {"slots", "snapshot", "levels", "flags-diff", "posicao"},
     "skills/ds2-save/scripts/ds2calc.py": {"ar", "catalisador", "feitico", "sintonia"},
-    "skills/ds2-save/scripts/ds2perto.py": {"catalisadores", "armas", "armaduras"},
+    "skills/ds2-save/scripts/ds2perto.py": {"catalisadores", "armas", "armaduras", "feiticos"},
     "skills/ds2-save/scripts/ds2equip.py": None,
     "skills/ds2-save/scripts/ds2data.py": {"onde-comprar", "trocas", "custo-upgrade", "acesso"},
     "skills/ds2-save/scripts/ds2mapa.py": {"areas", "extrair", "onde", "rota"},

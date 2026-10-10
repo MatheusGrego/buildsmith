@@ -136,6 +136,12 @@ def load(path=None) -> Calc:
 
 # Anéis que somam atributo (wiki: Ring of Knowledge = +5 INT). Só entra aqui o que tem fonte.
 ANEIS_ATRIBUTO = {"Ring of Knowledge": {"INT": 5}}
+# Anéis que somam slot de sintonia (wiki: Southern Ritual Band = +1). Variantes +1/+2 sem fonte aqui ainda.
+ANEIS_SLOTS = {"Southern Ritual Band": 1}
+
+
+def slots_dos_aneis(nomes) -> int:
+    return sum(ANEIS_SLOTS.get(n, 0) for n in nomes)
 # Wiki (Dark Pyromancy Flame): o fogo cai com o personagem humano; só com Hollowing máximo (10 mortes) passa a
 # Pyromancy Flame, por 3-4%. A calculadora não modela o Hollowing: o AR que ela mostra para essa chama não vale.
 ESCALA_HOLLOWING = {"Dark Pyromancy Flame": "escala com Hollowing: humano fica abaixo da Pyromancy Flame (wiki)"}
@@ -151,13 +157,8 @@ def atributos_efetivos(snapshot: dict) -> tuple[dict, list[str]]:
     return stats, fontes
 
 
-def sintonia(calc: Calc, snapshot: dict, candidatos=()) -> dict:
-    """Feitiços do save (equipados e no inventário) com o AR em cada catalisador que o jogador tem ou pode pegar.
-
-    candidatos: [(item_id, nome, nível)] de catalisadores que ele ainda não tem. Catalisador que escala com
-    Hollowing aparece com aviso e nunca é o "melhor".
-    """
-    stats, fontes = atributos_efetivos(snapshot)
+def catalisadores_do_save(calc: Calc, snapshot: dict, stats: dict) -> dict:
+    """Catalisadores do inventário (cajados, sinos, chamas) no maior upgrade, com AR por elemento e se estão na mão."""
     equipados = {h["id"] for h in snapshot["equipped"].get("hands", {}).values()}
     cats = {}
     for item in snapshot["inventory"]:
@@ -173,6 +174,17 @@ def sintonia(calc: Calc, snapshot: dict, candidatos=()) -> dict:
         if ar:
             cats[item["id"]] = {"id": item["id"], "nome": item["name"], "nivel": nivel, "tem": True,
                                 "equipado": item["id"] in equipados, "ar": ar}
+    return cats
+
+
+def sintonia(calc: Calc, snapshot: dict, candidatos=()) -> dict:
+    """Feitiços do save (equipados e no inventário) com o AR em cada catalisador que o jogador tem ou pode pegar.
+
+    candidatos: [(item_id, nome, nível)] de catalisadores que ele ainda não tem. Catalisador que escala com
+    Hollowing aparece com aviso e nunca é o "melhor".
+    """
+    stats, fontes = atributos_efetivos(snapshot)
+    cats = catalisadores_do_save(calc, snapshot, stats)
     for item_id, nome, nivel in candidatos:
         if item_id not in cats:
             cats[item_id] = {"id": item_id, "nome": nome, "nivel": nivel, "tem": False, "equipado": False,
@@ -206,7 +218,8 @@ def sintonia(calc: Calc, snapshot: dict, candidatos=()) -> dict:
                        "tem": melhor[1]["tem"]} if melhor[1] else None})
     usados = sum(f["slots"] * f["equipado"] for f in feiticos)
     return {"atributos": {k: stats[k] for k in ("INT", "FTH", "ATN")}, "aneis": fontes,
-            "slots": {**calc.attunement(stats["ATN"]), "usados": usados},
+            "slots": {**calc.attunement(stats["ATN"]), "usados": usados,
+                      "aneis": slots_dos_aneis(r["name"] for r in snapshot["equipped"].get("rings", []))},
             "catalisadores": sorted(cats.values(), key=lambda c: (not c["equipado"], not c["tem"], -c["menu"])),
             "feiticos": feiticos}
 

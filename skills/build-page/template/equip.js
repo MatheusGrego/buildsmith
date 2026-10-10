@@ -5,7 +5,7 @@
   const esc = (v) => String(v ?? "").replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
   const linkSeguro = (url) => { try { const u = new URL(String(url ?? "")); return u.protocol === "https:" ? u.href : ""; } catch (e) { return ""; } };
   const fmt = new Intl.NumberFormat("pt-BR");
-  const ELEM = { magico: "mágico", fogo: "fogo", raio: "raio", sombrio: "sombrio" };
+  const ELEM = { fisico: "físico", magico: "mágico", fogo: "fogo", raio: "raio", sombrio: "sombrio" };
   const ATR = { STR: "FOR", DEX: "DES", INT: "INT", FTH: "FÉ", magico: "mágico", fogo: "fogo", raio: "raio", sombrio: "sombrio" };
   const GRUPOS = [["direita", "Mão direita"], ["esquerda", "Mão esquerda"], ["armadura", "Armadura"], ["aneis", "Anéis"]];
   const MODOS = [["comparar", "Comparar"], ["agora", "Agora"], ["plano", "Plano"]];
@@ -26,8 +26,9 @@
   }
   function partesTexto(partes) {
     if (!partes) return "—";
-    if ("base" in partes) return [`peça ${fmt.format(partes.base)}`, ...["STR", "DEX"].filter((k) => partes[k]).map((k) => `${ATR[k]} +${fmt.format(partes[k])}`)].join(" · ");
-    return Object.entries(partes).map(([el, x]) => `${ELEM[el] || el}: ${fmt.format(x.base)} + ${fmt.format(x.atributos)} dos atributos`).join(" · ");
+    const fis = (x) => [`peça ${fmt.format(x.base)}`, ...["STR", "DEX"].filter((k) => x[k]).map((k) => `${ATR[k]} +${fmt.format(x[k])}`)].join(" · ");
+    if ("base" in partes) return fis(partes);
+    return Object.entries(partes).map(([el, x]) => (el === "fisico" ? `físico: ${fis(x)}` : `${ELEM[el] || el}: ${fmt.format(x.base)} + ${fmt.format(x.atributos)} dos atributos`)).join(" · ");
   }
   function delta(a, b) {
     const na = numero(a), nb = numero(b);
@@ -65,6 +66,7 @@
     const lado = ui.modo === "agora" ? s.agora || [] : s.plano || [];
     const antes = Object.fromEntries((s.agora || []).map((f) => [f.nome, f.ar]));
     const usados = lado.reduce((n, f) => n + (f.slots || 1), 0);
+    const total = ui.modo === "agora" && s.total_agora ? s.total_agora : s.total;
     const itens = lado.map((f) => {
       const d = ui.modo !== "agora" && f.ar != null && antes[f.nome] != null ? f.ar - antes[f.nome] : 0;
       const img = ICONE_OK.test(f.icone || "") ? `<img src="${esc(f.icone)}" alt="" data-ini="${esc(inicial(f.nome))}">` : `<span class="eq-ini" aria-hidden="true">${esc(inicial(f.nome))}</span>`;
@@ -72,7 +74,7 @@
         <span class="eq-fn">${esc(f.nome)}</span><span class="eq-fa">${f.ar != null ? `AR ${fmt.format(f.ar)}` : "—"}${d ? ` <span class="${d > 0 ? "pos" : "neg"}">${d > 0 ? "+" : "−"}${fmt.format(Math.abs(d))}</span>` : ""}</span>
         <span class="eq-fu">${esc(f.usos ?? "—")} usos</span></li>`;
     }).join("");
-    return `<div class="eq-g eq-g-sint"><h3>Sintonia<small>${fmt.format(usados)} de ${fmt.format(s.total || usados)} slots</small></h3>
+    return `<div class="eq-g eq-g-sint"><h3>Sintonia<small>${fmt.format(usados)} de ${fmt.format(total || usados)} slots</small></h3>
       <ul class="eq-sint">${itens || '<li class="eq-sem">Nenhum feitiço.</li>'}</ul></div>`;
   }
 
