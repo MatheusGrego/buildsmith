@@ -49,3 +49,27 @@ def test_weapons_only_from_open_areas_and_requirement_check():
 def test_armor_is_grouped_by_set_and_filtered_by_name():
     out = ds2perto.perto("armaduras", SNAP, NAMES, FakeData(), FakeCalc(), CHAO, "cloth|witch")
     assert [(l["set"], l["nome"]) for l in out] == [("Tattered Cloth", "Tattered Cloth Hood")]
+
+
+class FakeCalcFeitico(FakeCalc):
+    weapons = {1: {"reinforce_id": 1}, 2: {"reinforce_id": 1}}
+    spells = {31: {}, 32: {}}
+
+    def spell(self, spell_id, catalyst, stats):
+        elem = {31: "magico", 32: "fogo"}[spell_id]
+        mult = {31: 1.8, 32: 1.0}[spell_id]
+        return {"elemento": elem, "ar": int(catalyst[elem] * mult) if elem in catalyst else None, "usos": 2, "slots": 1,
+                "req_int": 40 if spell_id == 31 else 0, "req_fth": 0, "requisito_ok": spell_id != 31}
+
+
+def test_spells_use_the_best_catalyst_you_have_and_skip_hollowing_flames():
+    names = {**NAMES, 31: ("Spells", "Soul Spear"), 32: ("Spells", "Fireball")}
+    snap = {**SNAP, "equipped": {"rings": [{"name": "Ring of Knowledge"}], "hands": {}},
+            "inventory": [{"id": 1, "name": "Sorcerer's Staff", "category": "SpellTools", "upgrade": 0},
+                          {"id": 2, "name": "Dark Pyromancy Flame", "category": "MeleeWeapons", "upgrade": 0}]}
+    chao = {31: [{"area": "m10_23_00_00", "nome_area": "Huntsman's Copse", "lote": 1, "acesso": "agora"}],
+            32: [{"area": "m10_18_00_00", "nome_area": "No-man's Wharf", "lote": 2, "acesso": "agora"}]}
+    out = {l["nome"]: l for l in ds2perto.perto("feiticos", snap, names, FakeData(), FakeCalcFeitico(), chao)}
+    assert out["Soul Spear"]["ar"] == 324 and out["Soul Spear"]["catalisador"] == "Sorcerer's Staff"
+    assert out["Soul Spear"]["requisito"] == {"INT": 40} and not out["Soul Spear"]["requisito_ok"]
+    assert out["Fireball"]["ar"] is None  # a única chama é a Dark (escala com Hollowing): fica de fora

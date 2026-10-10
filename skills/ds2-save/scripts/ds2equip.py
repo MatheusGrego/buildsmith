@@ -20,7 +20,7 @@ SLOTS = [("direita", ["R1", "R2", "R3"]), ("esquerda", ["L1", "L2", "L3"]),
          ("armadura", list(ARMOR_SLOTS)), ("aneis", ["anel1", "anel2", "anel3", "anel4"])]
 NOMES_SLOT = {"cabeca": "cabeça", "maos": "mãos", "anel1": "anel 1", "anel2": "anel 2", "anel3": "anel 3", "anel4": "anel 4"}
 WIKI = "https://darksouls2.wiki.fextralife.com/"
-ELEM = {"magico": "mágico", "fogo": "fogo", "raio": "raio", "sombrio": "sombrio"}
+ELEM = {"fisico": "físico", "magico": "mágico", "fogo": "fogo", "raio": "raio", "sombrio": "sombrio"}
 
 
 def _catalisador(cat: str, nome: str) -> bool:
@@ -43,8 +43,14 @@ def peca(calc, names, item_id: int, nivel: int, stats: dict) -> dict:
             out["aviso"] = ds2calc.ESCALA_HOLLOWING[nome]
     else:
         out["tipo"] = "escudo" if cat == "Shields" else "arma"
-        out["ar"] = calc.physical_ar(item_id, nivel, stats)
-        out["partes"] = calc.physical_parts(item_id, nivel, stats)
+        fisico, elemento = calc.physical_ar(item_id, nivel, stats), calc.catalyst_ar(item_id, nivel, stats)
+        if elemento:  # dano elemental da própria arma (ex.: Moonlight Greatsword é só mágico, escala com INT)
+            out["ar"] = {**({"fisico": fisico} if fisico else {}), **elemento}
+            out["partes"] = {**({"fisico": calc.physical_parts(item_id, nivel, stats)} if fisico else {}),
+                             **calc.catalyst_parts(item_id, nivel, stats)}
+        else:
+            out["ar"] = fisico
+            out["partes"] = calc.physical_parts(item_id, nivel, stats)
     return out
 
 
@@ -157,7 +163,11 @@ def equipamento(calc, names: dict, snapshot: dict, trocas: dict | None = None, s
                           "plano": {k: st_plano[k] for k in ("STR", "DEX", "INT", "FTH", "ATN")},
                           "aneis_agora": fontes_agora, "aneis_plano": fontes_plano},
             "slots": slots,
-            "sintonia": {"total": calc.attunement(st_plano["ATN"])["slots"], "agora": sint_agora, "plano": sint_plano},
+            "sintonia": {"total": calc.attunement(st_plano["ATN"])["slots"]
+                         + ds2calc.slots_dos_aneis(names.get(ids_plano[k], ("", ""))[1] for k in ids_plano if k.startswith("anel")),
+                         "total_agora": calc.attunement(st_agora["ATN"])["slots"]
+                         + ds2calc.slots_dos_aneis(names.get(ids_agora[k], ("", ""))[1] for k in ids_agora if k.startswith("anel")),
+                         "agora": sint_agora, "plano": sint_plano},
             "resumo": resumo}
 
 

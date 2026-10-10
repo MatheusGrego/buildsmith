@@ -335,7 +335,8 @@ const t = window.buildsmithEquip._teste;
 console.log(JSON.stringify({
   letras: [t.letras({STR: "E", DEX: "B"}), t.letras({magico: "A", sombrio: "C"}), t.letras(null)],
   ar: [t.arTexto(218), t.arTexto({magico: 205, sombrio: 166}), t.arTexto(null)],
-  partes: [t.partesTexto({base: 172, STR: 8, DEX: 37}), t.partesTexto({fogo: {base: 125, atributos: 98}})],
+  partes: [t.partesTexto({base: 172, STR: 8, DEX: 37}), t.partesTexto({fogo: {base: 125, atributos: 98}}),
+           t.partesTexto({fisico: {base: 100, STR: 5}, magico: {base: 80, atributos: 20}})],
   delta: [t.delta({ar: {magico: 205}}, {ar: {magico: 240}}), t.delta({ar: 218}, {ar: 218}), t.delta(null, {ar: 1})],
   req: [t.requisitoTexto({INT: 18}), t.requisitoTexto({})],
 }));
@@ -345,6 +346,7 @@ console.log(JSON.stringify({
     r = json.loads(out.stdout)
     assert r["letras"] == ["FOR E · DES B", "mágico A · sombrio C", "—"]
     assert r["ar"] == ["218", "mágico 205 · sombrio 166", "—"]
-    assert r["partes"] == ["peça 172 · FOR +8 · DES +37", "fogo: 125 + 98 dos atributos"]
+    assert r["partes"] == ["peça 172 · FOR +8 · DES +37", "fogo: 125 + 98 dos atributos",
+                           "físico: peça 100 · FOR +5 · mágico: 80 + 20 dos atributos"]
     assert r["delta"] == [35, 0, None]
     assert r["req"] == ["INT 18", "—"]
