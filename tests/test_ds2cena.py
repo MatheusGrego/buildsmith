@@ -210,3 +210,69 @@ def test_empacotar_geometria():
     inds = struct.unpack_from("<3H", geo_bin, m["i_off"])
     assert inds == (0, 1, 2)
 
+
+def test_msb_instancias():
+    def utf16z(text: str) -> bytes:
+        return text.encode("utf-16-le") + bytes(2)
+
+    data = bytearray(b"MSB " + struct.pack("<ii", 1, 0x10) + bytes(4))
+
+    # Lista 1: MODEL_PARAM_ST
+    head_m = len(data)
+    data += bytes(16 + 8 * 2)
+    nome_m = len(data)
+    data += utf16z("MODEL_PARAM_ST")
+    while len(data) % 8:
+        data += b"\0"
+    m_entry = len(data)
+    data += struct.pack("<q", 0x20) + bytes(0x18) + utf16z("m0000")
+
+    # Lista 2: PARTS_PARAM_ST
+    while len(data) % 8:
+        data += b"\0"
+    head_p = len(data)
+    data += bytes(16 + 8 * 2)
+    nome_p = len(data)
+    data += utf16z("PARTS_PARAM_ST")
+    while len(data) % 8:
+        data += b"\0"
+    p_entry = len(data)
+    p_rec = bytearray(0x40)
+    struct.pack_into("<q", p_rec, 0, 0x40)
+    p_rec[8] = 0  # tipo 0 (mapa)
+    struct.pack_into("<h", p_rec, 0x0C, 0)
+    struct.pack_into("<3f", p_rec, 0x10, 10.0, 20.0, 30.0)
+    struct.pack_into("<3f", p_rec, 0x1C, 0.0, 45.0, 0.0)
+    struct.pack_into("<3f", p_rec, 0x28, 1.0, 1.0, 1.0)
+    data += p_rec + utf16z("m0000_0000")
+
+    struct.pack_into("<ii", data, head_m, 5, 2)
+    struct.pack_into("<q", data, head_m + 8, nome_m)
+    struct.pack_into("<2q", data, head_m + 16, m_entry, head_p)
+
+    struct.pack_into("<ii", data, head_p, 5, 2)
+    struct.pack_into("<q", data, head_p + 8, nome_p)
+    struct.pack_into("<2q", data, head_p + 16, p_entry, 0)
+
+    insts, mods = ds2cena.msb_instancias(bytes(data))
+    assert len(insts) == 1
+    assert "m0000" in mods
+    assert insts[0]["modelo"] == "m0000"
+    assert insts[0]["pos"] == [10.0, 20.0, 30.0]
+    assert insts[0]["rot"] == [0.0, 45.0, 0.0]
+
+
+def test_extrair_cena_majula():
+    from pathlib import Path
+    import json
+    p = Path.home() / ".buildsmith" / "cache" / "ds2" / "cena" / "m10_04_00_00" / "cena.json"
+    if not p.exists():
+        pytest.skip("Cache de Majula não gerado ainda")
+    cena = json.loads(p.read_text("utf-8"))
+    assert cena["versao"] == 1
+    assert cena["area"] == "m10_04_00_00"
+    assert len(cena["instancias"]) > 0
+    assert len(cena["modelos"]) > 0
+    assert len(cena["alturas"]) > 0
+
+
