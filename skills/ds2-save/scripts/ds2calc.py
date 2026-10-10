@@ -107,6 +107,83 @@ def load(path=None) -> Calc:
     return Calc(ds2regulation.load_params(path))
 
 
+# Anéis que somam atributo (wiki: Ring of Knowledge = +5 INT). Só entra aqui o que tem fonte.
+ANEIS_ATRIBUTO = {"Ring of Knowledge": {"INT": 5}}
+# Wiki (Dark Pyromancy Flame): o fogo cai com o personagem humano; só com Hollowing máximo (10 mortes) passa a
+# Pyromancy Flame, por 3-4%. A calculadora não modela o Hollowing: o AR que ela mostra para essa chama não vale.
+ESCALA_HOLLOWING = {"Dark Pyromancy Flame": "escala com Hollowing: humano fica abaixo da Pyromancy Flame (wiki)"}
+
+
+def atributos_efetivos(snapshot: dict) -> tuple[dict, list[str]]:
+    stats = dict(snapshot["stats"])
+    fontes = []
+    for ring in snapshot["equipped"].get("rings", []):
+        for stat, valor in ANEIS_ATRIBUTO.get(ring["name"], {}).items():
+            stats[stat] += valor
+            fontes.append(f"{ring['name']} +{valor} {stat}")
+    return stats, fontes
+
+
+def sintonia(calc: Calc, snapshot: dict, candidatos=()) -> dict:
+    """Feitiços do save (equipados e no inventário) com o AR em cada catalisador que o jogador tem ou pode pegar.
+
+    candidatos: [(item_id, nome, nível)] de catalisadores que ele ainda não tem. Catalisador que escala com
+    Hollowing aparece com aviso e nunca é o "melhor".
+    """
+    stats, fontes = atributos_efetivos(snapshot)
+    equipados = {h["id"] for h in snapshot["equipped"].get("hands", {}).values()}
+    cats = {}
+    for item in snapshot["inventory"]:
+        nivel = item.get("upgrade") or 0
+        catalisador = item.get("category") == "SpellTools" or item["name"].endswith("Pyromancy Flame")  # escudo com magia não conjura
+        if (not catalisador or item["id"] not in calc.weapons
+                or (item["id"] in cats and cats[item["id"]]["nivel"] >= nivel)):
+            continue
+        try:
+            ar = calc.catalyst_ar(item["id"], nivel, stats)
+        except SaveError:
+            continue
+        if ar:
+            cats[item["id"]] = {"id": item["id"], "nome": item["name"], "nivel": nivel, "tem": True,
+                                "equipado": item["id"] in equipados, "ar": ar}
+    for item_id, nome, nivel in candidatos:
+        if item_id not in cats:
+            cats[item_id] = {"id": item_id, "nome": nome, "nivel": nivel, "tem": False, "equipado": False,
+                             "ar": calc.catalyst_ar(item_id, nivel, stats)}
+    for c in cats.values():
+        c["menu"] = sum(c["ar"].values())
+        if c["nome"] in ESCALA_HOLLOWING:
+            c["aviso"] = ESCALA_HOLLOWING[c["nome"]]
+    equip_spells = [s["id"] for s in snapshot["equipped"].get("spells", [])]
+    nomes = {s["id"]: s["name"] for s in snapshot["equipped"].get("spells", [])}
+    nomes.update({i["id"]: i["name"] for i in snapshot["inventory"] if i["id"] in calc.spells})
+    feiticos = []
+    for spell_id in dict.fromkeys(equip_spells + [i for i in nomes if i not in equip_spells]):
+        if spell_id not in calc.spells:
+            continue
+        por_cat = []
+        for c in cats.values():
+            r = calc.spell(spell_id, c["ar"], stats)
+            if r["ar"] is not None:
+                por_cat.append((r["ar"], c))
+        base = calc.spell(spell_id, {}, stats)
+        atual = max(((ar, c) for ar, c in por_cat if c["equipado"]), default=(None, None), key=lambda x: x[0] or 0)
+        validos = [(ar, c) for ar, c in por_cat if "aviso" not in c]
+        melhor = max(validos, default=(None, None), key=lambda x: x[0])
+        feiticos.append({
+            "id": spell_id, "nome": nomes[spell_id], "equipado": equip_spells.count(spell_id), "elemento": base["elemento"],
+            "slots": base["slots"], "usos": base["usos"], "req_int": base["req_int"], "req_fth": base["req_fth"],
+            "requisito_ok": base["requisito_ok"], "ar_atual": atual[0],
+            "catalisador_atual": atual[1]["nome"] if atual[1] else None,
+            "melhor": {"ar": melhor[0], "catalisador": melhor[1]["nome"], "nivel": melhor[1]["nivel"],
+                       "tem": melhor[1]["tem"]} if melhor[1] else None})
+    usados = sum(f["slots"] * f["equipado"] for f in feiticos)
+    return {"atributos": {k: stats[k] for k in ("INT", "FTH", "ATN")}, "aneis": fontes,
+            "slots": {**calc.attunement(stats["ATN"]), "usados": usados},
+            "catalisadores": sorted(cats.values(), key=lambda c: (not c["equipado"], not c["tem"], -c["menu"])),
+            "feiticos": feiticos}
+
+
 def _item_id(value: str) -> tuple[int, str]:
     if value.isdigit():
         return int(value), value
@@ -136,7 +213,27 @@ def main(argv=None) -> int:
         p.add_argument("--int", dest="int_", type=int, required=True)
         p.add_argument("--fth", type=int, required=True)
         p.add_argument("--jogo")
+    sin = sub.add_parser("sintonia", help="feitiços equipados e do inventário comparados entre catalisadores (lê o snapshot)")
+    sin.add_argument("--snapshot", required=True, help="saída do ds2save.py snapshot")
+    sin.add_argument("--candidato", action="append", default=[], help='catalisador que ainda não tem: "Lizard Staff:0"')
+    sin.add_argument("--jogo")
     args = parser.parse_args(argv)
+    if args.cmd == "sintonia":
+        try:
+            calc = load(ds2regulation.find_regulation(args.jogo))
+            with open(args.snapshot, encoding="utf-8") as fh:
+                snap = json.load(fh)
+            candidatos = []
+            for texto in args.candidato:
+                nome, _, nivel = texto.rpartition(":") if ":" in texto else (texto, "", "0")
+                item_id, item_nome = _item_id(nome.strip())
+                candidatos.append((item_id, item_nome, int(nivel or 0)))
+            out = sintonia(calc, snap, candidatos)
+        except (SaveError, OSError, ValueError) as err:
+            print(json.dumps({"error": str(err)}, ensure_ascii=False))
+            return 1
+        print(json.dumps(out, ensure_ascii=False, indent=2))
+        return 0
     if args.cmd in ("catalisador", "feitico"):
         try:
             calc = load(ds2regulation.find_regulation(args.jogo))
