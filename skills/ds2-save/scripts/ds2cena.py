@@ -196,3 +196,106 @@ def ler_flver(data: bytes) -> dict:
         "materiais": mats,
         "malhas": malhas_saida,
     }
+
+
+def limitar_dds(dds: bytes, max_dim: int = 512) -> bytes:
+    """Limita resolução do DDS para max_dim descartando mipmaps maiores."""
+    if len(dds) < 128 or dds[:4] != b"DDS ":
+        return dds
+    h, w = struct.unpack_from("<2I", dds, 12)
+    mips = struct.unpack_from("<I", dds, 28)[0]
+    fourcc = dds[84:88].decode("ascii", errors="replace")
+    if fourcc not in ("DXT1", "DXT3", "DXT5") or (w <= max_dim and h <= max_dim):
+        return dds
+    block_bytes = 8 if fourcc == "DXT1" else 16
+    cw, ch = w, h
+    k = 0
+    skipped = 0
+    while (cw > max_dim or ch > max_dim) and (mips - k) > 1:
+        bw = max(1, (cw + 3) // 4)
+        bh = max(1, (ch + 3) // 4)
+        skipped += bw * bh * block_bytes
+        cw = max(1, cw >> 1)
+        ch = max(1, ch >> 1)
+        k += 1
+    if k == 0 or 128 + skipped > len(dds):
+        return dds
+    head = bytearray(dds[:128])
+    struct.pack_into("<2I", head, 12, ch, cw)
+    struct.pack_into("<I", head, 28, max(1, mips - k))
+    lin_size = max(1, (cw + 3) // 4) * max(1, (ch + 3) // 4) * block_bytes
+    struct.pack_into("<I", head, 20, lin_size)
+    return bytes(head) + dds[128 + skipped:]
+
+
+def extrair_dds_tpf(tpf_bytes: bytes, max_dim: int = 512) -> dict[str, bytes]:
+    """Extrai arquivos DDS contidos em um contêiner TPF."""
+    if len(tpf_bytes) < 0x20 or tpf_bytes[:4] != b"TPF\0":
+        raise CenaError("contêiner TPF inválido")
+    n_tex = struct.unpack_from("<i", tpf_bytes, 0x08)[0]
+    out = {}
+    for i in range(n_tex):
+        o = 0x10 + i * 0x14
+        tex_off, tex_sz = struct.unpack_from("<2I", tpf_bytes, o)
+        name_off = struct.unpack_from("<I", tpf_bytes, o + 0x0C)[0]
+        end = tpf_bytes.find(b"\0", name_off)
+        nome = tpf_bytes[name_off:end].decode("latin-1", errors="replace") if end != -1 else f"tex_{i}"
+        stem = nome.rsplit(".", 1)[0].lower()
+        dds_raw = tpf_bytes[tex_off:tex_off + tex_sz]
+        out[stem] = limitar_dds(dds_raw, max_dim=max_dim)
+    return out
+
+
+def empacotar_geometria(modelos_flver: dict[str, dict]) -> tuple[bytes, dict]:
+    """Empacota vértices, normais, uvs e índices de múltiplos FLVERs num buffer contíguo geo.bin."""
+    geo_buffer = bytearray()
+    catalogo = {"modelos": {}}
+
+    for nome_modelo, modelo in modelos_flver.items():
+        malhas_info = []
+        for m in modelo.get("malhas", []):
+            verts = m.get("vertices", [])
+            norms = m.get("normais", [])
+            uvs = m.get("uvs", [])
+            indices = m.get("indices", [])
+            if not verts or not indices:
+                continue
+
+            if len(geo_buffer) % 4 != 0:
+                geo_buffer += bytes(4 - (len(geo_buffer) % 4))
+            v_off = len(geo_buffer)
+            v_count = len(verts)
+
+            # Vértices interleaved: pos(3f), norm(3f), uv(2f) = 8 floats = 32 bytes
+            for vi in range(v_count):
+                x, y, z = verts[vi]
+                nx, ny, nz = norms[vi] if vi < len(norms) else (0.0, 1.0, 0.0)
+                u, v = uvs[vi] if vi < len(uvs) else (0.0, 0.0)
+                geo_buffer += struct.pack("<8f", x, y, z, nx, ny, nz, u, v)
+
+            max_idx = max(indices) if indices else 0
+            idx_size = 2 if max_idx < 65536 else 4
+            if len(geo_buffer) % idx_size != 0:
+                geo_buffer += bytes(idx_size - (len(geo_buffer) % idx_size))
+            i_off = len(geo_buffer)
+            i_count = len(indices)
+
+            fmt = f"<{i_count}H" if idx_size == 2 else f"<{i_count}I"
+            geo_buffer += struct.pack(fmt, *indices)
+
+            malhas_info.append({
+                "mat": m.get("material_idx", 0),
+                "tex": m.get("textura_difusa"),
+                "v_off": v_off,
+                "v_count": v_count,
+                "i_off": i_off,
+                "i_count": i_count,
+                "idx_size": idx_size,
+            })
+
+        catalogo["modelos"][nome_modelo] = {
+            "bb": modelo.get("bb"),
+            "malhas": malhas_info,
+        }
+
+    return bytes(geo_buffer), catalogo
