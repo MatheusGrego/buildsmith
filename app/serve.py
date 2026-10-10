@@ -314,6 +314,13 @@ class Handler(BaseHTTPRequestHandler):
             return self._rota()
         if len(parts) == 4 and parts[:2] == ["api", "ds2"] and parts[3] == "posicao" and SEGMENT.match(parts[2]):
             return self._posicao(parts[2])
+        if len(parts) == 5 and parts[:3] == ["api", "ds2", "cena"] and AREA_OK.match(parts[3]):
+            if parts[4] == "cena.json":
+                return self._cena_json(parts[3])
+            if parts[4] == "geo.bin":
+                return self._cena_geo(parts[3])
+        if len(parts) == 6 and parts[:3] == ["api", "ds2", "cena"] and AREA_OK.match(parts[3]) and parts[4] == "tex" and SEGMENT.match(parts[5]):
+            return self._cena_tex(parts[3], parts[5])
         if len(parts) == 4 and parts[0] == "api" and parts[3] == "retrato" and all(SEGMENT.match(p) for p in parts[1:3]):
             foto = retrato.achar(self.home, parts[1], parts[2])
             if foto is None:
@@ -348,6 +355,8 @@ class Handler(BaseHTTPRequestHandler):
             self._json({"ok": True})
             threading.Thread(target=self.server.shutdown, daemon=True).start()
             return None
+        if parts and len(parts) == 5 and parts[:3] == ["api", "ds2", "cena"] and AREA_OK.match(parts[3]) and parts[4] == "extrair":
+            return self._cena_extrair(parts[3])
         if (parts is None or len(parts) != 5 or parts[0] != "api" or parts[3] not in COLLECTIONS
                 or not all(SEGMENT.match(p) for p in (parts[1], parts[2], parts[4]))):
             return self._send(400, b"caminho invalido", "text/plain; charset=utf-8")
@@ -361,6 +370,43 @@ class Handler(BaseHTTPRequestHandler):
             if abertos >= MAX_FILA:
                 return self._send(409, b"fila cheia", "text/plain; charset=utf-8")
         return self._json(write_doc(self.home, jogo, personagem, collection, doc_id, data))
+
+    def _cena_dir(self, area: str) -> Path:
+        return (Path(self.home) / "cache" / "ds2" / "cena" / area).resolve()
+
+    def _cena_json(self, area: str):
+        import ds2cena
+        area_dir = self._cena_dir(area)
+        cena_path = area_dir / "cena.json"
+        if not cena_path.is_file():
+            try:
+                ds2cena.extrair_cena(area=area, cache_dir=self.home / "cache" / "ds2")
+            except Exception as err:
+                return self._json({"erro": f"cena nao encontrada ({type(err).__name__})"}, status=404)
+        if not cena_path.is_file():
+            return self._send(404, b"cena nao encontrada", "text/plain; charset=utf-8")
+        return self._send(200, cena_path.read_bytes(), "application/json; charset=utf-8")
+
+    def _cena_geo(self, area: str):
+        geo_path = self._cena_dir(area) / "geo.bin"
+        if not geo_path.is_file():
+            return self._send(404, b"geometria nao encontrada", "text/plain; charset=utf-8")
+        return self._send(200, geo_path.read_bytes(), "application/octet-stream")
+
+    def _cena_tex(self, area: str, arquivo: str):
+        tex_dir = (self._cena_dir(area) / "tex").resolve()
+        target = (tex_dir / arquivo).resolve()
+        if tex_dir not in target.parents or not target.is_file():
+            return self._send(404, b"textura nao encontrada", "text/plain; charset=utf-8")
+        return self._send(200, target.read_bytes(), "application/octet-stream")
+
+    def _cena_extrair(self, area: str):
+        import ds2cena
+        try:
+            cena = ds2cena.extrair_cena(area=area, cache_dir=self.home / "cache" / "ds2", forcar=True)
+            return self._json({"ok": True, "area": area, "instancias": len(cena.get("instancias", []))})
+        except Exception as err:
+            return self._json({"erro": f"falha na extracao ({type(err).__name__}: {err})"}, status=500)
 
     def _posicao(self, personagem: str):
         try:
