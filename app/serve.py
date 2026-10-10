@@ -51,7 +51,7 @@ MAX_FILA = 50  # pedidos na_fila ao mesmo tempo
 TEXTO_MAX = 160
 CONTROLE = re.compile(r"[\x00-\x1f\x7f-\x9f\u2028\u2029]")
 # A página só fala com o próprio servidor: fetch e imagens de fora ficam bloqueados (nada sai por um XSS).
-CSP_PAGINA = ("default-src 'none'; script-src 'unsafe-inline'; style-src 'unsafe-inline' https://fonts.googleapis.com; "
+CSP_PAGINA = ("default-src 'none'; script-src 'unsafe-inline' 'self'; style-src 'unsafe-inline' https://fonts.googleapis.com; "
               "font-src https://fonts.gstatic.com; img-src 'self' data:; connect-src 'self'; base-uri 'none'; "
               "form-action 'none'; frame-ancestors 'none'")
 CSP_INICIO = "default-src 'none'; style-src 'unsafe-inline'; base-uri 'none'; form-action 'none'; frame-ancestors 'none'"
