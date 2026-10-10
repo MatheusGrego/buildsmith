@@ -260,3 +260,16 @@ def test_page_enemies_carry_game_data_and_the_player_area_comes_in(tmp_path):
     assert doc["tipos_inimigo"]["152002"] == {"nome": None, "wiki": None, "prova": None, "n": 1, "hp": 450, "almas": 180,
                                               "drops": ["Royal Greatsword"]}
     assert "mapas/m10_04_00_00.json" in out["files"]
+
+
+def test_player_area_uses_the_plan_character_name(monkeypatch):
+    prepare_page._ds2mapa()
+    import ds2save
+    vistos = []
+    monkeypatch.setattr(ds2save, "find_save", lambda: "save")
+    monkeypatch.setattr(ds2save, "slot_by_name", lambda save, nome: vistos.append(nome) or 2)
+    monkeypatch.setattr(ds2save, "posicao", lambda save, slot: {"area": "m10_04_00_00", "pos": [0, 0, 0]})
+    assert prepare_page.area_do_jogador_real(example()) == "m10_04_00_00"
+    assert vistos == [example()["personagem"]["name"]]
+    monkeypatch.setattr(ds2save, "find_save", lambda: (_ for _ in ()).throw(ds2save.SaveError("sem save")))
+    assert prepare_page.area_do_jogador_real(example()) is None

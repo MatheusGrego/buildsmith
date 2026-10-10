@@ -2,12 +2,16 @@
   // Mapa geral da área (estilo The Division): vista de cima por andar, zonas de fogueira em sequência, chefes, NPCs,
   // todos os itens com ícone, grade, régua, zoom e arrastar, filtros, painel "Rota da área" e "Ver no mapa".
   // Dados: mapas/indice.json + mapas/<area>.json, gerados por script a partir dos arquivos do jogo.
+  // Pelo servidor local (/p/<jogo>/<personagem>/): você no mapa (posição do save) e "Rota até aqui" pelo chão.
   const AREA_OK = /^m\d\d_\d\d_\d\d_\d\d$/;
   const ICONE_OK = /^icons\/[A-Za-z0-9._-]+$/;
   const esc = (v) => String(v ?? "").replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
   const linkSeguro = (url) => { try { const u = new URL(String(url ?? "")); return u.protocol === "https:" ? u.href : ""; } catch (e) { return ""; } };
   const fmt = new Intl.NumberFormat("pt-BR", { maximumFractionDigits: 0 });
   const NS = "http://www.w3.org/2000/svg";
+  const PAG = typeof location === "undefined" ? null : location.pathname.match(/^\/p\/(ds2)\/([a-z0-9._-]+)\/?/);
+  const API = PAG ? `/api/${PAG[1]}` : null;
+  const POLL_MS = 5000;
   const MIN_S = 0.6, MAX_S = 40;  // pixels por metro
   const FILTROS = [["zonas", "Zonas"], ["fogueiras", "Fogueiras"], ["chefes", "Chefes"], ["npcs", "NPCs"],
                    ["plano", "Itens do plano"], ["outros", "Outros itens"], ["inimigos", "Inimigos"]];
@@ -32,6 +36,12 @@
     if (andarSel === "todos" || andarPonto == null || andarPonto === andarSel) return "cheio";
     return "apagado";
   }
+  // Andar de uma altura: o que contém a altura (com 1 m de folga), senão o de altura mais perto.
+  function andarDe(andares, y) {
+    if (!andares || !andares.length) return null;
+    const a = andares.find((x) => y >= x.min - 1 && y <= x.max + 1);
+    return (a || andares.reduce((m, x) => (Math.abs(x.altura - y) < Math.abs(m.altura - y) ? x : m), andares[0])).id;
+  }
   // Escala sequencial da zona 1 (dourado claro) até a última (brasa escura).
   function corZona(ordem, total) {
     const t = total > 1 ? (ordem - 1) / (total - 1) : 0;
@@ -41,7 +51,7 @@
 
   // ---- estado ------------------------------------------------------------------------------------
   const st = { raiz: null, plano: null, indice: null, docs: {}, doc: null, andar: "todos", vista: null, rota: null,
-               destaque: null, zonaSel: null, pop: null,
+               destaque: null, zonaSel: null, pop: null, jogador: null, tipoSel: null, poll: null,
                filtros: { zonas: true, fogueiras: true, chefes: true, npcs: true, plano: true, outros: true, inimigos: false } };
 
   function carregar(url) {
@@ -56,6 +66,8 @@
   const corDe = (ordem) => corZona(ordem, zonas().length);
   const nomeZona = (ordem) => { const z = zonas().find((x) => x.ordem === ordem); return z ? `${z.ordem} · ${z.nome}` : "—"; };
   const nomeAndar = (id) => { const a = st.doc.planta.andares.find((x) => x.id === id); return a ? metros(a.altura) : "—"; };
+  const nomeArea = (area) => { const a = (st.indice || []).find((x) => x.area === area); return a ? a.nome : "outra área"; };
+  const tipoInimigo = (t) => (st.doc && st.doc.tipos_inimigo && st.doc.tipos_inimigo[t]) || {};
 
   function montar(raiz, plano) {
     if (st.raiz === raiz) return Promise.resolve();
@@ -71,6 +83,7 @@
       <div class="mp-corpo">
         <div class="mp-tela" tabindex="0" aria-label="Mapa: arraste para mover, roda ou pinça para zoom">
           <svg class="mp-svg" xmlns="${NS}"><g class="mp-mundo"><g class="mp-grade"></g><g class="mp-chao"></g><g class="mp-zonas-chao"></g><g class="mp-paredes"></g><g class="mp-trilha"></g></g><g class="mp-pontos"></g></svg>
+          <div class="mp-info"><p class="mp-onde" hidden></p><p class="mp-rota-info" role="status" hidden></p></div>
           <div class="mp-zoom"><button type="button" data-zoom="mais" aria-label="Aproximar">+</button><button type="button" data-zoom="menos" aria-label="Afastar">&#8722;</button><button type="button" data-zoom="tudo" aria-label="Ver a área inteira">&#9635;</button></div>
           <div class="mp-regua"><span class="mp-regua-barra"></span><span class="mp-regua-txt"></span></div>
           <div class="mp-pop" hidden></div>
@@ -84,7 +97,7 @@
           <p class="mp-nota"></p>
         </aside>
       </div>
-      <p class="mp-leg"><span class="mp-k mp-k-zonas"></span>zona 1 → última <span class="mp-k mp-k-chefe"></span>chefe <span class="mp-k mp-k-npc"></span>NPC <span class="mp-k mp-k-plano"></span>do plano <span class="mp-k mp-k-outro"></span>item <span class="mp-k mp-k-rota"></span>rota <span class="mp-aviso">rota pelo chão; portas e alavancas não aparecem</span></p>
+      <p class="mp-leg"><span class="mp-k mp-k-zonas"></span>zona 1 → última <span class="mp-k mp-k-chefe"></span>chefe <span class="mp-k mp-k-npc"></span>NPC <span class="mp-k mp-k-plano"></span>do plano <span class="mp-k mp-k-outro"></span>item <span class="mp-k mp-k-rota"></span>rota <span class="mp-k mp-k-eu"></span>você <span class="mp-k mp-k-inimigo"></span>inimigo <span class="mp-aviso">rota pelo chão; portas e alavancas não aparecem</span></p>
     </div>`;
     ligar(raiz);
     return carregar("mapas/indice.json").then((indice) => {
@@ -92,8 +105,104 @@
       const sel = raiz.querySelector(".mp-area");
       sel.innerHTML = st.indice.map((a) => `<option value="${esc(a.area)}">${esc(a.nome)}${a.itens_plano ? ` (${a.itens_plano})` : ""}</option>`).join("");
       if (!st.indice.length) return vazio("Mapa indisponível. Rode o /buildsmith:build com o DS2 SotFS instalado.");
-      return abrirArea(st.indice[0].area);
+      if (API && !st.poll) {
+        st.poll = setInterval(() => { if (!document.hidden && st.raiz.offsetParent !== null) buscarJogador(); }, POLL_MS);
+      }
+      return abrirArea(st.indice[0].area).then(() => (API ? buscarJogador() : null));
     });
+  }
+
+  // Você no mapa: posição da última gravação do save (o servidor relê o arquivo quando ele muda).
+  async function buscarJogador() {
+    let j = null;
+    try {
+      const r = await fetch(`${API}/${PAG[2]}/posicao`, { cache: "no-store" });
+      j = r.ok ? await r.json() : null;
+    } catch (e) { j = null; }
+    const novo = j && AREA_OK.test(j.area) && Array.isArray(j.pos) && j.pos.length === 3 ? j : null;
+    const chave = (x) => (x ? `${x.area}|${x.pos.join(",")}` : "");
+    if (chave(novo) === chave(st.jogador)) return;
+    st.jogador = novo;
+    mostrarOnde();
+    atualizar();
+  }
+
+  function mostrarOnde() {
+    const el = st.raiz.querySelector(".mp-onde");
+    const j = st.jogador;
+    if (!j) { el.hidden = true; return; }
+    const aqui = (st.indice || []).some((a) => a.area === j.area);
+    el.innerHTML = aqui
+      ? `<span class="mp-eu-k"></span>Você: ${esc(nomeArea(j.area))} <button type="button" class="pesq" data-eu>Onde estou</button>`
+      : `<span class="mp-eu-k"></span>Você está fora das áreas deste mapa. Atualize o plano para incluir a área atual.`;
+    el.hidden = false;
+  }
+
+  async function irParaJogador() {
+    const j = st.jogador;
+    if (!j) return;
+    if (!st.doc || st.doc.area !== j.area) await abrirArea(j.area);
+    if (!st.doc || st.doc.area !== j.area) return;
+    const tela = st.raiz.querySelector(".mp-tela");
+    st.andar = andarDe(st.doc.planta.andares, j.pos[1]) ?? "todos";
+    st.vista = { ...ajustar(caixa([[j.pos[0], j.pos[2]]]), tela.clientWidth, tela.clientHeight, 40) };
+    desenharChao();
+    atualizar();
+  }
+
+  function statusRota(texto) {
+    const el = st.raiz.querySelector(".mp-rota-info");
+    el.innerHTML = texto ? `${texto} <button type="button" class="mp-x" data-limpar-rota aria-label="Apagar rota">&#10005;</button>` : "";
+    el.hidden = !texto;
+  }
+
+  // "Rota até aqui": daqui (você na mesma área) ou da fogueira da zona do alvo (você em outra área).
+  async function rotaAte() {
+    const alvo = alvoDoPop();
+    if (!alvo || !API) return;
+    const area = st.doc.area;
+    let de, nomeDe, aviso;
+    if (st.jogador && st.jogador.area === area) {
+      de = st.jogador.pos; nomeDe = "Você"; aviso = "Daqui:";
+    } else {
+      const fog = st.doc.fogueiras.find((f) => alvo.zona != null && f.zona === alvo.zona) || null;
+      if (!fog) { statusRota("Sem fogueira na zona do alvo para começar a rota."); return; }
+      de = fog.pos; nomeDe = fog.nome;
+      aviso = st.jogador ? `Você está em ${esc(nomeArea(st.jogador.area))}: viaje até a fogueira ${esc(fog.nome)} e siga a rota.`
+        : `Da fogueira ${esc(fog.nome)}:`;
+    }
+    statusRota("Calculando a rota…");
+    let j = null;
+    try {
+      const q = `area=${area}&de=${de.join(",")}&ate=${alvo.pos.join(",")}`;
+      const r = await fetch(`${API}/rota?${q}`, { cache: "no-store" });
+      j = r.ok ? await r.json() : null;
+    } catch (e) { j = null; }
+    if (!j) { statusRota("O servidor local não respondeu."); return; }
+    if (!j.rota) { statusRota("Não achei caminho pelo chão até aí (pode ter queda, porta, elevador ou alavanca no meio)."); return; }
+    const andares = st.doc.planta.andares;
+    st.rota = { area, trechos: [j.rota.pontos], metros: j.rota.metros,
+                pontos: [{ n: 1, pos: de, andar: andarDe(andares, de[1]), nome: nomeDe },
+                         { n: 2, pos: alvo.pos, andar: alvo.andar ?? andarDe(andares, alvo.pos[1]), nome: alvo.nome }] };
+    const tela = st.raiz.querySelector(".mp-tela");
+    st.vista = ajustar(caixa(j.rota.pontos.map((p) => [p[0], p[2]])), tela.clientWidth, tela.clientHeight, 30);
+    fecharPop();
+    desenharChao();
+    atualizar();
+    statusRota(`${aviso} ${fmt.format(j.rota.metros)} m pelo chão até ${esc(alvo.nome)}.`);
+  }
+
+  function alvoDoPop() {
+    if (!st.pop) return null;
+    const { tipo, i } = st.pop;
+    const p = (listaDe(tipo) || [])[i];
+    if (!p) return null;
+    const nome = tipo === "item" ? (p.itens[0] ? p.itens[0].nome : "item") : tipo === "inimigo" ? (tipoInimigo(p.tipo).nome || "inimigo") : p.nome;
+    return { pos: p.pos, andar: p.andar, zona: p.zona, nome };
+  }
+
+  function listaDe(tipo) {
+    return { npc: st.doc.npcs, chefe: st.doc.chefes, item: st.doc.itens, inimigo: st.doc.inimigos, fogueira: st.doc.fogueiras }[tipo];
   }
 
   function vazio(texto) {
@@ -111,8 +220,10 @@
     st.rota = opcoes.rota || null;
     st.destaque = opcoes.destaque || null;
     st.zonaSel = null;
+    st.tipoSel = null;
     st.pop = null;
     st.raiz.querySelector(".mp-pop").hidden = true;
+    statusRota("");
     const andares = d.planta.andares;
     const contagem = (id) => d.itens.filter((p) => p.andar === id && (p.plano || (st.destaque && p.item_id === st.destaque))).length;
     st.andar = opcoes.andar != null ? opcoes.andar
@@ -209,9 +320,12 @@
         : `<text class="mp-ini" x="${f1(sx)}" y="${f1(sy + 4)}">${esc(titulo.trim().replace(/^the\s+/i, "").charAt(0))}</text>`;
       return `<g class="${classe}" ${dados} tabindex="0"><title>${esc(titulo)}</title><circle class="mp-fundo" cx="${f1(sx)}" cy="${f1(sy)}" r="${f1(r)}"/>${img}<circle class="mp-aro" cx="${f1(sx)}" cy="${f1(sy)}" r="${f1(r)}"/>${rotulo ? `<text class="mp-rotulo" x="${f1(sx)}" y="${f1(sy + r + 12)}">${esc(rotulo)}</text>` : ""}</g>`;
     };
-    if (st.filtros.inimigos) st.doc.inimigos.forEach((e) => {
+    if (st.filtros.inimigos) st.doc.inimigos.forEach((e, i) => {
       const [sx, sy] = paraTela(e.pos[0], e.pos[2]);
-      if (dentro(sx, sy)) partes.push(`<circle class="mp-inimigo ${estadoAndar(e.andar, st.andar)}" cx="${f1(sx)}" cy="${f1(sy)}" r="3"/>`);
+      if (!dentro(sx, sy)) return;
+      const t = tipoInimigo(e.tipo), igual = st.tipoSel && e.tipo === st.tipoSel;
+      const classe = `mp-inimigo ${estadoAndar(e.andar, st.andar)}${igual ? " mp-inimigo-sel" : st.tipoSel ? " mp-inimigo-fora" : ""}`;
+      partes.push(`<circle class="${classe}" data-tipo="inimigo" data-i="${i}" tabindex="0" cx="${f1(sx)}" cy="${f1(sy)}" r="${igual ? 6 : 4.5}"><title>${esc(t.nome || "Inimigo (nome não confirmado)")}</title></circle>`);
     });
     st.doc.itens.forEach((p, i) => {
       const destaque = p.plano || (st.destaque && p.item_id === st.destaque);
@@ -224,12 +338,12 @@
       const nome = p.itens[0] ? `${p.itens[0].nome}${p.itens[0].qtd > 1 ? ` ×${p.itens[0].qtd}` : ""}${p.itens.length > 1 ? ` +${p.itens.length - 1}` : ""}` : "";
       partes.push(`<g class="mp-item ${destaque ? "mp-do-plano" : ""} ${estado}" data-tipo="item" data-i="${i}" tabindex="0"><title>${esc(nome)}</title><rect class="mp-moldura" x="${f1(sx - t / 2 - 2)}" y="${f1(sy - t / 2 - 2)}" width="${t + 4}" height="${t + 4}" rx="3"/>${img}${nomes && estado === "cheio" ? `<text class="mp-rotulo" x="${f1(sx)}" y="${f1(sy + t / 2 + 12)}">${esc(nome)}</text>` : ""}</g>`);
     });
-    if (st.filtros.fogueiras) st.doc.fogueiras.forEach((f) => {
+    if (st.filtros.fogueiras) st.doc.fogueiras.forEach((f, i) => {
       const [sx, sy] = paraTela(f.pos[0], f.pos[2]);
       if (!dentro(sx, sy)) return;
       const estado = estadoAndar(f.andar, st.andar), t = estado === "cheio" ? tam + 2 : Math.max(12, tam - 8);
       const badge = f.zona && st.filtros.zonas ? `<circle class="mp-badge" cx="${f1(sx - t / 2)}" cy="${f1(sy - t / 2)}" r="8" fill="${corDe(f.zona)}"/><text class="mp-badge-n" x="${f1(sx - t / 2)}" y="${f1(sy - t / 2 + 3.5)}">${f.zona}</text>` : "";
-      partes.push(`<g class="mp-fog ${estado}"><title>${esc(f.zona ? nomeZona(f.zona) : f.nome)}</title><image href="icons/fogueira.png" x="${f1(sx - t / 2)}" y="${f1(sy - t / 2)}" width="${t}" height="${t}"/>${badge}${(nomes || v.s >= 1.5) && estado === "cheio" ? `<text class="mp-rotulo mp-rotulo-fog" x="${f1(sx)}" y="${f1(sy - t / 2 - 5)}">${esc(f.zona ? `${f.zona} · ${f.nome}` : f.nome)}</text>` : ""}</g>`);
+      partes.push(`<g class="mp-fog ${estado}" data-tipo="fogueira" data-i="${i}" tabindex="0"><title>${esc(f.zona ? nomeZona(f.zona) : f.nome)}</title><image href="icons/fogueira.png" x="${f1(sx - t / 2)}" y="${f1(sy - t / 2)}" width="${t}" height="${t}"/>${badge}${(nomes || v.s >= 1.5) && estado === "cheio" ? `<text class="mp-rotulo mp-rotulo-fog" x="${f1(sx)}" y="${f1(sy - t / 2 - 5)}">${esc(f.zona ? `${f.zona} · ${f.nome}` : f.nome)}</text>` : ""}</g>`);
     });
     if (st.filtros.npcs) (st.doc.npcs || []).forEach((n, i) => {
       const [sx, sy] = paraTela(n.pos[0], n.pos[2]);
@@ -251,6 +365,12 @@
       const [sx, sy] = paraTela(p.pos[0], p.pos[2]);
       partes.push(`<g class="mp-passo ${estadoAndar(p.andar, st.andar)}"><title>${esc(`${p.n}. ${p.nome}`)}</title><circle cx="${f1(sx)}" cy="${f1(sy - tam / 2 - 10)}" r="9"/><text x="${f1(sx)}" y="${f1(sy - tam / 2 - 6.5)}">${p.n}</text></g>`);
     });
+    const j = st.jogador;
+    if (j && j.area === st.doc.area) {
+      const [sx, sy] = paraTela(j.pos[0], j.pos[2]);
+      const estado = estadoAndar(andarDe(st.doc.planta.andares, j.pos[1]), st.andar);
+      partes.push(`<g class="mp-eu ${estado}"><title>Você (última gravação do save)</title><circle class="mp-eu-pulso" cx="${f1(sx)}" cy="${f1(sy)}" r="9"/><circle class="mp-eu-ponto" cx="${f1(sx)}" cy="${f1(sy)}" r="7"/><text class="mp-rotulo mp-rotulo-eu" x="${f1(sx)}" y="${f1(sy - 13)}">Você</text></g>`);
+    }
     st.raiz.querySelector(".mp-pontos").innerHTML = `<defs>${clips.join("")}</defs>${partes.join("")}`;
     const m = regua(v.s);
     st.raiz.querySelector(".mp-regua-barra").style.width = `${Math.round(m * v.s)}px`;
@@ -260,8 +380,7 @@
 
   function mostrarPop(tipo, i) {
     const pop = st.raiz.querySelector(".mp-pop");
-    const lista = tipo === "npc" ? st.doc.npcs : tipo === "chefe" ? st.doc.chefes : st.doc.itens;
-    const p = (lista || [])[i];
+    const p = (listaDe(tipo) || [])[i];
     if (!p) { pop.hidden = true; st.pop = null; return; }
     st.pop = { tipo, i };
     const meta = `<p class="mp-pop-meta">andar ${nomeAndar(p.andar)}${p.zona ? ` · zona ${esc(nomeZona(p.zona))}` : ""}</p>`;
@@ -272,10 +391,23 @@
     } else if (tipo === "chefe") {
       const link = linkSeguro(p.wiki);
       corpo = `<p class="mp-pop-tit">${esc(p.nome)}</p><p><span class="estado${p.estado === "derrotado" ? " feito" : ""}">${p.estado === "derrotado" ? "Derrotado" : p.estado === "vivo" ? "Vivo" : "—"}</span></p>${link ? `<a href="${esc(link)}" target="_blank" rel="noopener noreferrer">página na wiki</a>` : ""}`;
+    } else if (tipo === "inimigo") {
+      const t = tipoInimigo(p.tipo), link = linkSeguro(t.wiki);
+      const numeros = [t.hp != null ? `HP ${fmt.format(t.hp)}` : "", t.almas ? `${fmt.format(t.almas)} almas` : ""].filter(Boolean).join(" · ");
+      corpo = `<p class="mp-pop-tit">${t.nome ? esc(t.nome) : "Inimigo"}</p>
+        ${t.nome ? "" : '<p class="mp-pop-sub">Nome não confirmado: o jogo não guarda nome de inimigo comum e a wiki não bateu com um só.</p>'}
+        ${numeros ? `<p class="mp-pop-sub">${numeros} <span class="mp-fonte">(jogo)</span></p>` : ""}
+        ${t.drops && t.drops.length ? `<p class="mp-pop-sub">Drops (jogo): ${esc(t.drops.join(", "))}</p>` : ""}
+        ${t.prova ? `<p class="mp-prova">Nome pela wiki: ${esc(t.prova)}</p>` : ""}
+        <p><button type="button" class="pesq" data-iguais="${esc(p.tipo)}">${st.tipoSel === p.tipo ? "Parar de destacar" : `Destacar os ${fmt.format(t.n || 1)} iguais`}</button></p>
+        ${link ? `<a href="${esc(link)}" target="_blank" rel="noopener noreferrer">página na wiki</a>` : ""}`;
+    } else if (tipo === "fogueira") {
+      corpo = `<p class="mp-pop-tit">${esc(p.nome)}</p><p class="mp-pop-sub">Fogueira${p.zona ? ` da zona ${esc(nomeZona(p.zona))}` : ""}</p>`;
     } else {
       corpo = `<ul>${p.itens.map((it) => `<li>${esc(it.nome)}${it.qtd > 1 ? ` <span class="mp-qtd">×${it.qtd}</span>` : ""}</li>`).join("")}</ul>${p.item_id ? `<a class="req-link" href="#item-${esc(p.item_id)}" data-goto-item="${esc(p.item_id)}">ver em Onde pegar</a>` : ""}`;
     }
-    pop.innerHTML = `<button type="button" class="mp-pop-x" aria-label="Fechar">&#10005;</button>${corpo}${meta}`;
+    const rota = API ? '<p><button type="button" class="pesq" data-rota-ate>Rota até aqui</button></p>' : "";
+    pop.innerHTML = `<button type="button" class="mp-pop-x" aria-label="Fechar">&#10005;</button>${corpo}${rota}${meta}`;
     const [sx, sy] = paraTela(p.pos[0], p.pos[2]);
     const tela = st.raiz.querySelector(".mp-tela");
     pop.style.left = `${Math.min(Math.max(8, sx + 16), tela.clientWidth - 240)}px`;
@@ -329,7 +461,7 @@
       zoom(ev.deltaY < 0 ? 1.2 : 1 / 1.2, ev.clientX - r.left, ev.clientY - r.top);
     }, { passive: false });
     tela.addEventListener("pointerdown", (ev) => {
-      if (ev.target.closest(".mp-zoom, .mp-pop")) return;
+      if (ev.target.closest(".mp-zoom, .mp-pop, .mp-info")) return;
       toques.set(ev.pointerId, [ev.clientX, ev.clientY]);
       tela.setPointerCapture(ev.pointerId);
       moveu = false;
@@ -396,6 +528,15 @@
         atualizar();
         return;
       }
+      if (ev.target.closest("[data-rota-ate]")) { rotaAte(); return; }
+      if (ev.target.closest("[data-eu]")) { irParaJogador(); return; }
+      if (ev.target.closest("[data-limpar-rota]")) { st.rota = null; statusRota(""); desenharChao(); atualizar(); return; }
+      const iguais = ev.target.closest("[data-iguais]");
+      if (iguais) {
+        st.tipoSel = st.tipoSel === iguais.dataset.iguais ? null : iguais.dataset.iguais;
+        atualizar();
+        return;
+      }
       if (ev.target.closest(".mp-pop-x")) fecharPop();
     });
     raiz.querySelector(".mp-area").addEventListener("change", (ev) => abrirArea(ev.target.value));
@@ -424,5 +565,5 @@
     }
   }
 
-  window.buildsmithMapa = { montar, ver, _teste: { caixa, ajustar, regua, tamanhoIcone, estadoAndar, corZona } };
+  window.buildsmithMapa = { montar, ver, _teste: { caixa, ajustar, regua, tamanhoIcone, estadoAndar, corZona, andarDe } };
 })();

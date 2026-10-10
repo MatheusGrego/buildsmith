@@ -365,7 +365,7 @@ a.agora2-t:hover { text-decoration: underline; }
 @media (max-width: 760px) { .sel-fundo { padding: 8px; } .sel { padding: 14px; } .sel-ret { height: 180px; } }
 
 /* Mapa geral (seção Mapa): vista de cima, andares, grade, régua, ícones */
-.mp { display: grid; gap: 10px; min-width: 0; }
+.mp { --jogador: #e5484d; display: grid; gap: 10px; min-width: 0; }
 .mp-barra { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 16px; }
 .mp-campo { display: inline-flex; align-items: center; gap: 8px; font: 13px var(--display); color: var(--text); letter-spacing: 0.04em; }
 .mp-area { background: var(--th); color: var(--head); border: 1px solid var(--line); padding: 5px 8px; font: 14px var(--body); }
@@ -411,10 +411,25 @@ a.agora2-t:hover { text-decoration: underline; }
 .mp-chefe.derrotado .mp-aro { stroke: var(--dim); filter: none; }
 .mp-npc:hover .mp-aro, .mp-npc:focus-visible .mp-aro, .mp-chefe:hover .mp-aro, .mp-chefe:focus-visible .mp-aro { stroke: var(--head); }
 .mp-ini { font: 12px var(--display); fill: var(--head); text-anchor: middle; pointer-events: none; }
-.mp-inimigo { fill: var(--neg); stroke: #0c0c0d; stroke-width: 1; }
+.mp-inimigo { fill: var(--neg); stroke: #0c0c0d; stroke-width: 1; cursor: pointer; }
+.mp-inimigo:hover, .mp-inimigo:focus-visible { stroke: var(--head); stroke-width: 2; outline: none; }
+.mp-inimigo.mp-inimigo-sel { fill: var(--pos); stroke: #0c0c0d; }
+.mp-inimigo.mp-inimigo-fora { opacity: 0.25; }
+.mp-fog { cursor: pointer; }
+.mp-eu-ponto { fill: var(--jogador); stroke: #fff; stroke-width: 2; }
+.mp-eu-pulso { fill: none; stroke: var(--jogador); stroke-width: 2; transform-box: fill-box; transform-origin: center; animation: mp-pulso 1.8s ease-out infinite; }
+.mp-rotulo-eu { fill: #ffb3b5; font-weight: 700; }
+@keyframes mp-pulso { from { transform: scale(1); opacity: 0.9; } to { transform: scale(2.6); opacity: 0; } }
 .mp-passo circle { fill: var(--th); stroke: var(--ember); stroke-width: 2; }
 .mp-passo text { font: 11px var(--display); fill: var(--head); text-anchor: middle; }
 .mp-zoom { position: absolute; right: 10px; top: 10px; display: grid; gap: 4px; }
+.mp-info { position: absolute; left: 10px; top: 10px; right: 56px; display: grid; gap: 6px; justify-items: start; pointer-events: none; }
+.mp-info p { pointer-events: auto; margin: 0; max-width: 100%; padding: 4px 8px; background: rgba(17, 17, 17, 0.88); border: 1px solid var(--line); font-size: 13px; color: var(--head); display: flex; flex-wrap: wrap; align-items: center; gap: 6px 8px; }
+.mp-info p[hidden] { display: none; }
+.mp-info .pesq { margin: 0; padding: 1px 8px; font-size: 12px; }
+.mp-eu-k { display: inline-block; width: 10px; height: 10px; border-radius: 50%; background: var(--jogador); border: 1.5px solid #fff; }
+.mp-x { background: none; border: 0; color: var(--text); cursor: pointer; padding: 0 2px; }
+.mp-x:focus-visible { outline: 2px solid var(--link); }
 .mp-zoom button { width: 32px; height: 32px; background: var(--th); color: var(--head); border: 1px solid var(--line); font: 18px/1 var(--body); cursor: pointer; }
 .mp-zoom button:hover { border-color: var(--link); }
 .mp-zoom button:focus-visible { outline: 2px solid var(--link); outline-offset: 1px; }
@@ -428,6 +443,9 @@ a.agora2-t:hover { text-decoration: underline; }
 .mp-pop p { margin: 0 0 4px; }
 .mp-pop-tit { font: 15px var(--display); color: var(--head); }
 .mp-pop-sub { font-size: 12px; color: var(--text); }
+.mp-pop .pesq { margin: 2px 0; padding: 2px 10px; font-size: 12px; }
+.mp-fonte { color: var(--dim); }
+.mp-prova { font-size: 11px; color: var(--dim); font-style: italic; }
 .mp-qtd { color: var(--pos); }
 .mp-vazio { position: absolute; inset: 0; display: grid; place-items: center; padding: 16px; text-align: center; color: var(--text); font-style: italic; }
 .mp-vazio[hidden] { display: none; }
@@ -458,6 +476,8 @@ a.agora2-t:hover { text-decoration: underline; }
 .mp-k-chefe { border: 2px solid var(--ember); border-radius: 50%; }
 .mp-k-npc { border: 2px solid var(--pos); border-radius: 50%; background: #1a1917; }
 .mp-k-rota { height: 0; border-top: 3px dashed var(--ember); }
+.mp-k-eu { background: var(--jogador); border: 1.5px solid #fff; border-radius: 50%; }
+.mp-k-inimigo { width: 8px; height: 8px; background: var(--neg); border-radius: 50%; }
 .mp-aviso { margin-left: auto; color: var(--dim); font-style: italic; }
 @media (max-width: 760px) {
   .mp-corpo { grid-template-columns: minmax(0, 1fr); }
@@ -467,4 +487,4 @@ a.agora2-t:hover { text-decoration: underline; }
   .mp-andares { order: -1; }
   .mp-aviso { margin-left: 0; }
 }
-@media (prefers-reduced-motion: reduce) { .mp-rota { filter: none; } }
+@media (prefers-reduced-motion: reduce) { .mp-rota { filter: none; } .mp-eu-pulso { animation: none; opacity: 0.5; } }

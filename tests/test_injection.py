@@ -311,6 +311,8 @@ console.log(JSON.stringify({
   regua: [t.regua(1), t.regua(10)], icone: [t.tamanhoIcone(0.6), t.tamanhoIcone(40)],
   andar: [t.estadoAndar(2, 2), t.estadoAndar(1, 2), t.estadoAndar(1, "todos"), t.estadoAndar(null, 2)],
   zona: [t.corZona(1, 7), t.corZona(7, 7), t.corZona(1, 1)],
+  andarDe: [t.andarDe([{id: 0, altura: -78, min: -80, max: -75}, {id: 2, altura: 0, min: -1, max: 3}], 0.5),
+          t.andarDe([{id: 0, altura: -78, min: -80, max: -75}, {id: 2, altura: 0, min: -1, max: 3}], -60), t.andarDe([], 1)],
 }));
 ''', encoding="utf-8")
     out = subprocess.run(["node", str(script), str(ROOT / "skills/build-page/template/mapa.js")],
@@ -321,3 +323,4 @@ console.log(JSON.stringify({
     assert r["regua"] == [100, 10] and r["icone"] == [16, 34]
     assert r["andar"] == ["cheio", "apagado", "cheio", "cheio"]
     assert r["zona"] == ["hsl(46 62% 62%)", "hsl(8 72% 38%)", "hsl(46 62% 62%)"]  # zona 1 dourada, última brasa
+    assert r["andarDe"] == [2, 0, None]  # dentro do andar; fora de todos vai para a altura mais perto
