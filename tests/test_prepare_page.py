@@ -273,3 +273,39 @@ def test_player_area_uses_the_plan_character_name(monkeypatch):
     assert vistos == [example()["personagem"]["name"]]
     monkeypatch.setattr(ds2save, "find_save", lambda: (_ for _ in ()).throw(ds2save.SaveError("sem save")))
     assert prepare_page.area_do_jogador_real(example()) is None
+
+
+class FetchComEscala(FakeFetch):
+    def __call__(self, url):
+        if url.endswith("/Uchigatana"):
+            self.calls.append(url)
+            linha = "".join(f"<td>{c}</td>" for c in ["Regular", 115, "-", "-", "-", "-", "150 20", "E", "B", "-", "-", "-", "-", "-"])
+            return (f'<div class="infobox"><img src="https://static0.fextralifeimages.com/file/darksouls2/x/Uchigatana.png"></div>'
+                    f'<div id="mw-content-text"><table><tr>{linha}</tr></table></div>').encode()
+        return super().__call__(url)
+
+
+def test_equipment_gets_icons_and_scaling_letters(tmp_path):
+    plano = example()
+    plano["equipamento"] = {
+        "slots": [{"slot": "R1", "grupo": "direita", "muda": False,
+                   "agora": {"nome": "Uchigatana", "tipo": "arma", "nivel": 5, "ar": 218},
+                   "plano": {"nome": "Uchigatana", "tipo": "arma", "nivel": 6, "ar": 231}},
+                  {"slot": "peito", "grupo": "armadura", "muda": True, "agora": None,
+                   "plano": {"nome": "Black Witch Robe", "categoria": "Armor"}}],
+        "sintonia": {"agora": [{"nome": "Soul Arrow", "ar": 174}], "plano": []},
+        "resumo": [{"dado": "R1", "agora": "Uchigatana +5 · AR 218", "depois": "Uchigatana +6 · AR 231", "efeito": "+13", "sinal": "+"}]}
+    run(tmp_path, FetchComEscala(), plano)
+    eq = final_plan(tmp_path)["equipamento"]
+    uchi = eq["slots"][0]["agora"]
+    assert uchi["escala"] == {"STR": "E", "DEX": "B"} and uchi["escala_nivel"] == 0
+    assert uchi["escala_fonte"].endswith("/Uchigatana") and uchi["icone"].startswith("icons/")
+    assert eq["slots"][1]["plano"]["icone"].startswith("icons/") and "escala" not in eq["slots"][1]["plano"]  # armadura: sem letra
+    assert eq["sintonia"]["agora"][0]["icone"].startswith("icons/")
+
+
+def test_invalid_equipment_block_is_rejected(tmp_path):
+    plano = example()
+    plano["equipamento"] = {"slots": [{"slot": "R1", "grupo": "pé", "agora": None, "plano": None}]}
+    with pytest.raises(ValueError, match="equipamento.slots"):
+        run(tmp_path, FakeFetch(), plano)
