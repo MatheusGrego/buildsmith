@@ -1,0 +1,135 @@
+import struct
+import zlib
+import pytest
+
+import ds2cena
+
+
+def build_dcx(data: bytes) -> bytes:
+    compressed = zlib.compress(data)
+    dca_header = b"DCA\x00" + struct.pack(">I", 8)
+    dflt_header = b"DFLT\x00\x00\x00\x00"
+    dcx_head = b"DCX\x00\x00\x01\x00\x00\x00\x00\x00\x18\x00\x00\x00$" + dflt_header + dca_header
+    return dcx_head + compressed
+
+
+def build_bhf4(files: dict[str, bytes]) -> tuple[bytes, bytes]:
+    """Constrói um par (bhd, bdt) de binder BHF4 para testes."""
+    count = len(files)
+    esz = 0x24
+    bhd = bytearray(0x40 + count * esz)
+    bhd[:4] = b"BHF4"
+    struct.pack_into("<i", bhd, 0x0C, count)
+    struct.pack_into("<q", bhd, 0x20, esz)
+    bhd[0x30] = 0  # unicode = False (latin-1)
+
+    bdt = bytearray()
+    names_data = bytearray()
+
+    for i, (name, content) in enumerate(files.items()):
+        h = 0x40 + i * esz
+        offset = len(bdt)
+        size = len(content)
+        bdt += content
+
+        name_off = 0x40 + count * esz + len(names_data)
+        names_data += name.encode("latin-1") + b"\0"
+
+        struct.pack_into("<q", bhd, h + 0x08, size)
+        struct.pack_into("<I", bhd, h + 0x18, offset)
+        struct.pack_into("<I", bhd, h + esz - 4, name_off)
+
+    return bytes(bhd + names_data), bytes(bdt)
+
+
+def test_ler_bhf4():
+    raw_flv = b"FLVER\x00fake_model"
+    files = {
+        "m10_04_00_00\\m0000.flv.dcx": build_dcx(raw_flv),
+        "m10_04_00_00\\m0000.mte.dcx": build_dcx(b"material_info"),
+        "m10_04_00_00\\other.txt": b"texto normal",
+    }
+    bhd, bdt = build_bhf4(files)
+
+    lidos = ds2cena.ler_bhf4(bhd, bdt, filtro_ext=".flv")
+    assert "m0000.flv" in lidos
+    assert lidos["m0000.flv"] == raw_flv
+    assert "other.txt" not in lidos
+    assert "m0000.mte" not in lidos
+
+
+def test_ler_flver_minimo():
+    """Valida decodificação de um FLVER2 com 1 malha, 3 vértices e 1 triângulo."""
+    data_off = 0x400
+    n_dummy, n_mat, n_bone, n_mesh, n_vb, n_fs, n_lay, n_tex = 0, 1, 0, 1, 1, 1, 1, 1
+
+    header = bytearray(data_off)
+    header[:6] = b"FLVER\x00"
+    header[6:8] = b"L\x00"
+    struct.pack_into("<8i", header, 0x08, 0x20010, data_off, 0, n_dummy, n_mat, n_bone, n_mesh, n_vb)
+    header[0x48] = 16  # idx_size
+    header[0x49] = 1   # unicode = True
+    struct.pack_into("<3i", header, 0x50, n_fs, n_lay, n_tex)
+
+    # Strings em 0x200+
+    str_off = 0x200
+    header[str_off:str_off + 12] = "Pedra\0".encode("utf-16-le")
+    tex_path_off = 0x220
+    header[tex_path_off:tex_path_off + 24] = "pedra_d.tga\0".encode("utf-16-le")
+    tex_type_off = 0x260
+    header[tex_type_off:tex_type_off + 34] = "g_DiffuseTexture\0".encode("utf-16-le")
+
+    off = 0x80
+    struct.pack_into("<4i", header, off, str_off, str_off, 1, 0) # Mat 0
+    off += n_mat * 0x20
+
+    # Mesh 0: mat=0, fs_count=1, vb_count=1
+    fs_idx_off = 0x180
+    vb_idx_off = 0x184
+    struct.pack_into("<i", header, off + 4, 0)
+    struct.pack_into("<4i", header, off + 0x20, 1, fs_idx_off, 1, vb_idx_off)
+    struct.pack_into("<i", header, fs_idx_off, 0)
+    struct.pack_into("<i", header, vb_idx_off, 0)
+    off += n_mesh * 0x30
+
+    # Faceset 0
+    ioff = 0
+    icount = 3
+    struct.pack_into("<I??", header, off, 0, False, True)
+    struct.pack_into("<5i", header, off + 8, icount, ioff, 6, 0, 16)
+    off += n_fs * 0x20
+
+    # VB 0: lay=0, vsize=24, vcount=3, boff=8
+    boff = 8
+    struct.pack_into("<8i", header, off, 0, 0, 24, 3, 0, 0, 72, boff)
+    off += n_vb * 0x20
+
+    # Layout 0
+    moff = 0x140
+    struct.pack_into("<4i", header, off, 3, 0, 0, moff)
+    off += n_lay * 0x10
+
+    # Texture 0
+    struct.pack_into("<2i", header, off, tex_path_off, tex_type_off)
+
+    # Layout 0 members at moff (3 membros de 20 bytes = 60 bytes, 0x140..0x17C)
+    struct.pack_into("<5i", header, moff, 0, 0, 2, 0, 0)          # Pos
+    struct.pack_into("<5i", header, moff + 0x14, 0, 12, 17, 3, 0)    # Normal
+    struct.pack_into("<5i", header, moff + 0x28, 0, 16, 21, 5, 0)    # UV
+
+    # Dados (data_off): 6 bytes índices + 2 bytes alinhamento (boff = 8), depois 3 vértices
+    body = bytearray()
+    body += struct.pack("<3H", 0, 1, 2) + bytes(2)
+    v0 = struct.pack("<3f", 1.0, 2.0, 3.0) + bytes([127, 254, 127, 0]) + struct.pack("<2e", 0.0, 1.0) + bytes(4)
+    v1 = struct.pack("<3f", 4.0, 5.0, 6.0) + bytes([127, 254, 127, 0]) + struct.pack("<2e", 0.5, 0.5) + bytes(4)
+    v2 = struct.pack("<3f", 7.0, 8.0, 9.0) + bytes([127, 254, 127, 0]) + struct.pack("<2e", 1.0, 0.0) + bytes(4)
+    body += v0 + v1 + v2
+
+    res = ds2cena.ler_flver(bytes(header + body))
+    assert len(res["malhas"]) == 1
+    m = res["malhas"][0]
+    assert m["indices"] == [0, 1, 2]
+    assert len(m["vertices"]) == 3
+    assert m["vertices"][0] == (1.0, 2.0, 3.0)
+    assert m["uvs"][0] == pytest.approx((0.0, 1.0), abs=1e-3)
+    assert m["textura_difusa"] == "pedra_d"
