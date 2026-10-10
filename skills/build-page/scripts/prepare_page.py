@@ -89,7 +89,7 @@ class IconStore:
         return rel
 
 
-TEMPLATE_JS = ("pagina.js", "mapa.js", "equip.js")
+TEMPLATE_JS = ("pagina.js", "mapa.js", "equip.js", "iso.js")
 DS2_SCRIPTS = ROOT / "skills" / "ds2-save" / "scripts"
 def _ds2mapa():
     if str(DS2_SCRIPTS) not in sys.path:
@@ -255,9 +255,18 @@ def prepare(plano_path, out_dir, jogo: str, cache_root=None, fetch=default_fetch
         store.avisos.append(f"mapa indisponível: {err}")
     (out_dir / "index.html").write_text(montar_index(SKILL_DIR / "template"), encoding="utf-8")
     (out_dir / "plano.json").write_text(json.dumps(plano, ensure_ascii=False, indent=2), encoding="utf-8")
+    vendor_src = SKILL_DIR / "template" / "vendor"
+    vendor_files = {}
+    if vendor_src.is_dir():
+        vendor_dst = out_dir / "vendor"
+        vendor_dst.mkdir(parents=True, exist_ok=True)
+        for vf in vendor_src.glob("*"):
+            if vf.is_file():
+                shutil.copy2(vf, vendor_dst / vf.name)
+                vendor_files[f"vendor/{vf.name}"] = str(vendor_dst / vf.name)
     return {
         "index": str(out_dir / "index.html"),
-        "files": {"plano.json": str(out_dir / "plano.json"), **store.files, **map_files},
+        "files": {"plano.json": str(out_dir / "plano.json"), **store.files, **map_files, **vendor_files},
         "avisos": store.avisos,
     }
 

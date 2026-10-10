@@ -309,3 +309,12 @@ def test_invalid_equipment_block_is_rejected(tmp_path):
     plano["equipamento"] = {"slots": [{"slot": "R1", "grupo": "pé", "agora": None, "plano": None}]}
     with pytest.raises(ValueError, match="equipamento.slots"):
         run(tmp_path, FakeFetch(), plano)
+
+
+def test_vendor_assets_are_copied_to_output(tmp_path):
+    out = run(tmp_path, FakeFetch())
+    assert "vendor/three.module.js" in out["files"]
+    assert "vendor/DDSLoader.js" in out["files"]
+    assert Path(out["files"]["vendor/three.module.js"]).is_file()
+    assert Path(out["files"]["vendor/DDSLoader.js"]).is_file()
+
