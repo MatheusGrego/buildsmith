@@ -1,6 +1,6 @@
 # Equipamento: agora × plano, estilo inventário do DS2, com escala de atributo — plano
 
-- Status: em andamento
+- Status: concluído
 - Data: 2026-10-10
 - Decisor: Matheus (pedido no chat: "SCALING, muito importante", "não vi o drip de armadura", "PLANO (equipamento): todo meu equipamento, melhor do plano, pra ver como ficaria, tipo o inventário do DS2")
 - Continua: `2026-10-09-buildsmith-mapa-jogador.md`
@@ -48,4 +48,12 @@
 - [x] **2. `ds2equip.py`**: bloco `equipamento` (agora × plano) com AR, bônus por atributo e sintonia, a partir do snapshot e das trocas. *Pronto quando:* critério de aceite do ds2equip passa em teste (jogo real, pulado sem jogo) e em teste sintético.
 - [x] **3. Escala pela wiki**: parser da tabela de upgrade, cache, `prepare_page` completa as letras. *Pronto quando:* testes do parser e do cache passam.
 - [x] **4. Página**: seção Equipamento estilo inventário, Agora/Plano/Comparar, popover. *Pronto quando:* funções puras testadas no node e conferido no navegador em desktop e 375 px.
-- [ ] **5. Plano real, skill, docs, versão 0.13.0 e publicação**: skill build gera o bloco com `ds2equip`; página do Vorcaro refeita com o visual Black Witch e o Lizard Staff; push; plugin atualizado.
+- [x] **5. Plano real, skill, docs, versão 0.13.0 e publicação**: skill build gera o bloco com `ds2equip`; página do Vorcaro refeita com o visual Black Witch e o Lizard Staff; push; plugin atualizado.
+
+## Resultado (2026-10-10)
+
+- `ds2equip` no save das 02:02: R1 Uchigatana +5 (218: peça 172, FOR +8, DES +37) → +6 (231); R2 Pyromancy Flame +0 (fogo 223) → +2 (268, com INT 35); L1 Sorcerer's Staff +2 (mágico 205: 134 + 70 dos atributos, escala C) → Lizard Staff +0 (242: 110 + 132 dos atributos, escala A); cabeça, mãos e pernas vazias → set Black Witch.
+- Sintonia (a equipada agora): Great Heavy Soul Arrow 225 → 266, Great Soul Arrow 184 → 217, Heavy Soul Arrow 194 → 229, Fire Orb 278 → 335.
+- Letras da wiki: Uchigatana FOR E / DES B, Lizard Staff mágico A, Pyromancy Flame fogo A, Sorcerer's Staff mágico C; escudo e armadura sem tabela de letras ("—").
+- Página: seção Equipamento conferida em desktop e 375 px (sem rolagem lateral); o detalhe não rola mais para o lado.
+- Fora do escopo, anotado: defesa e peso de armadura (falta leitor do ArmorParam).
