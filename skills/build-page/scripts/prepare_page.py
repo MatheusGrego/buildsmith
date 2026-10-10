@@ -165,7 +165,7 @@ def area_do_jogador(plano: dict) -> str | None:
 
     try:
         save = ds2save.find_save()
-        return ds2save.posicao(save, ds2save.slot_by_name(save, plano["personagem"]["nome"]))["area"]
+        return ds2save.posicao(save, ds2save.slot_by_name(save, plano["personagem"]["name"]))["area"]
     except Exception:  # sem save, personagem renomeado: a página sai sem a área do jogador
         return None
 

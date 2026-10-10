@@ -52,5 +52,5 @@
 - [x] **1. Inimigos: ligação, HP e drops**: gerador → `EnemyParam`, HP e drops do jogo, nome pela wiki só quando bate. *Pronto quando:* Ruin Sentinel e Stray Hound saem com nome e HP da wiki na Lost Bastille e o teste cobre "não confirmado".
 - [x] **2. Posição do jogador no save**: mapa e posição por slot, CLI. *Pronto quando:* teste sintético e teste do save real (pulado sem save) passam.
 - [x] **3. Servidor: posição e rota ao vivo**: endpoints locais, rota de posição para posição. *Pronto quando:* testes do `serve` cobrem posição, rota e pedido de fora recusado.
-- [ ] **4. Página**: jogador vermelho, área dele no mapa, inimigos clicáveis, "Rota até aqui". *Pronto quando:* funções puras testadas no node e conferido no navegador em desktop e 375 px.
+- [x] **4. Página**: jogador vermelho, área dele no mapa, inimigos clicáveis, "Rota até aqui". *Pronto quando:* funções puras testadas no node e conferido no navegador em desktop e 375 px.
 - [ ] **5. Docs, versão 0.12.0 e publicação**: skills, design system, README, página real refeita, push, plugin atualizado.
