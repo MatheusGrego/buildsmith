@@ -67,6 +67,33 @@ class Calc:
         return math.floor((base + bonus) * row["mult_fisico"] / 100)
 
 
+    def physical_parts(self, item_id: int, level: int, stats: dict) -> dict[str, int]:
+        """Quanto do AR físico vem da arma e quanto vem de cada atributo (a soma pode diferir 1 do AR pelo arredondamento)."""
+        row = self.reinforce[self.weapons[item_id]["reinforce_id"]]
+        mult = row["mult_fisico"] / 100
+        base = row["dano_fisico"] + (row["dano_fisico_max"] - row["dano_fisico"]) * level / max(row["nivel_max"], 1)
+        out = {"base": math.floor(base * mult)}
+        for stat, kind, key in (("STR", 0, "bonus_str"), ("DEX", 1, "bonus_dex")):
+            valor = self._scaling(row["stats_affect_id"], level, kind) * self.stat_bonus[max(1, min(99, stats[stat]))][key]
+            if valor:
+                out[stat] = math.floor(valor * mult)
+        return out
+
+    def catalyst_parts(self, item_id: int, level: int, stats: dict) -> dict[str, dict[str, int]]:
+        """Por elemento: quanto vem do catalisador e quanto vem dos atributos (INT, FÉ ou os dois)."""
+        row = self.reinforce[self.weapons[item_id]["reinforce_id"]]
+        lines = bonus_rows(stats)
+        out = {}
+        for element, kind in ELEMENTOS.items():
+            mult = row[f"mult_{element}"] / 100
+            if not mult:
+                continue
+            low, high = row[f"dano_{element}"], row[f"dano_{element}_max"]
+            base = low + (high - low) * level / max(row["nivel_max"], 1)
+            bonus = self._scaling(row["stats_affect_id"], level, kind) * self.stat_bonus[lines[element]][f"bonus_{element}"]
+            out[element] = {"base": math.floor(base * mult), "atributos": math.floor(bonus * mult)}
+        return out
+
     def catalyst_ar(self, item_id: int, level: int, stats: dict) -> dict[str, int]:
         """AR por elemento de um catalisador (só os elementos que ele tem)."""
         if item_id not in self.weapons:
