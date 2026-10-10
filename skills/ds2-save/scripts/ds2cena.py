@@ -1,10 +1,13 @@
 #!/usr/bin/env python3
 """Extrator de cena 3D do DS2 SotFS (modelos FLVER2, texturas DDS e instâncias MSB)."""
+import json
 import os
 import struct
+import time
 from pathlib import Path
 
 import ds2arquivos
+import ds2mapa
 
 CENA_VERSAO = 1
 
@@ -299,3 +302,171 @@ def empacotar_geometria(modelos_flver: dict[str, dict]) -> tuple[bytes, dict]:
         }
 
     return bytes(geo_buffer), catalogo
+
+
+def msb_instancias(msb_bytes: bytes) -> tuple[list[dict], set[str]]:
+    """Extrai modelos e instâncias de peças de mapa do MSB."""
+    listas = ds2mapa._listas_msb(msb_bytes)
+    modelos_msb = []
+    for e in listas.get("MODEL_PARAM_ST", []):
+        nome = _wstr(msb_bytes, e + struct.unpack_from("<q", msb_bytes, e)[0])
+        modelos_msb.append(nome)
+
+    instancias = []
+    modelos_usados = set()
+    for e in listas.get("PARTS_PARAM_ST", []):
+        tipo = msb_bytes[e + 8]
+        if tipo == 0:  # Peça de mapa
+            nome = _wstr(msb_bytes, e + struct.unpack_from("<q", msb_bytes, e)[0])
+            m_idx = struct.unpack_from("<h", msb_bytes, e + 0x0C)[0]
+            pos = list(struct.unpack_from("<3f", msb_bytes, e + 0x10))
+            rot = list(struct.unpack_from("<3f", msb_bytes, e + 0x1C))
+            esc = list(struct.unpack_from("<3f", msb_bytes, e + 0x28))
+            mod_nome = modelos_msb[m_idx] if 0 <= m_idx < len(modelos_msb) else "?"
+            modelos_usados.add(mod_nome.lower())
+            instancias.append({
+                "nome": nome,
+                "modelo": mod_nome,
+                "pos": [round(c, 2) for c in pos],
+                "rot": [round(c, 2) for c in rot],
+                "esc": [round(c, 2) for c in esc],
+            })
+
+    return instancias, modelos_usados
+
+
+def extrair_cena(game_dir=None, area: str = "m10_04_00_00", cache_dir=None, forcar: bool = False, progresso_callback=None) -> dict:
+    """Extrai cena 3D completa (geometria, texturas e instâncias) para cache."""
+    game_dir = game_dir or ds2arquivos.game_dir_padrao()
+    cache_base = Path(cache_dir) if cache_dir else (Path.home() / ".buildsmith" / "cache" / "ds2")
+    area_dir = cache_base / "cena" / area
+    cena_json_path = area_dir / "cena.json"
+    geo_bin_path = area_dir / "geo.bin"
+
+    if not forcar and cena_json_path.exists() and geo_bin_path.exists():
+        try:
+            dados = json.loads(cena_json_path.read_text("utf-8"))
+            if dados.get("versao") == CENA_VERSAO:
+                return dados
+        except Exception:
+            pass
+
+    if progresso_callback:
+        progresso_callback("Lendo MSB e modelos...", 0.1)
+
+    arq = ds2arquivos.Arquivo(game_dir, "GameData")
+    msb_bytes = arq.ler(f"/map/{area}/{area}.msb")
+    instancias, modelos_usados = msb_instancias(msb_bytes)
+
+    if progresso_callback:
+        progresso_callback(f"Extraindo {len(modelos_usados)} modelos FLVER...", 0.3)
+
+    bhd_m = arq.ler(f"/model/map/{area}.mapbhd")
+    bdt_m = arq.ler(f"/model/map/{area}.mapbdt")
+    flvs_raw = ler_bhf4(bhd_m, bdt_m, ".flv")
+
+    modelos_decod = {}
+    tex_necessarias = set()
+    for k, data in flvs_raw.items():
+        stem = k.rsplit(".", 1)[0].lower()
+        if stem in modelos_usados:
+            dec = ler_flver(data)
+            modelos_decod[stem] = dec
+            for m in dec.get("malhas", []):
+                if m.get("textura_difusa"):
+                    tex_necessarias.add(m["textura_difusa"].lower())
+
+    if progresso_callback:
+        progresso_callback(f"Extraindo {len(tex_necessarias)} texturas TPF/DDS...", 0.6)
+
+    t_area = ("t" + area[1:]) if area.startswith("m") else f"t{area}"
+    tex_salvas = {}
+    if arq.tem(f"/model/map/{t_area}.tpfbhd") and arq.tem(f"/model/map/{t_area}.tpfbdt"):
+        bhd_t = arq.ler(f"/model/map/{t_area}.tpfbhd")
+        bdt_t = arq.ler(f"/model/map/{t_area}.tpfbdt")
+        tpfs_raw = ler_bhf4(bhd_t, bdt_t, ".tpf")
+
+        for k, data in tpfs_raw.items():
+            stem = k.rsplit(".", 1)[0].lower()
+            if stem in tex_necessarias:
+                try:
+                    extraidas = extrair_dds_tpf(data, max_dim=512)
+                    tex_salvas.update(extraidas)
+                except Exception:
+                    pass
+
+    if progresso_callback:
+        progresso_callback("Empacotando geometria e salvando...", 0.8)
+
+    geo_bin, catalogo = empacotar_geometria(modelos_decod)
+
+    area_dir.mkdir(parents=True, exist_ok=True)
+    tex_dir = area_dir / "tex"
+    tex_dir.mkdir(exist_ok=True)
+
+    geo_bin_path.write_bytes(geo_bin)
+
+    for stem, dds_data in tex_salvas.items():
+        (tex_dir / f"{stem}.dds").write_bytes(dds_data)
+
+    min_x = min((inst["pos"][0] for inst in instancias), default=-100.0)
+    max_x = max((inst["pos"][0] for inst in instancias), default=100.0)
+    min_y = min((inst["pos"][1] for inst in instancias), default=-100.0)
+    max_y = max((inst["pos"][1] for inst in instancias), default=100.0)
+    min_z = min((inst["pos"][2] for inst in instancias), default=-100.0)
+    max_z = max((inst["pos"][2] for inst in instancias), default=100.0)
+
+    alturas_brutas = sorted(set(round(inst["pos"][1], 1) for inst in instancias))
+    andares = []
+    for h in alturas_brutas:
+        if not andares or h - andares[-1] >= 3.0:
+            andares.append(round(h, 1))
+
+    cena_dados = {
+        "versao": CENA_VERSAO,
+        "area": area,
+        "limites": {
+            "min": [round(min_x - 50.0, 1), round(min_y - 20.0, 1), round(min_z - 50.0, 1)],
+            "max": [round(max_x + 50.0, 1), round(max_y + 20.0, 1), round(max_z + 50.0, 1)],
+        },
+        "alturas": andares,
+        "instancias": instancias,
+        "modelos": catalogo["modelos"],
+        "texturas": sorted([f"{t}.dds" for t in tex_salvas.keys()]),
+    }
+
+    cena_json_path.write_text(json.dumps(cena_dados, indent=2, ensure_ascii=False), encoding="utf-8")
+
+    if progresso_callback:
+        progresso_callback("Concluído!", 1.0)
+
+    return cena_dados
+
+
+def main():
+    import argparse
+    parser = argparse.ArgumentParser(description="Extrator de cena 3D do Dark Souls 2")
+    subparsers = parser.add_subparsers(dest="comando")
+
+    p_ext = subparsers.add_parser("extrair", help="Extrai cena 3D de uma área")
+    p_ext.add_argument("--area", default="m10_04_00_00", help="ID da área (ex: m10_04_00_00)")
+    p_ext.add_argument("--game-dir", default=None, help="Caminho do jogo")
+    p_ext.add_argument("--cache-dir", default=None, help="Caminho do cache")
+    p_ext.add_argument("--forcar", action="store_true", help="Força re-extração mesmo se em cache")
+
+    args = parser.parse_args()
+    if args.comando == "extrair":
+        t0 = time.time()
+        print(f"Extraindo cena 3D para área {args.area}...")
+        cena = extrair_cena(args.game_dir, args.area, args.cache_dir, forcar=args.forcar,
+                            progresso_callback=lambda msg, p: print(f"[{int(p*100):3d}%] {msg}"))
+        dt = time.time() - t0
+        print(f"Extração concluída em {dt:.2f}s!")
+        print(f"Instâncias: {len(cena['instancias'])}, Modelos: {len(cena['modelos'])}, Texturas: {len(cena['texturas'])}, Andares: {len(cena['alturas'])}")
+    else:
+        parser.print_help()
+
+
+if __name__ == "__main__":
+    main()
+
