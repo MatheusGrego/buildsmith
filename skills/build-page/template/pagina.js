@@ -7,7 +7,7 @@
   const DESTAQUE = { mais_cedo: "Mais cedo", mais_rentavel: "Mais rentável" };
   const ESTADO_FEITICO = { equipado: "Equipado", tem: "Tem", sugerido: "Sugerido" };
   const SECOES = [
-    ["Plano", [["agora", "Agora"], ["passos", "Passos"], ["fases", "Fases"]]],
+    ["Plano", [["agora", "Agora"], ["equip", "Equipamento"], ["passos", "Passos"], ["fases", "Fases"]]],
     ["Coletar", [["onde", "Onde pegar"], ["mapa", "Mapa"], ["fila", "Fila"]]],
     ["Combate", [["dano", "Dano"], ["feiticos", "Feitiços"], ["atributos", "Atributos"]]],
     ["Registro", [["ficha", "Ficha"], ["progresso", "Progresso"], ["builds", "Builds"], ["fontes", "Fontes"]]],
@@ -105,7 +105,7 @@
       builds: p.comparacao.length, fontes: p.fontes.length, ficha: p.mudancas.length || null,
     };
     return `<nav class="menu" aria-label="Seções">${SECOES.map(([g, itens]) => `<div class="menu-g"><div class="menu-gt">${g}</div>
-      ${itens.filter(([id]) => id !== "agora" || p.agora).map(([id, l]) => `<button class="menu-i" type="button" data-secao="${id}">${l}${counts[id] ? `<span class="count">${counts[id]}</span>` : id === "fila" ? '<span class="count" id="menu-fila" hidden></span>' : ""}</button>`).join("")}
+      ${itens.filter(([id]) => (id !== "agora" || p.agora) && (id !== "equip" || p.equipamento)).map(([id, l]) => `<button class="menu-i" type="button" data-secao="${id}">${l}${counts[id] ? `<span class="count">${counts[id]}</span>` : id === "fila" ? '<span class="count" id="menu-fila" hidden></span>' : ""}</button>`).join("")}
     </div>`).join("")}</nav>`;
   }
 
@@ -304,14 +304,16 @@
   function render(p) {
     state.plano = p;
     const secoes = {
-      agora: secaoAgora(p), passos: secaoPassos(p), fases: phases(p), onde: secaoOnde(p), fila: queue(),
+      agora: secaoAgora(p), equip: window.buildsmithEquip ? window.buildsmithEquip.html(p) : "", passos: secaoPassos(p), fases: phases(p), onde: secaoOnde(p), fila: queue(),
       mapa: '<section class="mapa-secao"><h2>Mapa<small>chão do jogo, andar por andar</small></h2><div id="mapa-app"></div></section>',
       dano: secaoDano(p), feiticos: spells(p), atributos: stats(p), ficha: sheet(p) + changes(p), progresso: progress(p),
       builds: builds(p), fontes: sources(p),
     };
     if (!p.agora) delete secoes.agora;
+    if (!p.equipamento) delete secoes.equip;
     app.innerHTML = topo(p)
       + `<div class="corpo">${menu(p)}<div class="conteudo" id="conteudo">${Object.entries(secoes).map(([id, html]) => `<div class="secao" data-pane="${id}" hidden>${html}</div>`).join("")}</div></div>`;
+    if (secoes.equip && window.buildsmithEquip) window.buildsmithEquip.ligar(app.querySelector('[data-pane="equip"]'), p);
     let saved = null;
     try { saved = localStorage.getItem(KEY); } catch (e) { saved = null; }
     const pedida = [location.hash.slice(1), saved, p.agora ? "agora" : "passos"].find((id) => id in secoes);

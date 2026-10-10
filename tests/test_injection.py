@@ -324,3 +324,27 @@ console.log(JSON.stringify({
     assert r["andar"] == ["cheio", "apagado", "cheio", "cheio"]
     assert r["zona"] == ["hsl(46 62% 62%)", "hsl(8 72% 38%)", "hsl(46 62% 62%)"]  # zona 1 dourada, última brasa
     assert r["andarDe"] == [2, 0, None]  # dentro do andar; fora de todos vai para a altura mais perto
+
+
+def test_equipment_view_helpers(tmp_path):
+    script = tmp_path / "equip.js"
+    script.write_text(r'''
+global.window = {};
+eval(require("fs").readFileSync(process.argv[2], "utf8"));
+const t = window.buildsmithEquip._teste;
+console.log(JSON.stringify({
+  letras: [t.letras({STR: "E", DEX: "B"}), t.letras({magico: "A", sombrio: "C"}), t.letras(null)],
+  ar: [t.arTexto(218), t.arTexto({magico: 205, sombrio: 166}), t.arTexto(null)],
+  partes: [t.partesTexto({base: 172, STR: 8, DEX: 37}), t.partesTexto({fogo: {base: 125, atributos: 98}})],
+  delta: [t.delta({ar: {magico: 205}}, {ar: {magico: 240}}), t.delta({ar: 218}, {ar: 218}), t.delta(null, {ar: 1})],
+  req: [t.requisitoTexto({INT: 18}), t.requisitoTexto({})],
+}));
+''', encoding="utf-8")
+    out = subprocess.run(["node", str(script), str(ROOT / "skills/build-page/template/equip.js")],
+                         capture_output=True, encoding="utf-8", timeout=20, check=True)
+    r = json.loads(out.stdout)
+    assert r["letras"] == ["FOR E · DES B", "mágico A · sombrio C", "—"]
+    assert r["ar"] == ["218", "mágico 205 · sombrio 166", "—"]
+    assert r["partes"] == ["peça 172 · FOR +8 · DES +37", "fogo: 125 + 98 dos atributos"]
+    assert r["delta"] == [35, 0, None]
+    assert r["req"] == ["INT 18", "—"]

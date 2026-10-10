@@ -47,5 +47,5 @@
 - [x] **1. Slots vazios e equipado do save**: punho e armadura vazia com nome, upgrade do item equipado. *Pronto quando:* teste com o layout do save e o snapshot real mostram "vazio" nesses slots.
 - [x] **2. `ds2equip.py`**: bloco `equipamento` (agora × plano) com AR, bônus por atributo e sintonia, a partir do snapshot e das trocas. *Pronto quando:* critério de aceite do ds2equip passa em teste (jogo real, pulado sem jogo) e em teste sintético.
 - [x] **3. Escala pela wiki**: parser da tabela de upgrade, cache, `prepare_page` completa as letras. *Pronto quando:* testes do parser e do cache passam.
-- [ ] **4. Página**: seção Equipamento estilo inventário, Agora/Plano/Comparar, popover. *Pronto quando:* funções puras testadas no node e conferido no navegador em desktop e 375 px.
+- [x] **4. Página**: seção Equipamento estilo inventário, Agora/Plano/Comparar, popover. *Pronto quando:* funções puras testadas no node e conferido no navegador em desktop e 375 px.
 - [ ] **5. Plano real, skill, docs, versão 0.13.0 e publicação**: skill build gera o bloco com `ds2equip`; página do Vorcaro refeita com o visual Black Witch e o Lizard Staff; push; plugin atualizado.
