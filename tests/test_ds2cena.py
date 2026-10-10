@@ -133,3 +133,80 @@ def test_ler_flver_minimo():
     assert m["vertices"][0] == (1.0, 2.0, 3.0)
     assert m["uvs"][0] == pytest.approx((0.0, 1.0), abs=1e-3)
     assert m["textura_difusa"] == "pedra_d"
+
+
+def test_limitar_dds():
+    def make_dds(w, h, mips, fourcc=b"DXT1"):
+        h_bytes = bytearray(128)
+        h_bytes[:4] = b"DDS "
+        struct.pack_into("<6I", h_bytes, 4, 124, 0x081007, h, w, 0, 1)
+        struct.pack_into("<I", h_bytes, 28, mips)
+        struct.pack_into("<2I", h_bytes, 76, 32, 4)
+        h_bytes[84:88] = fourcc
+        total = 0
+        cw, ch = w, h
+        block = 8 if fourcc == b"DXT1" else 16
+        for _ in range(mips):
+            bw = max(1, (cw + 3) // 4)
+            bh = max(1, (ch + 3) // 4)
+            total += bw * bh * block
+            cw = max(1, cw >> 1)
+            ch = max(1, ch >> 1)
+        return bytes(h_bytes) + bytes(total)
+
+    d = make_dds(1024, 512, 10, b"DXT1")
+    r = ds2cena.limitar_dds(d, 512)
+    nh, nw = struct.unpack_from("<2I", r, 12)
+    nmips = struct.unpack_from("<I", r, 28)[0]
+    assert (nw, nh, nmips) == (512, 256, 9)
+    assert len(r) < len(d)
+
+
+def test_extrair_dds_tpf():
+    dds = b"DDS " + bytes(124)
+    b = bytearray()
+    b += b"TPF\0"
+    b += struct.pack("<3I", len(dds), 1, 0x02)
+    name_bytes = "rocha_d.dds".encode("latin-1") + b"\0"
+    name_off = 0x10 + 0x14
+    data_off = name_off + len(name_bytes)
+    b += struct.pack("<5I", data_off, len(dds), 0, name_off, 0)
+    b += name_bytes
+    b += dds
+
+    out = ds2cena.extrair_dds_tpf(bytes(b))
+    assert "rocha_d" in out
+    assert out["rocha_d"] == dds
+
+
+def test_empacotar_geometria():
+    modelos = {
+        "m0000": {
+            "bb": ((-10.0, 0.0, -10.0), (10.0, 5.0, 10.0)),
+            "malhas": [
+                {
+                    "material_idx": 0,
+                    "textura_difusa": "pedra_d",
+                    "vertices": [(0.0, 1.0, 2.0), (3.0, 4.0, 5.0), (6.0, 7.0, 8.0)],
+                    "normais": [(0.0, 1.0, 0.0), (0.0, 1.0, 0.0), (0.0, 1.0, 0.0)],
+                    "uvs": [(0.0, 0.0), (1.0, 0.0), (1.0, 1.0)],
+                    "indices": [0, 1, 2],
+                }
+            ],
+        }
+    }
+    geo_bin, cat = ds2cena.empacotar_geometria(modelos)
+    assert "m0000" in cat["modelos"]
+    m = cat["modelos"]["m0000"]["malhas"][0]
+    assert m["v_count"] == 3
+    assert m["i_count"] == 3
+    assert m["idx_size"] == 2
+    # Valida bytes de vértices
+    v0_floats = struct.unpack_from("<8f", geo_bin, m["v_off"])
+    assert v0_floats[:3] == (0.0, 1.0, 2.0)
+    assert v0_floats[3:6] == (0.0, 1.0, 0.0)
+    assert v0_floats[6:8] == (0.0, 0.0)
+    # Valida índices
+    inds = struct.unpack_from("<3H", geo_bin, m["i_off"])
+    assert inds == (0, 1, 2)
+
