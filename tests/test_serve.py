@@ -276,3 +276,41 @@ def test_route_and_position_refuse_other_hosts(server_mapa):
     with pytest.raises(urllib.error.HTTPError) as err:
         urllib.request.urlopen(req, timeout=5)
     assert err.value.code == 400
+
+
+def test_cena_json_geo_and_textures(server):
+    base, tmp_path = server
+    area_dir = tmp_path / "cache" / "ds2" / "cena" / "m10_04_00_00"
+    (area_dir / "tex").mkdir(parents=True)
+    (area_dir / "cena.json").write_text(json.dumps({"versao": 1, "area": "m10_04_00_00"}), encoding="utf-8")
+    (area_dir / "geo.bin").write_bytes(b"\x00\x01\x02\x03")
+    (area_dir / "tex" / "pedra_d.dds").write_bytes(b"DDS " + bytes(124))
+
+    # cena.json
+    status, ctype, body = get(f"{base}/api/ds2/cena/m10_04_00_00/cena.json")
+    assert status == 200
+    assert "application/json" in ctype
+    assert json.loads(body)["area"] == "m10_04_00_00"
+
+    # geo.bin
+    status, ctype, body = get(f"{base}/api/ds2/cena/m10_04_00_00/geo.bin")
+    assert status == 200
+    assert ctype == "application/octet-stream"
+    assert body == b"\x00\x01\x02\x03"
+
+    # textura .dds
+    status, ctype, body = get(f"{base}/api/ds2/cena/m10_04_00_00/tex/pedra_d.dds")
+    assert status == 200
+    assert ctype == "application/octet-stream"
+    assert body.startswith(b"DDS ")
+
+    # textura inexistente -> 404
+    with pytest.raises(urllib.error.HTTPError) as err:
+        get(f"{base}/api/ds2/cena/m10_04_00_00/tex/fantasma.dds")
+    assert err.value.code == 404
+
+    # area inexistente -> 404
+    with pytest.raises(urllib.error.HTTPError) as err:
+        get(f"{base}/api/ds2/cena/m99_99_00_00/cena.json")
+    assert err.value.code == 404
+
