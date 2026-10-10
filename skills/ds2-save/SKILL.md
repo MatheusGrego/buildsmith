@@ -14,6 +14,7 @@ Script: `scripts/ds2save.py` nesta pasta. Precisa de Python 3 e `pycryptodome` (
 | `python "<pasta>/scripts/ds2save.py" slots` | personagens do save: slot, nome, nível |
 | `python "<pasta>/scripts/ds2save.py" snapshot [--personagem NOME \| --slot N] [--save CAMINHO]` | ficha completa em JSON |
 | `python "<pasta>/scripts/ds2save.py" levels --from A --to B` | custo de cada nível de A+1 até B e o total |
+| `python "<pasta>/scripts/ds2save.py" posicao --personagem NOME` | mapa e posição do personagem na última gravação do save |
 | `python "<pasta>/scripts/ds2save.py" flags-diff --antes A.json --depois B.json` | flags globais que ligaram/desligaram entre dois snapshots |
 | `python "<pasta>/scripts/ds2calc.py" ar --arma Uchigatana --nivel 5 --str 10 --dex 18` | AR físico da arma pelas regras do jogo (bate com o menu) |
 | `python "<pasta>/scripts/ds2calc.py" catalisador --catalisador "Sorcerer's Staff" --nivel 2 --int 26 --fth 6` | AR por elemento do catalisador; `menu` = número do menu Status (validado: 356, 204) |
@@ -23,7 +24,7 @@ Script: `scripts/ds2save.py` nesta pasta. Precisa de Python 3 e `pycryptodome` (
 | `python "<pasta>/scripts/ds2data.py" custo-upgrade --arma Uchigatana --de 5 --ate 6` | almas e materiais por nível e no total |
 | `python "<pasta>/scripts/ds2data.py" acesso --snapshot S.json` | acesso de cada área: `agora`, `em_breve`, `tarde` |
 | `python "<pasta>/scripts/ds2mapa.py" areas` | mapas do jogo com nome (do texto do próprio jogo), ex. `m10_16_00_00` = The Lost Bastille |
-| `python "<pasta>/scripts/ds2mapa.py" extrair --area m10_16_00_00` | extrai chão, planta limpa por andar (`planta.andares`: altura e polígonos), fogueiras (ID e nome), itens (lote, itens, posição), inimigos, NPCs (nome do jogo) e chefes (flag do BossBattleParam), zonas de fogueira (ordem pela distância a pé desde o início do mapa), cada ponto com o andar e a zona, para `~/.buildsmith/cache/ds2/mapas/`; imprime o resumo |
+| `python "<pasta>/scripts/ds2mapa.py" extrair --area m10_16_00_00` | extrai chão, planta limpa por andar (`planta.andares`: altura e polígonos), fogueiras (ID e nome), itens (lote, itens, posição), inimigos, NPCs (nome do jogo), chefes (flag do BossBattleParam), tipos de inimigo (HP, almas e drops do EnemyParam), zonas de fogueira (ordem pela distância a pé desde o início do mapa), cada ponto com o andar e a zona, para `~/.buildsmith/cache/ds2/mapas/`; imprime o resumo |
 | `python "<pasta>/scripts/ds2mapa.py" onde --item "Fragrant Branch of Yore" [--area m10_16_00_00]` | todos os pontos do jogo com o item (a primeira vez extrai as áreas que faltam) |
 | `python "<pasta>/scripts/ds2mapa.py" rota --area m10_16_00_00 --de fogueira:16675 --ate item:10165010` | caminho pelo chão (navmesh) e metros; não conhece portas, alavancas e quedas |
 

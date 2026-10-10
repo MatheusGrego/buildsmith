@@ -1,6 +1,6 @@
 # Mapa: jogador, rota até o alvo e inimigos com nome — plano
 
-- Status: em andamento
+- Status: concluído
 - Data: 2026-10-09
 - Decisor: Matheus (pedido no chat: clicar no inimigo e ver qual é, mostrar o jogador em vermelho, caminho até a zona ou o item; escolheu "Investigar mais (HP/drops)" para o nome dos inimigos)
 - Continua: `2026-10-09-buildsmith-mapa-zonas.md`
@@ -43,6 +43,7 @@
 
 - `ds2save` lê mapa e posição dos dois personagens do save real e o ponto cai no chão do mapa (< 1 m); teste sintético do offset.
 - Inimigos da Lost Bastille: Ruin Sentinel e Stray Hound com nome e HP batendo com a wiki; os sem confirmação dizem "nome não confirmado"; nenhum nome sem fonte.
+  - **Mudou na investigação:** o HP da wiki não bate sempre com o do jogo (Royal Swordsman: wiki 400, jogo 450/390; Stray Hound: wiki 190, jogo 210), e Ruin Sentinel é chefe (aparece como chefe, não como inimigo). O que bate são **drops e almas**: o critério virou "nome com prova de drops + almas ou lista da área, vencedor único".
 - Servidor: `posicao` e `rota` respondem só a pedido local; rota da posição do (teste) até a fogueira Straid's Cell sai com metros.
 - Página: marcador vermelho no lugar certo, "Rota até aqui" desenha o caminho, popover de inimigo; desktop e 375 px.
 - `python -m pytest -q` verde.
@@ -53,4 +54,11 @@
 - [x] **2. Posição do jogador no save**: mapa e posição por slot, CLI. *Pronto quando:* teste sintético e teste do save real (pulado sem save) passam.
 - [x] **3. Servidor: posição e rota ao vivo**: endpoints locais, rota de posição para posição. *Pronto quando:* testes do `serve` cobrem posição, rota e pedido de fora recusado.
 - [x] **4. Página**: jogador vermelho, área dele no mapa, inimigos clicáveis, "Rota até aqui". *Pronto quando:* funções puras testadas no node e conferido no navegador em desktop e 375 px.
-- [ ] **5. Docs, versão 0.12.0 e publicação**: skills, design system, README, página real refeita, push, plugin atualizado.
+- [x] **5. Docs, versão 0.12.0 e publicação**: skills, design system, README, página real refeita, push, plugin atualizado.
+
+## Resultado (2026-10-09)
+
+- Ligação: `generatorregistparam_<mapa>` (linha = personagem do gerador) → 1º int = linha do EnemyParam; HP +0x28, almas +0xD0 (Royal Swordsman 180 = wiki), drops +0x4C/+0x134 (set Royal Swordsman, set Varangian).
+- Lost Bastille: 15 de 24 tipos com nome e prova (Royal Swordsman, Hollow Varangian, Gaoler, Rupturing Hollow, Stray Hound, Nimble Shadow, Undead Aberration); o resto "nome não confirmado". Fantasmas de NPC (EnemyParam do próprio NPC, ex. 813001 → Felicia the Brave) saem da lista de inimigos.
+- Posição: Vorcaro em Majula (ao lado da The Far Fire), (teste) na Lost Bastille; rota real do (teste) até Straid's Cell: 351 m em 0,05 s.
+- Navegador: "Você" vermelho, Onde estou, popover de inimigo com destaque dos 17 iguais, Rota até aqui (21 m em Majula; 133 m da The Tower Apart quando você está em outra área); 375 px sem rolagem lateral.
