@@ -193,3 +193,14 @@ def test_real_save_position_is_on_a_known_map():
     for s in ds2save.list_slots(path):
         p = ds2save.posicao(path, s["slot"])
         assert re.match(r"^m\d\d_\d\d_\d\d_\d\d$", p["area"]) and all(abs(c) < 5000 for c in p["pos"])
+
+
+def test_empty_hand_and_armor_slots_are_left_out(tmp_path, names):
+    slot = make_slot(name="A")
+    struct.pack_into("<6I", slot, ds2save.OFF_HANDS, 3800000, 1700000, 3400000, 3400000, 3400000, 3400000)
+    struct.pack_into("<4I", slot, ds2save.OFF_ARMOR, 11001100, 12180101, 11001102, 11001103)
+    path = tmp_path / "a.sl2"
+    path.write_bytes(build_bnd4({"USER_DATA001": bytes(slot), "USER_DATA011": bytes(0x30000)}))
+    eq = ds2save.snapshot(path, names=names, regulation=False)["equipped"]
+    assert set(eq["hands"]) == {"L1", "R1"}  # punho = mão vazia
+    assert list(eq["armor"]) == ["peito"]  # 2100110x = sem peça

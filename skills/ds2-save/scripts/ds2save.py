@@ -16,6 +16,10 @@ KEY = bytes.fromhex("599F9B699640A55236EE2D70835EC744")
 
 STAT_NAMES = ["VGR", "END", "VIT", "ATN", "STR", "DEX", "INT", "FTH", "ADP"]
 EMPTY = (0, 0xFFFFFFFF)
+# Slot sem peça: a mão vazia guarda o punho (3400000, AR 49 conferido no menu do jogo) e a armadura vazia guarda ids
+# que não existem no itemname.fmg (vistos em 2026-10-10 depois de tirar o set Tseldora: cabeça 00, mãos 02, pernas 03).
+EMPTY_HAND = 3400000
+EMPTY_ARMOR = {11001100, 11001101, 11001102, 11001103}  # ids da ArmorParam (+10.000.000 = 2100110x)
 EQUIP_CATEGORIES = {"MeleeWeapons", "RangedWeapons", "Shields", "SpellTools", "Armor", "Rings"}
 
 OFF_STATS = 0x24
@@ -175,8 +179,9 @@ def parse_slot(slot: bytes, names) -> dict:
         "soul_memory": soul_memory,
         "stats": dict(zip(STAT_NAMES, struct.unpack_from("<9H", slot, OFF_STATS))),
         "equipped": {
-            "hands": {k: named(i) for k, i in zip(HAND_SLOTS, _ids(slot, OFF_HANDS, 6)) if i not in EMPTY},
-            "armor": {k: named(i + ARMOR_ITEM_OFFSET) for k, i in zip(ARMOR_SLOTS, _ids(slot, OFF_ARMOR, 4)) if i not in EMPTY},
+            "hands": {k: named(i) for k, i in zip(HAND_SLOTS, _ids(slot, OFF_HANDS, 6)) if i not in EMPTY and i != EMPTY_HAND},
+            "armor": {k: named(i + ARMOR_ITEM_OFFSET) for k, i in zip(ARMOR_SLOTS, _ids(slot, OFF_ARMOR, 4))
+                      if i not in EMPTY and i not in EMPTY_ARMOR},
             "rings": [named(i) for i in _ids(slot, OFF_RINGS, 4) if i not in EMPTY],
             "spells": [named(i) for i in _ids(slot, OFF_SPELLS, SPELL_SLOTS) if i not in EMPTY],
         },
