@@ -92,3 +92,45 @@ def test_real_spell_damage_and_attunement():
     homing = calc.spell(31060000, ar, {"INT": 26, "FTH": 6, "ATN": 30})
     assert homing["ar"] is None and not homing["requisito_ok"]  # pede INT 35
     assert calc.attunement(30) == {"slots": 6, "faixa": 3}
+
+
+def snapshot_mago():
+    def it(item_id, name, cat, upgrade=None):
+        return {"id": item_id, "name": name, "category": cat, "quantity": 1, "upgrade": upgrade}
+    return {
+        "stats": {"VGR": 12, "END": 6, "VIT": 5, "ATN": 30, "STR": 10, "DEX": 18, "INT": 34, "FTH": 6, "ADP": 8},
+        "equipped": {"hands": {"L1": {"id": 3800000, "name": "Sorcerer's Staff"}, "R2": {"id": 5400000, "name": "Pyromancy Flame"}},
+                     "rings": [{"id": 40210000, "name": "Ring of Knowledge"}],
+                     "spells": [{"id": 31020000, "name": "Great Soul Arrow"}, {"id": 31020000, "name": "Great Soul Arrow"},
+                                {"id": 33020000, "name": "Fire Orb"}]},
+        "inventory": [it(3800000, "Sorcerer's Staff", "SpellTools", 2), it(3800000, "Sorcerer's Staff", "SpellTools", 0),
+                      it(5400000, "Pyromancy Flame", "MeleeWeapons", 0), it(11310000, "Golden Wing Shield", "Shields", 0),
+                      it(31020000, "Great Soul Arrow", "Spells"), it(33020000, "Fire Orb", "Spells"),
+                      it(31040000, "Great Heavy Soul Arrow", "Spells")],
+    }
+
+
+@pytest.mark.skipif(_real() is None, reason="DS2 não instalado nesta máquina")
+def test_real_attunement_reads_equipped_spells_and_compares_catalysts():
+    calc = ds2calc.load()
+    out = ds2calc.sintonia(calc, snapshot_mago(), [(3830000, "Lizard Staff", 0), (5410000, "Dark Pyromancy Flame", 0)])
+    assert out["atributos"]["INT"] == 39 and out["aneis"] == ["Ring of Knowledge +5 INT"]  # anel conta
+    assert out["slots"]["usados"] == 3
+    cats = {c["nome"]: c for c in out["catalisadores"]}
+    assert cats["Sorcerer's Staff"]["nivel"] == 2 and cats["Sorcerer's Staff"]["equipado"]  # o maior upgrade
+    assert "Golden Wing Shield" not in cats  # escudo com dano mágico não é catalisador
+    assert "aviso" in cats["Dark Pyromancy Flame"] and not cats["Lizard Staff"]["tem"]
+    f = {x["nome"]: x for x in out["feiticos"]}
+    assert f["Great Soul Arrow"]["equipado"] == 2 and f["Great Soul Arrow"]["ar_atual"] == 184
+    assert f["Great Soul Arrow"]["melhor"]["catalisador"] == "Lizard Staff"
+    assert f["Great Heavy Soul Arrow"]["equipado"] == 0 and f["Great Heavy Soul Arrow"]["ar_atual"] == 225
+    assert f["Fire Orb"]["ar_atual"] == 278 and f["Fire Orb"]["melhor"]["catalisador"] == "Pyromancy Flame"  # Dark fica de fora
+
+
+@pytest.mark.skipif(_real() is None, reason="DS2 não instalado nesta máquina")
+def test_cli_attunement(tmp_path, capsys):
+    snap = tmp_path / "s.json"
+    snap.write_text(json.dumps(snapshot_mago()), encoding="utf-8")
+    assert ds2calc.main(["sintonia", "--snapshot", str(snap), "--candidato", "Lizard Staff:0"]) == 0
+    out = json.loads(capsys.readouterr().out)
+    assert any(c["nome"] == "Lizard Staff" for c in out["catalisadores"])

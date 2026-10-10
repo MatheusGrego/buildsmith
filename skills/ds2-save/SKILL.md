@@ -19,6 +19,8 @@ Script: `scripts/ds2save.py` nesta pasta. Precisa de Python 3 e `pycryptodome` (
 | `python "<pasta>/scripts/ds2calc.py" ar --arma Uchigatana --nivel 5 --str 10 --dex 18` | AR físico da arma pelas regras do jogo (bate com o menu) |
 | `python "<pasta>/scripts/ds2calc.py" catalisador --catalisador "Sorcerer's Staff" --nivel 2 --int 26 --fth 6` | AR por elemento do catalisador; `menu` = número do menu Status (validado: 356, 204) |
 | `python "<pasta>/scripts/ds2calc.py" feitico --feitico "Soul Arrow" --catalisador "Sorcerer's Staff" --nivel 2 --int 26 --fth 6 --atn 30` | AR calculado do feitiço, usos, slots e requisito |
+| `python "<pasta>/scripts/ds2calc.py" sintonia --snapshot S.json [--candidato "Lizard Staff:0"]` | sintonia equipada e feitiços do inventário com AR no catalisador equipado e no melhor (anéis de atributo contam); catalisador que escala com Hollowing vem com `aviso` |
+| `python "<pasta>/scripts/ds2perto.py" catalisadores\|armas\|armaduras --snapshot S.json [--nome REGEX]` | o que dá para pegar agora (chão das áreas liberadas + lojas) com AR, requisito e se já tem |
 | `python "<pasta>/scripts/ds2data.py" onde-comprar --item "Large Titanite Shard"` | lojas que vendem, preço e estoque (`null` = ilimitado) |
 | `python "<pasta>/scripts/ds2data.py" trocas --item "Moonlight Greatsword"` (ou `--alma`) | trocas de alma de chefe: NPC, alma e preço |
 | `python "<pasta>/scripts/ds2data.py" custo-upgrade --arma Uchigatana --de 5 --ate 6` | almas e materiais por nível e no total |
