@@ -43,3 +43,16 @@ def test_fora_do_executavel_nada_muda(monkeypatch, tmp_path):
     assert runner.child_env(tmp_path)["PATH"] == "X"
     programa, argumentos = instalar_atalho.alvo_do_atalho()
     assert argumentos.endswith('abrir.py"')
+
+
+def test_aberto_pelo_lancador_o_atalho_aponta_para_o_lancador(monkeypatch, tmp_path):
+    """O exe único descompacta em %LOCALAPPDATA%/Buildsmith/<versão>: o atalho tem de sobreviver à próxima versão."""
+    lancador = tmp_path / "Downloads" / "Buildsmith.exe"
+    lancador.parent.mkdir()
+    lancador.write_bytes(b"MZ")
+    monkeypatch.setattr(sys, "frozen", True, raising=False)
+    monkeypatch.setattr(sys, "executable", str(tmp_path / "0.26.1" / "Buildsmith.exe"))
+    monkeypatch.setenv("BUILDSMITH_LANCADOR", str(lancador))
+    assert instalar_atalho.alvo_do_atalho() == (str(lancador.resolve()), "")
+    monkeypatch.setenv("BUILDSMITH_LANCADOR", str(tmp_path / "sumiu.exe"))  # lançador apagado: o exe da pasta mesmo
+    assert instalar_atalho.alvo_do_atalho() == (str((tmp_path / "0.26.1" / "Buildsmith.exe").resolve()), "")

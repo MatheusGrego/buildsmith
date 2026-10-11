@@ -7,7 +7,8 @@ sendo refeitas (sem Claude), e fecha sozinha quando o navegador abre. A imagem d
 nada disso vai para o repositório.
 
 Precisa de Pillow (pip install pillow) só para montar o ícone. No executável (`Buildsmith.exe atalho`), o atalho
-aponta para o Buildsmith.exe e usa o ícone dele: não baixa nada.
+aponta para o Buildsmith.exe e usa o ícone dele: não baixa nada. Aberto pelo exe único (o lançador, que descompacta
+o programa em %LOCALAPPDATA%\\Buildsmith\\<versão>), o atalho aponta para o lançador, que sobrevive à próxima versão.
 """
 import argparse
 import io
@@ -42,8 +43,12 @@ def montar_icone(destino: Path, imagem: bytes) -> Path:
 
 
 def alvo_do_atalho() -> tuple[str, str]:
-    """(programa, argumentos) do atalho: o Buildsmith.exe no executável, senão python.exe app/abrir.py."""
+    """(programa, argumentos) do atalho: o lançador (exe único) ou o Buildsmith.exe no executável, senão
+    python.exe app/abrir.py."""
     if getattr(sys, "frozen", False):
+        lancador = os.environ.get("BUILDSMITH_LANCADOR")
+        if lancador and Path(lancador).is_file():
+            return str(Path(lancador).resolve()), ""
         return str(Path(sys.executable).resolve().with_name("Buildsmith.exe")), ""
     python = str(Path(sys.executable).with_name("python.exe"))
     if not Path(python).exists():
@@ -62,8 +67,9 @@ def criar_atalho(icone: Path, nome: str = "Forja de Build") -> Path:
         "$s.IconLocation = $env:BS_ICO + ',0'; $s.Description = 'Atualiza e abre a Forja de Build (buildsmith) no navegador';"
         "$s.Save()"
     )
+    pasta = Path(programa).parent if getattr(sys, "frozen", False) else REPO  # a do lançador não some na versão nova
     env = {**os.environ, "BS_LNK": str(lnk), "BS_PYW": programa, "BS_ARGS": argumentos,
-           "BS_REPO": str(REPO), "BS_ICO": str(icone)}
+           "BS_REPO": str(pasta), "BS_ICO": str(icone)}
     subprocess.run(["powershell", "-NoProfile", "-Command", script], env=env, check=True)
     return lnk
 

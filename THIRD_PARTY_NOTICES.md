@@ -18,6 +18,7 @@ próprias licenças, que continuam valendo para eles, e são listados aqui como 
 | Python 3.12 (o `runtime\` que roda os scripts) | PSF License Agreement | `licencas/PYTHON-LICENSE.txt` |
 | [pycryptodome](https://github.com/Legrandin/pycryptodome) 3.21 (abre os índices e o save do jogo) | BSD 2-Clause (e partes em domínio público) | `licencas/PYCRYPTODOME-LICENSE.rst` |
 | Carregador do [PyInstaller](https://pyinstaller.org) 6.11 (`Buildsmith.exe`, `python.exe`, `pythonw.exe`) | GPL 2.0 com a exceção do bootloader, que permite distribuir o programa empacotado sob qualquer licença | `licencas/PYINSTALLER-COPYING.txt` |
+| Runtime e biblioteca padrão do [Go](https://go.dev) (o lançador do exe único `Buildsmith.exe`, que traz o zip dentro) | BSD 3-Clause, © The Go Authors | `licencas/GO-LICENSE.txt` (no exe único: na pasta que ele descompacta em `%LOCALAPPDATA%\Buildsmith\<versão>\`) |
 
 ## Só como referência (nenhum código copiado)
 

@@ -8,14 +8,19 @@
 3. PyInstaller com release/buildsmith.spec: Buildsmith.exe, python.exe, pythonw.exe e runtime/ em build/dist/Buildsmith;
 4. os arquivos do programa ao lado (app, skills, games, .claude-plugin, README, LICENSE, THIRD_PARTY_NOTICES), o
    LEIA-ME.txt e, em licencas/, as licenças do que vai dentro do executável (Python, pycryptodome, PyInstaller);
-5. teste de fumaça (cada exe roda um script do buildsmith) e build/buildsmith-<versão>-windows-x64.zip.
+5. teste de fumaça (cada exe roda um script do buildsmith) e build/buildsmith-<versão>-windows-x64.zip;
+6. exe único (com o Go instalado): o lançador de release/lancador com o zip embutido e o ícone (.syso) em
+   build/Buildsmith.exe; na primeira vez ele descompacta o programa em %LOCALAPPDATA%\\Buildsmith\\<versão>. Testado
+   com uma pasta temporária no lugar do %LOCALAPPDATA%.
 """
 import json
 import math
+import os
 import shutil
 import struct
 import subprocess
 import sys
+import tempfile
 import zipfile
 import zlib
 from pathlib import Path
@@ -102,6 +107,44 @@ def icone(destino: Path, lados=(16, 24, 32, 48, 64, 128, 256)) -> Path:
     return destino
 
 
+def syso_do_icone(ico: bytes) -> bytes:
+    """O ícone como recurso do Windows num objeto COFF (.syso) que o `go build` junta ao exe do lançador.
+
+    Formato PE/COFF da Microsoft: seção .rsrc com a árvore tipo → ID → idioma (RT_ICON = 3, uma imagem por ID;
+    RT_GROUP_ICON = 14, o diretório do ícone com o ID de cada imagem); cada IMAGE_RESOURCE_DATA_ENTRY guarda o RVA do
+    dado, que o linker acerta pela relocação IMAGE_REL_AMD64_ADDR32NB contra o símbolo da seção."""
+    n = struct.unpack_from("<3H", ico, 0)[2]
+    entradas = [struct.unpack_from("<4B2H2I", ico, 6 + 16 * k) for k in range(n)]
+    imagens = [ico[e[7]:e[7] + e[6]] for e in entradas]
+    grupo = struct.pack("<3H", 0, 1, n) + b"".join(struct.pack("<4B2HIH", *e[:6], e[6], k + 1) for k, e in enumerate(entradas))
+    dados = imagens + [grupo]
+    dir_ = lambda ids: struct.pack("<IIHHHH", 0, 0, 0, 0, 0, len(ids)) + b"".join(struct.pack("<II", *i) for i in ids)  # noqa: E731
+    sub, t14 = 0x80000000, 32 + 16 + 8 * n  # raiz (2 tipos) e diretório do tipo 3 vêm antes
+    idiomas = t14 + 24
+    entradas_dado = idiomas + 24 * len(dados)
+    inicio = (entradas_dado + 16 * len(dados) + 7) // 8 * 8
+    offs, pos = [], inicio
+    for d in dados:
+        offs.append(pos)
+        pos = (pos + len(d) + 7) // 8 * 8
+    rsrc = bytearray(dir_([(3, sub | 32), (14, sub | t14)]))
+    rsrc += dir_([(k + 1, sub | (idiomas + 24 * k)) for k in range(n)])
+    rsrc += dir_([(1, sub | (idiomas + 24 * n))])
+    for k in range(len(dados)):
+        rsrc += dir_([(0x0409, entradas_dado + 16 * k)])
+    for d, off in zip(dados, offs):
+        rsrc += struct.pack("<4I", off, len(d), 0, 0)
+    for d, off in zip(dados, offs):
+        rsrc += b"\0" * (off - len(rsrc)) + d
+    rsrc += b"\0" * (-len(rsrc) % 8)
+    relocs = b"".join(struct.pack("<IIH", entradas_dado + 16 * k, 0, 3) for k in range(len(dados)))
+    simbolos = 60 + len(rsrc) + len(relocs)
+    cab = struct.pack("<HHIIIHH", 0x8664, 1, 0, simbolos, 1, 0, 0)
+    secao = struct.pack("<8sIIIIIIHHI", b".rsrc", 0, 0, len(rsrc), 60, 60 + len(rsrc), 0, len(dados), 0, 0x40000040)
+    simbolo = struct.pack("<8sIhHBB", b".rsrc", 0, 1, 0, 3, 0)
+    return cab + secao + bytes(rsrc) + relocs + simbolo + struct.pack("<I", 4)
+
+
 # ---- pasta e zip ---------------------------------------------------------------------------------------------------
 LEIA_ME = """Forja de Build (buildsmith) {versao} — early alpha, Windows 64 bits
 
@@ -160,6 +203,10 @@ def copiar_programa(pasta: Path) -> None:
                          (next(site.glob("pycryptodome-*.dist-info")) / "LICENSE.rst", "PYCRYPTODOME-LICENSE.rst"),
                          (next(site.glob("pyinstaller-*.dist-info")) / "COPYING.txt", "PYINSTALLER-COPYING.txt")):
         shutil.copy2(origem, licencas / nome)
+    go = shutil.which("go")
+    if go:  # o exe único (lançador em Go) leva o runtime do Go: a licença vai junto, dentro do programa
+        goroot = Path(subprocess.run([go, "env", "GOROOT"], capture_output=True, text=True, check=True).stdout.strip())
+        shutil.copy2(goroot / "LICENSE", licencas / "GO-LICENSE.txt")
 
 
 def fumaca(pasta: Path) -> None:
@@ -193,6 +240,41 @@ def zipar(pasta: Path, destino: Path) -> Path:
     return destino
 
 
+def lancador(zip_programa: Path, ico: Path, v: str) -> Path | None:
+    """build/Buildsmith.exe: o lançador em Go com o programa e o ícone embutidos; None sem o Go instalado."""
+    go = shutil.which("go")
+    if go is None:
+        print("sem o Go: fica só o zip (o exe único precisa do Go 1.21 ou mais novo)")
+        return None
+    pasta = BUILD / "lancador"
+    shutil.rmtree(pasta, ignore_errors=True)
+    shutil.copytree(RAIZ / "release" / "lancador", pasta, ignore=shutil.ignore_patterns("*_test.go"))
+    shutil.copy2(zip_programa, pasta / "programa.zip")
+    (pasta / "rsrc_windows_amd64.syso").write_bytes(syso_do_icone(ico.read_bytes()))
+    destino = BUILD / "Buildsmith.exe"
+    env = {**os.environ, "CGO_ENABLED": "0", "GOOS": "windows", "GOARCH": "amd64"}
+    subprocess.run([go, "build", "-tags", "embutido", "-trimpath", "-ldflags", f"-s -w -X main.versao={v}",
+                    "-o", str(destino), "."], cwd=str(pasta), env=env, check=True)
+    return destino
+
+
+def fumaca_lancador(exe: Path, v: str) -> None:
+    """O exe único descompacta na primeira vez, roda o Buildsmith.exe de dentro e não descompacta de novo depois."""
+    with tempfile.TemporaryDirectory() as tmp:
+        env = {**os.environ, "LOCALAPPDATA": tmp}
+        marca = Path(tmp) / "Buildsmith" / v / ".completo"
+        for vez in (1, 2):
+            r = subprocess.run([str(exe), "--help"], capture_output=True, text=True, encoding="utf-8", errors="replace",
+                               timeout=300, env=env, creationflags=SEM_JANELA)
+            if r.returncode != 0 or "usage" not in (r.stdout + r.stderr).lower() or not marca.is_file():
+                raise SystemExit(f"fumaça do exe único falhou ({vez}ª vez): {r.returncode}\n{r.stdout}\n{r.stderr}")
+            if vez == 1:
+                antes = marca.stat().st_mtime_ns
+            elif marca.stat().st_mtime_ns != antes:
+                raise SystemExit("o exe único descompactou de novo na segunda vez")
+            print(f"  ok: Buildsmith.exe (exe único) --help, {vez}ª vez")
+
+
 def main() -> int:
     if hasattr(sys.stdout, "reconfigure"):
         sys.stdout.reconfigure(encoding="utf-8", errors="replace")
@@ -209,6 +291,10 @@ def main() -> int:
     fumaca(pasta)
     z = zipar(pasta, BUILD / f"buildsmith-{v}-windows-x64.zip")
     print(f"pronto: {z} ({z.stat().st_size / 1e6:.1f} MB)")
+    exe = lancador(z, BUILD / "buildsmith.ico", v)
+    if exe:
+        fumaca_lancador(exe, v)
+        print(f"pronto: {exe} ({exe.stat().st_size / 1e6:.1f} MB, exe único)")
     return 0
 
 

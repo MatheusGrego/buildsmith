@@ -8,11 +8,13 @@ Primeiro jogo: **Dark Souls II: Scholar of the First Sin** (Steam, Windows).
 
 ## Instalar (Windows, sem Python)
 
-1. Baixe o `buildsmith-<versão>-windows-x64.zip` na página de [Releases](https://github.com/MatheusGrego/buildsmith/releases) e descompacte onde quiser.
-2. Dê dois cliques em **`Buildsmith.exe`**. Uma janelinha mostra os passos e o navegador abre em `http://127.0.0.1:8642/`.
-3. Opcional: `Buildsmith.exe atalho` (num terminal na pasta) cria o atalho **Forja de Build** na área de trabalho.
+1. Baixe o **`Buildsmith.exe`** na página de [Releases](https://github.com/MatheusGrego/buildsmith/releases) (um arquivo só).
+2. Dê dois cliques nele. Na primeira vez ele descompacta o programa em `%LOCALAPPDATA%\Buildsmith\<versão>\` (alguns segundos); depois abre direto. Uma janelinha mostra os passos e o navegador abre em `http://127.0.0.1:8642/`.
+3. Opcional: `Buildsmith.exe atalho` (num terminal na pasta dele) cria o atalho **Forja de Build** na área de trabalho, apontando para esse exe.
 
-A pasta traz o Python embutido (`python.exe`, `pythonw.exe` e `runtime\`). Nada do jogo vem junto: mapas, modelos e textura são lidos da sua instalação do DS2, na hora.
+Versão nova: baixe o `Buildsmith.exe` novo; ele descompacta em outra pasta e apaga as antigas (seus dados em `%USERPROFILE%\.buildsmith\` ficam). O Windows pode avisar "editor desconhecido" (o exe não é assinado): **Mais informações → Executar assim mesmo**.
+
+Prefere sem descompactar nada sozinho? A release também traz o `buildsmith-<versão>-windows-x64.zip`: descompacte onde quiser e dê dois cliques no `Buildsmith.exe` da pasta. Ela traz o Python embutido (`python.exe`, `pythonw.exe` e `runtime\`). Nada do jogo vem junto: mapas, modelos e textura são lidos da sua instalação do DS2, na hora.
 
 ## O que ele faz sozinho (sem IA)
 
@@ -69,7 +71,7 @@ O mesmo código também é um plugin do Claude Code (`.claude-plugin/`, `skills/
 python release/construir.py
 ```
 
-Cria `build/venv` (PyInstaller e pycryptodome com versão fixa), desenha o ícone, empacota `Buildsmith.exe`, `python.exe` e `pythonw.exe` com um só runtime, copia os arquivos do programa para o lado, testa cada executável e gera `build/buildsmith-<versão>-windows-x64.zip`.
+Cria `build/venv` (PyInstaller e pycryptodome com versão fixa), desenha o ícone, empacota `Buildsmith.exe`, `python.exe` e `pythonw.exe` com um só runtime, copia os arquivos do programa para o lado, testa cada executável e gera `build/buildsmith-<versão>-windows-x64.zip`. Com o Go instalado (1.21 ou mais novo), monta também o exe único `build/Buildsmith.exe`: o lançador de `release/lancador/` (só biblioteca padrão do Go) com esse zip e o ícone embutidos, testado numa pasta temporária.
 
 ## Testes
 
