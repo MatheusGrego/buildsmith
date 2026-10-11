@@ -8,7 +8,7 @@ STATS = ["VGR", "END", "VIT", "ATN", "STR", "DEX", "INT", "FTH", "ADP"]
 # Ordem dos grupos na aba Passos.
 GRUPOS = ["equipar", "explorar", "chefe", "troca", "compra", "upgrade", "farm", "nivel"]
 TIPOS_PASSO = set(GRUPOS)
-TIPOS_FONTE = {"compra", "troca", "drop", "bau", "farm", "recompensa"}
+TIPOS_FONTE = {"compra", "troca", "drop", "bau", "chao", "farm", "recompensa"}  # chao: item no chão, baú ou cadáver (ds2fontes)
 ACESSOS = ["agora", "em_breve", "tarde"]
 DESTAQUES = {"mais_cedo", "mais_rentavel"}
 ESTADOS_FEITICO = {"equipado", "tem", "sugerido"}

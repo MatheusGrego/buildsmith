@@ -37,6 +37,8 @@ SCRIPTS = {
     "skills/ds2-save/scripts/ds2equip.py": None,
     "skills/ds2-save/scripts/ds2data.py": {"onde-comprar", "trocas", "custo-upgrade", "acesso"},
     "skills/ds2-save/scripts/ds2mapa.py": {"areas", "extrair", "onde", "rota"},
+    "skills/ds2-save/scripts/ds2itens.py": {"montar", "item"},
+    "skills/ds2-save/scripts/ds2fontes.py": {"fontes"},
     "skills/build-page/scripts/prepare_page.py": None,
     "skills/build-page/scripts/validate_plano.py": None,
     "app/serve.py": {"estado", "responder", "confirmar"},
@@ -44,6 +46,8 @@ SCRIPTS = {
 SERVE_OPTS = {"--personagem", "--jogo", "--pedido", "--item", "--passo", "--resultado"}
 # ds2mapa sem --game/--cache: sem janela, só a instalação padrão e o cache de ~/.buildsmith.
 MAPA_OPTS = {"--area", "--item", "--de", "--ate"}
+# ds2fontes/ds2itens também sem --game/--cache/--save: o save ativo, o jogo instalado e o cache de ~/.buildsmith.
+FONTES_OPTS, ITENS_OPTS = {"--item", "--personagem", "--slot"}, {"--item"}
 AREA = re.compile(r"^m\d\d_\d\d_\d\d_\d\d$")
 PONTO = re.compile(r"^(fogueira|item|inimigo):\d{1,10}$")
 PYTHONS = {"python", "python3", "py", "python.exe", "python3.exe", "py.exe"}
@@ -204,6 +208,15 @@ def _script(rel: str, args: list[str], ctx: Context) -> None:
                 raise Deny(f"{name} é fogueira:<id>, item:<lote> ou inimigo:<id>")
             if name == "--item" and len(value) > 80:
                 raise Deny("--item longo demais")
+        return
+    if rel.endswith(("ds2fontes.py", "ds2itens.py")):
+        fontes = rel.endswith("ds2fontes.py")
+        flag = "--plano" if fontes else "--forcar"  # as únicas opções sem valor
+        for name, value in _options([a for a in args[1:] if a != flag], FONTES_OPTS if fontes else ITENS_OPTS):
+            if name in ("--item", "--personagem") and len(value) > 80:
+                raise Deny(f"{name} longo demais")
+            if name == "--slot" and not value.isdigit():
+                raise Deny("--slot é um número")
         return
     if rel == "app/serve.py":
         for name, value in _options(args[1:], SERVE_OPTS):

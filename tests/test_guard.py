@@ -207,3 +207,21 @@ def test_map_commands_allowed_without_redirected_paths(check):
     for command in (f'python "{MAPA}" apagar', f'python "{MAPA}" extrair --area m10_16_00_00 --cache "{check.tmp.as_posix()}/x"',
                     f'python "{MAPA}" areas --game "{check.tmp.as_posix()}"', f'python "{MAPA}" extrair --area ../x'):
         assert bash(check, command) != "allow", command
+
+
+FONTES = (REPO / "skills" / "ds2-save" / "scripts" / "ds2fontes.py").as_posix()
+ITENS = (REPO / "skills" / "ds2-save" / "scripts" / "ds2itens.py").as_posix()
+
+
+def test_sources_and_item_index_by_code_are_allowed_with_narrow_options(check):
+    for command in (f'python "{FONTES}" fontes --item "Smooth & Silky Stone" --personagem "Personagem Um" --plano',
+                    f'python "{FONTES}" fontes --item 61140000 --slot 1',
+                    f'python "{ITENS}" item --item "Magic Stone"', f'python "{ITENS}" montar'):
+        assert bash(check, command) == "allow", command
+    for command in (f'python "{FONTES}" fontes --item x --save "{check.tmp.as_posix()}/outro.sl2"',
+                    f'python "{FONTES}" fontes --item x --game "{check.tmp.as_posix()}"',
+                    f'python "{FONTES}" fontes --item x --cache "{check.tmp.as_posix()}/c"',
+                    f'python "{FONTES}" fontes --item x --slot um', f'python "{FONTES}" fontes --item "{"x" * 81}"',
+                    f'python "{FONTES}" apagar', f'python "{ITENS}" montar --forcar --cache "{check.tmp.as_posix()}"',
+                    f'python "{ITENS}" item --item x --game "{check.tmp.as_posix()}"'):
+        assert bash(check, command) != "allow", command

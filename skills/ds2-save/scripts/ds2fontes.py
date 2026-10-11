@@ -287,29 +287,33 @@ def _com_ponto(no: dict, ponto) -> dict:
     return {**no, "ponto": ponto} if ponto else no
 
 
+def _fogueira(f: dict, area: str) -> list[dict]:
+    """Nó da fogueira de onde a rota sai (com o ponto do mapa): o prepare_page refaz a rota entre os pontos do fluxo."""
+    if not f.get("rota"):
+        return []
+    return [_com_ponto(_no("local", f["rota"]["de"]["nome"], "fogueira", wiki(area) if area else None), _ponto(f, 1))]
+
+
 def fluxo(f: dict, res: dict) -> list[dict]:
-    """Nós da fonte: de onde (NPC, fogueira, inimigo, chefe) até o item, com o ponto do mapa quando há rota."""
+    """Nós da fonte: da fogueira acesa (quando há rota) até o NPC, item, inimigo ou chefe, e o item."""
     area = f.get("nome_area") or ""
     t = f["tipo"]
     if t == "compra":
-        return [_com_ponto(_no("npc", f["npc"], area), _ponto(f, 2)), _no_item(res, f"{almas(f['preco'])} almas")]
+        return _fogueira(f, area) + [_com_ponto(_no("npc", f["npc"], area), _ponto(f, 2)), _no_item(res, f"{almas(f['preco'])} almas")]
     if t == "troca":
-        nos = []
-        if f.get("chefe"):
-            nos.append(_no("chefe", f["chefe"]["nome"], "derrotado" if f.get("chefe_derrotado") else "vivo"))
+        nos = [_no("chefe", f["chefe"]["nome"], "derrotado" if f.get("chefe_derrotado") else "vivo")] if f.get("chefe") else []
         falta_alma = any(x["tipo"] == "alma" for x in f["faltam"])
         nos.append({**_no("item", f["alma"], "falta" if falta_alma else "tem"), **({} if falta_alma else {"tem": True})})
-        nos.append(_com_ponto(_no("npc", f["npc"], area), _ponto(f, 2)))
-        return nos + [_no_item(res, f"{almas(f['preco'])} almas")]
+        return nos + _fogueira(f, area) + [_com_ponto(_no("npc", f["npc"], area), _ponto(f, 2)),
+                                           _no_item(res, f"{almas(f['preco'])} almas")]
     if t == "chao":
         onde = NO_ITEM.get(f.get("no"), "chão")
-        inicio = (_com_ponto(_no("local", f["rota"]["de"]["nome"], "fogueira", wiki(area) if area else None), _ponto(f, 1))
-                  if f.get("rota") else _no("local", area or f.get("area") or "?", "área", wiki(area) if area else None))
-        return [inicio, _com_ponto(_no_item(res, f"{onde} ×{f['qtd']}"), _ponto(f, 2))]
+        inicio = _fogueira(f, area) or [_no("local", area or f.get("area") or "?", "área", wiki(area) if area else None)]
+        return inicio + [_com_ponto(_no_item(res, f"{onde} ×{f['qtd']}"), _ponto(f, 2))]
     if t == "drop":
         nome = f.get("inimigo") or f"inimigo {f['tipo_inimigo']}"
-        return [_com_ponto(_no("inimigo", nome, area, f.get("wiki")), _ponto(f, 2)), _no_item(res, "drop")]
-    return [_com_ponto(_no("chefe", f["chefe"], area), _ponto(f, 2)), _no_item(res, "recompensa")]
+        return _fogueira(f, area) + [_com_ponto(_no("inimigo", nome, area, f.get("wiki")), _ponto(f, 2)), _no_item(res, "drop")]
+    return _fogueira(f, area) + [_com_ponto(_no("chefe", f["chefe"], area), _ponto(f, 2)), _no_item(res, "recompensa")]
 
 
 def _texto_falta(x: dict) -> str:
@@ -387,6 +391,18 @@ def passos(res: dict, pers: dict) -> list[dict]:
         out.append({"id": f"{base}-equipar", "tipo": "equipar", "titulo": _curto(f"Equipar {it['nome']}", 40),
                     "fluxo": [_no_item(res, "entra")], "dados": []})
     return out
+
+
+def para_plano(res: dict, pers: dict) -> dict:
+    """Entrada de itens[] e os passos para o plano.json da skill build: sem o desenho da rota (o prepare_page refaz pelo
+    `ponto` dos nós), o que também poupa texto."""
+    item = pagina(res)
+    for f in item["fontes"]:
+        f.pop("mapa", None)
+    passos_ = passos(res, pers)
+    for s in passos_:
+        s.pop("mapa", None)
+    return {"item": item, "passos": passos_}
 
 
 # ---- Personagem pelo save ----------------------------------------------------------------------------------------
@@ -471,7 +487,7 @@ def main(argv=None) -> int:
         pers = personagem_do_save(save, alvo["slug"])
         res = fontes(item, indice, pers, carregar_area, estado_do_save(save, alvo["slug"], carregar_area),
                      lambda area: ds2mapa.caixas_da_cena(cache, area))
-        out = {"item": pagina(res), "passos": passos(res, pers)} if args.plano else res
+        out = para_plano(res, pers) if args.plano else res
     except (ds2mapa.MapaError, ds2arquivos.ArquivoError, ds2save.SaveError, OSError, ValueError, KeyError, StopIteration) as err:
         print(json.dumps({"error": str(err) or type(err).__name__}, ensure_ascii=False))
         return 1

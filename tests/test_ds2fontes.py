@@ -164,7 +164,9 @@ def test_page_entry_uses_the_plan_format():
     assert tipos[0] == "drop" and "chao" in tipos
     drop = entrada["fontes"][0]
     assert drop["acesso"] == "agora" and drop["destaques"] == ["mais_cedo"] and drop["mapa"]["area"] == "m10_18_00_00"
-    assert drop["fluxo"][0]["tipo"] == "inimigo" and drop["fluxo"][0]["nome"] == "Royal Swordsman"
+    assert drop["fluxo"][0]["tipo"] == "local" and drop["fluxo"][0]["ponto"] == {"area": "m10_18_00_00", "tipo": "fogueira", "ref": 18650}
+    assert drop["fluxo"][1]["tipo"] == "inimigo" and drop["fluxo"][1]["nome"] == "Royal Swordsman"
+    assert drop["fluxo"][1]["ponto"] == {"area": "m10_18_00_00", "tipo": "inimigo", "ref": 7}
     assert all(len(f["requisito"]) <= 80 for f in entrada["fontes"] if isinstance(f.get("requisito"), str))
 
 
@@ -187,3 +189,18 @@ def test_real_sources_for_the_save(capsys):
     assert out["item"]["nome"] == "Magic Stone" and out["fontes"]
     assert [f["acesso"] for f in out["fontes"] if not f["feito"]] == sorted(
         (f["acesso"] for f in out["fontes"] if not f["feito"]), key=["agora", "em_breve", "tarde"].index)
+
+
+def test_plan_entries_from_code_pass_the_plan_validator():
+    import validate_plano
+    from test_prepare_page import example
+
+    plano = example()
+    for item_id in (ITEM, ARMA, ALMA):
+        out = ds2fontes.para_plano(calcular(item_id), PERS)
+        plano["itens"].append(out["item"])
+        plano["passos"] += out["passos"]
+    assert validate_plano.validate(plano) == []
+    # o mapa sai: o prepare_page refaz a rota pelos pontos dos nós (e o plano gasta menos)
+    assert not any("mapa" in f for it in plano["itens"] for f in it["fontes"]) and not any("mapa" in s for s in plano["passos"])
+    assert any(n.get("ponto") for it in plano["itens"][-3:] for f in it["fontes"] for n in f["fluxo"])
