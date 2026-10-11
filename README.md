@@ -73,6 +73,32 @@ python -m pytest -q
 
 Os testes que precisam do jogo ou do save são pulados sem eles. `tests/test_injection.py` tem um teste por caminho de prompt injection conhecido; para rodar o mesmo ataque contra o `claude -p` de verdade (custa centavos): `BUILDSMITH_LIVE=1 python -m pytest -q tests/test_injection_live.py`.
 
-## Créditos
+## Licença
 
-Listas de IDs do DS2: [DS2S-META](https://github.com/Nordgaren/DS2S-META) (MIT). Nomes de inimigos e objetos por linha/modelo do jogo: [Smithbox](https://github.com/vawser/Smithbox) (MIT, `games/ds2/nomes_smithbox.json`). Formato dos arquivos do jogo: SoulsFormats (MIT), só como referência. Dark Souls II é da FromSoftware/Bandai Namco; nenhum arquivo do jogo vai no repositório nem na release.
+**[PolyForm Strict 1.0.0](LICENSE)** — o código é público para ser lido, mas não é open source:
+
+- **pode:** baixar e usar o programa para fins **não comerciais** (uso pessoal, estudo, hobby, pesquisa);
+- **não pode**, sem permissão por escrito dos autores: modificar, criar obras derivadas, redistribuir (o código, o
+  executável ou partes deles) ou usar comercialmente.
+
+Para pedir permissão, abra uma issue no repositório. O resumo acima não substitui o texto da [LICENSE](LICENSE).
+
+Copyright 2026 Matheus Grego e jpmelo031.
+
+## Créditos e avisos de terceiros
+
+Os arquivos de terceiros seguem as próprias licenças (lista completa em [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md)):
+
+- [three.js](https://github.com/mrdoob/three.js) r160 (MIT), embutido na página para o mapa 3D;
+- listas de IDs do DS2 do [DS2S-META](https://github.com/Nordgaren/DS2S-META) (MIT, `games/ds2/ids/`);
+- nomes de inimigos e objetos por linha/modelo do jogo do [Smithbox](https://github.com/vawser/Smithbox) (MIT,
+  `games/ds2/nomes_smithbox.json`);
+- no executável: Python (PSF), [pycryptodome](https://github.com/Legrandin/pycryptodome) (BSD) e o carregador do
+  [PyInstaller](https://pyinstaller.org) (GPL com exceção para programas empacotados), com as licenças em `licencas/`;
+- só como referência, sem código copiado: [SoulsFormats](https://github.com/JKAnderson/SoulsFormats) e
+  [Paramdex](https://github.com/soulsmods/Paramdex) (formatos e tabelas do jogo).
+
+Projeto de fãs, sem ligação com a FromSoftware ou a Bandai Namco. **Dark Souls II** é delas: o buildsmith lê os
+arquivos do jogo instalado na sua máquina, e nada do jogo vai no repositório nem na release. Páginas e ícones da
+[wiki Fextralife](https://darksouls2.wiki.fextralife.com) são buscados na hora, citados com link, e ficam só no seu
+cache local.

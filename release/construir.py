@@ -6,7 +6,8 @@
 1. ambiente isolado em build/venv com PyInstaller e pycryptodome (versões fixas abaixo);
 2. ícone próprio (brasa e espada, desenhado aqui: nenhuma imagem do jogo vai na release) em build/buildsmith.ico;
 3. PyInstaller com release/buildsmith.spec: Buildsmith.exe, python.exe, pythonw.exe e runtime/ em build/dist/Buildsmith;
-4. os arquivos do programa ao lado (app, skills, games, .claude-plugin, README) e o LEIA-ME.txt;
+4. os arquivos do programa ao lado (app, skills, games, .claude-plugin, README, LICENSE, THIRD_PARTY_NOTICES), o
+   LEIA-ME.txt e, em licencas/, as licenças do que vai dentro do executável (Python, pycryptodome, PyInstaller);
 5. teste de fumaça (cada exe roda um script do buildsmith) e build/buildsmith-<versão>-windows-x64.zip.
 """
 import json
@@ -23,7 +24,7 @@ RAIZ = Path(__file__).resolve().parents[1]
 BUILD = RAIZ / "build"
 VENV = BUILD / "venv"
 PACOTES = ["pyinstaller==6.11.1", "pycryptodome==3.21.0"]
-PROGRAMA = ("app", "skills", "games", ".claude-plugin", "README.md")
+PROGRAMA = ("app", "skills", "games", ".claude-plugin", "README.md", "LICENSE", "THIRD_PARTY_NOTICES.md")
 SEM_JANELA = getattr(subprocess, "CREATE_NO_WINDOW", 0)
 
 
@@ -127,7 +128,12 @@ PARAR O SERVIDOR
   python.exe app\\serve.py parar   (nesta pasta)
 
 Os arquivos python.exe/pythonw.exe e a pasta runtime\\ são o Python embutido do programa (não é preciso ter Python).
-Código e licenças: README.md e games\\LICENSE-*.
+
+LICENÇA
+  PolyForm Strict 1.0.0 (arquivo LICENSE): pode usar para fins não comerciais (uso pessoal, estudo, hobby); não pode
+  modificar, criar obras derivadas nem redistribuir sem permissão por escrito dos autores. Componentes de terceiros e
+  as licenças deles: THIRD_PARTY_NOTICES.md e a pasta licencas\\. Projeto de fãs, sem ligação com a FromSoftware ou
+  a Bandai Namco.
 """
 
 
@@ -142,6 +148,15 @@ def copiar_programa(pasta: Path) -> None:
         else:
             shutil.copy2(origem, destino)
     (pasta / "LEIA-ME.txt").write_text(LEIA_ME.format(versao=versao()), encoding="utf-8")
+    licencas = pasta / "licencas"
+    licencas.mkdir(exist_ok=True)
+    site = VENV / "Lib" / "site-packages"
+    base = Path(subprocess.run([str(VENV / "Scripts" / "python.exe"), "-c", "import sys; print(sys.base_prefix)"],
+                               capture_output=True, text=True, check=True).stdout.strip())
+    for origem, nome in ((base / "LICENSE.txt", "PYTHON-LICENSE.txt"),
+                         (next(site.glob("pycryptodome-*.dist-info")) / "LICENSE.rst", "PYCRYPTODOME-LICENSE.rst"),
+                         (next(site.glob("pyinstaller-*.dist-info")) / "COPYING.txt", "PYINSTALLER-COPYING.txt")):
+        shutil.copy2(origem, licencas / nome)
 
 
 def fumaca(pasta: Path) -> None:
