@@ -36,9 +36,11 @@ from pathlib import Path
 import ds2arquivos
 import ds2mapa
 
-CENA_VERSAO = 4  # 2: UV int16, normais por tipo, LOD0, céu/NoLit fora, matriz, chão andável; 3: objetos e inimigos;
-                 # 4: modelo rígido com várias malhas (baú), lápide/ajudantes fora, motivo de quem ficou sem modelo
+CENA_VERSAO = 5  # 2: UV int16, normais por tipo, LOD0, céu/NoLit fora, matriz, chão andável; 3: objetos e inimigos;
+                 # 4: modelo rígido com várias malhas (baú), lápide/ajudantes fora, motivo de quem ficou sem modelo;
+                 # 5: textura de objeto/personagem até 256 (orçamento)
 TEX_MAX = 512  # lado máximo das texturas (descarta os mipmaps maiores)
+TEX_MAX_ENTIDADE = 256  # objeto e personagem ficam pequenos na tela: orçamento de 30 MB por área (spec)
 FORA_M = 40.0  # peças além desta margem do chão andável (céu, montanhas de fundo) ficam de fora
 LOD_FLAGS = 0x01000000 | 0x02000000
 GEO = "geo.bin.gz"
@@ -667,7 +669,7 @@ def modelo_do_binder(ler, caminho: str, caminho_tex: str | None = None, preferid
         for fonte in fontes:
             for k, v in fonte.items():
                 if k.lower().endswith(".tpf"):
-                    for stem, dds in extrair_dds_tpf(v, TEX_MAX).items():
+                    for stem, dds in extrair_dds_tpf(v, TEX_MAX_ENTIDADE).items():
                         if dds[:4] == b"DDS " and dds[84:88] in (b"DXT1", b"DXT3", b"DXT5"):
                             tex.setdefault(stem, dds)
         return modelo, tex, None

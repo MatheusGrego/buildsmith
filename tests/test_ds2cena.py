@@ -505,3 +505,26 @@ def test_motivo_sem_malha():
     assert ds2cena.motivo_sem_malha({"malhas": [{"tipo": "opaco", "mtd": "a"}]}) is None
     assert "NoLit" in ds2cena.motivo_sem_malha({"malhas": [{"tipo": "ignorar", "mtd": "NoLit.mtd"}]})
     assert "índice" in ds2cena.motivo_sem_malha({"malhas": [], "puladas": ["índice fora dos vértices (9 ≥ 3)"]})
+
+
+def test_textura_de_objeto_e_personagem_sai_menor_que_a_do_mapa():
+    """Orçamento do spec (≤ 30 MB por área): objeto e inimigo ficam pequenos na tela, a textura deles vai até 256."""
+    lado, mips = 1024, 11
+    dds = bytearray(128)
+    dds[:4] = b"DDS "
+    struct.pack_into("<6I", dds, 4, 124, 0x081007, lado, lado, 0, 1)
+    struct.pack_into("<I", dds, 28, mips)
+    struct.pack_into("<2I", dds, 76, 32, 4)
+    dds[84:88] = b"DXT1"
+    dds += bytes(sum(max(1, (lado >> k) // 4) ** 2 * 8 for k in range(mips)))
+    nome_tex = b"o00_bau_d.dds\0"
+    tpf = bytearray(0x10 + 0x14)
+    tpf[:4] = b"TPF\0"
+    struct.pack_into("<i", tpf, 0x08, 1)
+    struct.pack_into("<2I", tpf, 0x10, len(tpf) + len(nome_tex), len(dds))
+    struct.pack_into("<I", tpf, 0x10 + 0x0C, len(tpf))
+    tpf = bytes(tpf) + nome_tex + bytes(dds)
+    arquivos = {"/model/obj/o00_bau.bnd": build_bnd4({"o00_bau.flv": build_flver([tri_malha()]), "o00_bau.tpf": tpf})}
+    _modelo, tex, _aviso = ds2cena.modelo_do_binder(arquivos.get, "/model/obj/o00_bau.bnd")
+    assert struct.unpack_from("<2I", tex["o00_bau_d"], 12) == (ds2cena.TEX_MAX_ENTIDADE, ds2cena.TEX_MAX_ENTIDADE)
+    assert ds2cena.TEX_MAX_ENTIDADE == 256 < ds2cena.TEX_MAX
