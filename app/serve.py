@@ -203,6 +203,8 @@ class MapaVivo:
         self.carregar_area = carregar_area  # área -> dados com malhas; None = jogo instalado + cache de ~/.buildsmith
         self._save = (None, {})
         self._vivo = (None, {})
+        self._mundos = (None, {})
+        self._ultimo_mundo = {}  # (personagem, área) -> último estado lido: vale enquanto o jogo grava o save
         self._nomes = None
         self._areas: OrderedDict = OrderedDict()
         self._lock = threading.Lock()
@@ -237,6 +239,35 @@ class MapaVivo:
         if v is None:
             return None
         return {**v, "gravado_em": datetime.fromtimestamp(st.st_mtime, timezone.utc).isoformat(timespec="seconds")}
+
+    def estado_area(self, slug_: str, area: str) -> dict | None:
+        """Portas, alavancas, baús e itens da área já usados no save, só os com regra conferida (o resto fica de fora).
+        Relê o save só quando o arquivo muda; se a leitura falha (o jogo gravando), vale o último estado bom."""
+        import ds2save
+
+        dados, _ = self._area(area)
+        path = Path(self.save) if self.save else ds2save.find_save()
+        st = path.stat()
+        chave = (str(path), st.st_mtime_ns, st.st_size)
+        try:
+            with self._lock:
+                if self._mundos[0] != chave:
+                    self._mundos = (chave, ds2save.mundos(path))
+                mundo = self._mundos[1].get(slug_)
+        except Exception:
+            ultimo = self._ultimo_mundo.get((slug_, area))
+            if ultimo is None:
+                raise
+            return ultimo
+        if mundo is None:
+            return None
+        objetos = {o["parte"]: o["estado_ref"] for o in dados.get("objetos", []) if o.get("estado_ref")}
+        itens = {str(p["lote"]): p["estado_ref"] for p in dados.get("itens", []) if p.get("estado_ref")}
+        estado = ds2save.estado_mundo(mundo, [*objetos.values(), *itens.values()])
+        out = {"area": area, "objetos": {k: estado[r] for k, r in objetos.items() if estado[r] is not None},
+               "lotes": {k: estado[r] for k, r in itens.items() if estado[r] is not None}}
+        self._ultimo_mundo[(slug_, area)] = out
+        return out
 
     def _area(self, area: str):
         with self._lock:
@@ -392,6 +423,8 @@ class Handler(BaseHTTPRequestHandler):
             return self._posicao(parts[2])
         if len(parts) == 4 and parts[:2] == ["api", "ds2"] and parts[3] == "save" and SEGMENT.match(parts[2]):
             return self._save_vivo(parts[2])
+        if len(parts) == 4 and parts[:2] == ["api", "ds2"] and parts[3] == "mundo" and SEGMENT.match(parts[2]):
+            return self._mundo(parts[2])
         if len(parts) == 5 and parts[:3] == ["api", "ds2", "cena"] and AREA_OK.match(parts[3]):
             if parts[4] == "cena.json":
                 return self._cena_json(parts[3])
@@ -503,6 +536,18 @@ class Handler(BaseHTTPRequestHandler):
         if v is None:
             return self._json({"erro": "personagem não está no save"}, status=404)
         return self._json(v)
+
+    def _mundo(self, personagem: str):
+        area = parse_qs(urlsplit(self.path).query).get("area", [""])[0]
+        if not AREA_OK.match(area):
+            return self._send(400, b"area invalida", "text/plain; charset=utf-8")
+        try:
+            m = self.mapa.estado_area(personagem, area)
+        except Exception as err:  # sem save, sem o jogo para a área, pycryptodome ausente
+            return self._json({"erro": f"não consegui ler o estado do mundo ({type(err).__name__})"}, status=503)
+        if m is None:
+            return self._json({"erro": "personagem não está no save"}, status=404)
+        return self._json(m)
 
     def _rota(self):
         q = parse_qs(urlsplit(self.path).query)

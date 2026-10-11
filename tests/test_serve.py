@@ -10,7 +10,7 @@ import pytest
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "app"))
 import serve  # noqa: E402
-from conftest import build_bnd4, make_slot  # noqa: E402
+from conftest import build_bnd4, make_slot, registro_eventos  # noqa: E402
 
 PNG = b"\x89PNG\r\n\x1a\n" + b"\0" * 20
 JPG = b"\xff\xd8\xff\xe0" + b"\0" * 20
@@ -409,3 +409,51 @@ def test_live_save_level_stats_and_items(server_mapa):
     with pytest.raises(urllib.error.HTTPError) as err:
         get(f"{base}/api/ds2/outro/save")
     assert err.value.code == 404
+
+
+def area_com_objetos(area):
+    return {**area_faixa(area),
+            "objetos": [{"parte": "o00_0316_0002", "cat": "porta", "estado_ref": "porta:10160432"},
+                        {"parte": "o00_0316_0010", "cat": "porta", "estado_ref": "porta:10160440"},
+                        {"parte": "o00_0720_0000", "cat": "alavanca", "estado_ref": "alavanca:10161015"},
+                        {"parte": "o16_9999_0000", "cat": "elevador", "estado_ref": None}],
+            "itens": [{"lote": 10166180, "estado_ref": "lote:10166180"}, {"lote": 10166190, "estado_ref": "lote:10166190"},
+                      {"lote": 10169990, "estado_ref": "lote:10169990"}]}
+
+
+@pytest.fixture
+def server_mundo(tmp_path):
+    slot = make_slot(name="Personagem (teste)")
+    mundo = bytearray(0x50000)
+    regs = [registro_eventos(0x0A100000, [(10160432, 30), (10160440, 10), (10161015, 50)],
+                             [(10166180, 0x1100001), (10166190, 0x100401)]),
+            registro_eventos(0x0A110000), registro_eventos(0x0A040000)]
+    mundo[0x2EF2C:0x2EF2C + 3 * 0xC08] = b"".join(regs)
+    save = tmp_path / "DS2SOFS0000.co2"
+    save.write_bytes(build_bnd4({"USER_DATA001": bytes(slot), "USER_DATA011": bytes(mundo)}))
+    httpd = serve.make_server(tmp_path, port=0, runner=serve.Runner(command=lambda p: [sys.executable, "-c", "0"], cwd=tmp_path),
+                              save=save, mapa=serve.MapaVivo(tmp_path, save, carregar_area=area_com_objetos))
+    threading.Thread(target=httpd.serve_forever, daemon=True).start()
+    yield f"http://127.0.0.1:{httpd.server_address[1]}", save
+    httpd.shutdown()
+
+
+def test_world_state_of_the_open_area(server_mundo):
+    base, _ = server_mundo
+    r = json.loads(get(f"{base}/api/ds2/personagem-teste/mundo?area=m10_16_00_00")[2])
+    # só o que tem regra: alavanca com estado 50 e lote fora do vetor ficam de fora (sem estado)
+    assert r == {"area": "m10_16_00_00", "objetos": {"o00_0316_0002": True, "o00_0316_0010": False},
+                 "lotes": {"10166180": True, "10166190": False}}
+    for url, codigo in ((f"{base}/api/ds2/outro/mundo?area=m10_16_00_00", 404), (f"{base}/api/ds2/personagem-teste/mundo?area=../x", 400),
+                        (f"{base}/api/ds2/personagem-teste/mundo", 400)):
+        with pytest.raises(urllib.error.HTTPError) as err:
+            get(url)
+        assert err.value.code == codigo
+
+
+def test_world_state_keeps_the_last_good_one_while_the_game_writes(server_mundo):
+    base, save = server_mundo
+    url = f"{base}/api/ds2/personagem-teste/mundo?area=m10_16_00_00"
+    bom = json.loads(get(url)[2])
+    save.write_bytes(save.read_bytes()[:5000])  # o jogo no meio da gravação
+    assert json.loads(get(url)[2]) == bom

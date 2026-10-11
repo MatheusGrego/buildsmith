@@ -327,6 +327,29 @@ console.log(JSON.stringify({
 
 
 @pytest.mark.skipif(shutil.which("node") is None, reason="sem node para rodar o JS da página")
+def test_map_world_state_helpers(tmp_path):
+    """Porta aberta, baú aberto e item já pego vêm do save (/mundo); sem resposta ou sem regra = sem estado."""
+    script = tmp_path / "mundo.js"
+    script.write_text(r'''
+global.window = {}; global.CSS = { escape: (s) => s };
+eval(require("fs").readFileSync(process.argv[2], "utf8"));
+const t = window.buildsmithMapa._teste;
+const mundo = { area: "m10_16_00_00", objetos: { "o00_0316_0002": true, "o00_0316_0010": false }, lotes: { "10166180": true, "10166190": false } };
+const o = (parte) => ({ parte, cat: "porta" });
+console.log(JSON.stringify({
+  obj: [t.estadoObjeto(o("o00_0316_0002"), mundo), t.estadoObjeto(o("o00_0316_0010"), mundo), t.estadoObjeto(o("o16_x"), mundo),
+        t.estadoObjeto(o("o00_0316_0002"), null), t.estadoObjeto(o("__proto__"), mundo)],
+  item: [t.itemPego({ lote: 10166180 }, mundo), t.itemPego({ lote: 10166190 }, mundo), t.itemPego({ lote: 1 }, mundo), t.itemPego({ lote: 10166180 }, null)],
+}));
+''', encoding="utf-8")
+    out = subprocess.run(["node", str(script), str(ROOT / "skills/build-page/template/mapa.js")],
+                         capture_output=True, text=True, timeout=20, check=True)
+    r = json.loads(out.stdout)
+    assert r["obj"] == ["aberta", "fechada", None, None, None]
+    assert r["item"] == [True, False, None, None]
+
+
+@pytest.mark.skipif(shutil.which("node") is None, reason="sem node para rodar o JS da página")
 def test_map_route_stops_helpers(tmp_path):
     script = tmp_path / "mapa_rota.js"
     script.write_text(r"""

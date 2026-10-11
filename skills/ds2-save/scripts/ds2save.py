@@ -446,6 +446,15 @@ def posicoes(path) -> dict[str, dict]:
             for number, slot in ocupados}
 
 
+def mundos(path) -> dict[str, bytes]:
+    """slug do personagem -> o bloco de mundo dele (portas, baús, itens pegos: estado_mundo). Uma leitura para todos."""
+    entries = _read_entries(path)
+    ocupados = list(_occupied(entries))
+    slugs = slugs_unicos([{"slot": n, "name": _utf16z(s, OFF_NAME, NAME_CHARS),
+                           "level": struct.unpack_from("<I", s, OFF_LEVEL)[0]} for n, s in ocupados])
+    return {slugs[n]: entries.get(f"USER_DATA{10 + n:03d}", b"") for n, _s in ocupados}
+
+
 def ao_vivo(path, names=None) -> dict[str, dict]:
     """slug -> o que a página mostra ao vivo: nível, almas, atributos, inventário (nome, quantidade, reforço,
     categoria), equipado e chefes derrotados (flags do bosses.json no bloco de mundo). Uma leitura do save para todos."""

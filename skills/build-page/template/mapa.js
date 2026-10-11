@@ -45,6 +45,7 @@
   const TINTA_OBJ = { porta: 0xffc48a, nevoa: 0xffffff, alavanca: 0x9fd8ff, elevador: 0x9fd8ff, ponte: 0xffe0a0,
                       pharros: 0xffe27a, escada: 0xffe0a0, bau: 0xffcf6a };
   const TINTA_CHAVE = 0xffc23a;
+  const TINTA_ABERTA = 0x7bc96f;  // porta aberta, alavanca puxada, baú aberto no seu save (3D)
   const modeloInimigo = (tipo) => `c${String(Math.floor(Number(tipo) / 100)).padStart(4, "0")}`;
   const Iso = () => (typeof window !== "undefined" && window.MapaIsometrico) || null;
 
@@ -107,6 +108,23 @@
     indice.forEach((a) => { if (!(a.fogueiras || []).length && (a.ordem ?? 100) <= ate) ok.add(a.area); });
     return ok;
   }
+  // Estado pelo save (/api/ds2/<personagem>/mundo): porta, alavanca ou baú "aberta"/"fechada"; item pego true/false.
+  // null = sem estado (sem servidor, área ainda não carregada no jogo ou estado sem regra conferida).
+  const proprio = (obj, k) => Boolean(obj) && typeof obj === "object" && Object.prototype.hasOwnProperty.call(obj, k);
+  function estadoObjeto(o, mundo) {
+    if (!mundo || !proprio(mundo.objetos, o.parte)) return null;
+    const v = mundo.objetos[o.parte];
+    return v === true ? "aberta" : v === false ? "fechada" : null;
+  }
+  function itemPego(p, mundo) {
+    const k = String(p.lote);
+    if (!mundo || !proprio(mundo.lotes, k)) return null;
+    const v = mundo.lotes[k];
+    return v === true || v === false ? v : null;
+  }
+  const TEXTO_ESTADO = { porta: ["aberta", "fechada"], alavanca: ["puxada", "não puxada"], bau: ["aberto", "fechado"] };
+  const textoEstado = (cat, est) => { const t = TEXTO_ESTADO[cat] || TEXTO_ESTADO.porta; return est === "aberta" ? t[0] : t[1]; };
+
   // Trechos da rota na tela (3D): partes contíguas de pontos visíveis (fora do corte de interior), em pixels.
   function trechosTela(pontos, projetar) {
     const out = [];
@@ -124,10 +142,11 @@
   const st = { raiz: null, plano: null, indice: null, docs: {}, doc: null, andar: "todos", vista: null, rota: null,
                destaque: null, zonaSel: null, pop: null, jogador: null, tipoSel: null, poll: null,
                modo: "2d", iso: null, interior: false, foco: true, acesas: null, fogChave: undefined, escolhida: false,
-               entChave: null, vivo: null, realce: false,
+               entChave: null, vivo: null, realce: false, mundo: null, mundoChave: "",
                filtros: { zonas: true, fogueiras: true, chefes: true, npcs: true, plano: true, outros: true, chaves: true,
                           baus: false, objetos: false, inimigos: false } };
   const em3d = () => st.modo === "iso" && st.iso;
+  const mundoDaArea = () => (st.mundo && st.doc && st.mundo.area === st.doc.area ? st.mundo : null);
 
   function carregar(url) {
     return fetch(url, { cache: "no-store" }).then((r) => (r.ok ? r.json() : null)).catch(() => null);
@@ -206,7 +225,7 @@
       preencherAreas();
       if (!st.indice.length) return vazio("Mapa indisponível. Rode o /buildsmith:build com o DS2 SotFS instalado.");
       if (API && !st.poll) {
-        st.poll = setInterval(() => { if (!document.hidden && st.raiz.offsetParent !== null) buscarJogador(); }, POLL_MS);
+        st.poll = setInterval(() => { if (!document.hidden && st.raiz.offsetParent !== null) { buscarJogador(); buscarMundo(); } }, POLL_MS);
       }
       // abre onde você está (posição do save); sem servidor ou fora das áreas, a 1ª do plano
       return (API ? buscarJogador() : Promise.resolve()).then(() => {
@@ -239,6 +258,24 @@
     }
     mostrarOnde();
     atualizar();
+  }
+
+  // Portas, alavancas, baús e itens da área aberta já usados no seu save (o servidor relê o arquivo quando ele muda).
+  // Resposta ruim (save sendo gravado, servidor fora) não apaga o que já está na tela.
+  async function buscarMundo() {
+    if (!API || !st.doc) return;
+    const area = st.doc.area;
+    let m = null;
+    try {
+      const r = await fetch(`${API}/${PAG[2]}/mundo?area=${encodeURIComponent(area)}`, { cache: "no-store" });
+      m = r.ok ? await r.json() : null;
+    } catch (e) { m = null; }
+    if (!m || m.area !== area || !proprio(m, "objetos") || !proprio(m, "lotes")) return;
+    const chave = JSON.stringify(m);
+    if (chave === st.mundoChave) return;
+    st.mundo = m;
+    st.mundoChave = chave;
+    if (st.doc && st.doc.area === area) atualizar();
   }
 
   // Seletor de áreas na ordem da rota; com o save, separado em liberadas e ainda não liberadas.
@@ -389,6 +426,7 @@
     st.vista = ajustar(caixa(pts), tela.clientWidth || 600, tela.clientHeight || 400, opcoes.foco ? 30 : 10);
     atualizar();
     if (em3d()) await abrirIso();
+    buscarMundo();
   }
 
   function todosPontosChao() {
@@ -522,7 +560,9 @@
   function realces3d() {
     const cores = {};
     (st.doc.objetos || []).forEach((o) => {
-      if (o.parte && OBJ[o.cat] && objetoVisivel(o)) cores[o.parte] = o.chave ? TINTA_CHAVE : TINTA_OBJ[o.cat];
+      if (o.parte && OBJ[o.cat] && objetoVisivel(o)) {
+        cores[o.parte] = estadoObjeto(o, mundoDaArea()) === "aberta" ? TINTA_ABERTA : o.chave ? TINTA_CHAVE : TINTA_OBJ[o.cat];
+      }
     });
     return cores;
   }
@@ -530,7 +570,7 @@
     if (!st.iso || !st.doc) return;
     const tres = em3d(), lista = tres ? entidades3d() : [];
     const cena = st.iso.cena ? st.iso.area : "-";
-    const chave = `${st.doc.area}|${cena}|${JSON.stringify(st.filtros)}|${st.tipoSel}|${st.realce}|${st.interior}|${st.andar}|${lista.length}`;
+    const chave = `${st.doc.area}|${cena}|${JSON.stringify(st.filtros)}|${st.tipoSel}|${st.realce}|${st.interior}|${st.andar}|${lista.length}|${st.mundoChave}`;
     if (chave === st.entChave) return;
     st.entChave = chave;
     st.iso.setEntidades(lista);
@@ -688,7 +728,9 @@
       }
       const rotulo = o.chave && (nomes || tres) && estado === "cheio" && !longe
         ? `<text class="mp-rotulo mp-rotulo-chave" x="${f1(sx)}" y="${f1(sy + 16)}">${esc(o.chave.nome)}</text>` : "";
-      partes.push(`<g class="mp-obj mp-obj-${o.cat}${o.chave ? " mp-obj-chave" : ""} ${estado}${longe}" data-tipo="objeto" data-i="${i}" tabindex="0"><title>${esc(nomeObjeto(o) + (o.nome ? ` · ${o.nome}` : ""))}</title>${corpo}${rotulo}</g>`);
+      const est = estadoObjeto(o, mundoDaArea());
+      const titulo = nomeObjeto(o) + (o.nome ? ` · ${o.nome}` : "") + (est ? ` (${textoEstado(o.cat, est)} no seu save)` : "");
+      partes.push(`<g class="mp-obj mp-obj-${o.cat}${o.chave ? " mp-obj-chave" : ""}${est ? ` mp-obj-${est}` : ""} ${estado}${longe}" data-tipo="objeto" data-i="${i}" tabindex="0"><title>${esc(titulo)}</title>${corpo}${rotulo}</g>`);
     });
     if (st.filtros.inimigos) st.doc.inimigos.forEach((e, i) => {
       const p = ver(e.pos);
@@ -723,9 +765,11 @@
       const nome = p.itens[0] ? `${p.itens[0].nome}${p.itens[0].qtd > 1 ? ` ×${p.itens[0].qtd}` : ""}${p.itens.length > 1 ? ` +${p.itens.length - 1}` : ""}` : "";
       const chave = p.chave && st.filtros.chaves ? badgeChave(sx + t / 2 + 1, sy - t / 2 - 1, null) : "";
       const jaTem = destaque && temNoSave(p);  // item do plano que o save já mostra no inventário
+      const pego = itemPego(p, mundoDaArea()) === true;  // este ponto já foi pego no seu mundo (save)
+      const marcaPego = pego && !jaTem ? `<g class="mp-pego-k"><circle cx="${f1(sx - t / 2 - 1)}" cy="${f1(sy - t / 2 - 1)}" r="7"/><path d="M${f1(sx - t / 2 - 4.5)} ${f1(sy - t / 2 - 1)}l2.5 2.6 4.6-5"/></g>` : "";
       const check = jaTem ? `<g class="mp-ja-tem-k"><circle cx="${f1(sx - t / 2 - 1)}" cy="${f1(sy - t / 2 - 1)}" r="7"/><path d="M${f1(sx - t / 2 - 4.5)} ${f1(sy - t / 2 - 1)}l2.5 2.6 4.6-5"/></g>` : "";
       const ondeEsta = p.no === "bau" ? " (baú)" : p.no === "cadaver" ? " (cadáver)" : "";
-      partes.push(`<g class="mp-item ${destaque ? "mp-do-plano" : ""}${jaTem ? " mp-ja-tem" : ""}${p.chave ? " mp-item-chave" : ""}${p.no === "bau" ? " mp-no-bau" : ""} ${estado}${longe}" data-tipo="item" data-i="${i}" tabindex="0"><title>${esc(nome + ondeEsta + (jaTem ? " (você já tem)" : ""))}</title><rect class="mp-moldura" x="${f1(sx - t / 2 - 2)}" y="${f1(sy - t / 2 - 2)}" width="${t + 4}" height="${t + 4}" rx="3"/>${img}${chave}${check}${nomes && estado === "cheio" && !longe ? `<text class="mp-rotulo" x="${f1(sx)}" y="${f1(sy + t / 2 + 12)}">${esc(nome)}</text>` : ""}</g>`);
+      partes.push(`<g class="mp-item ${destaque ? "mp-do-plano" : ""}${jaTem ? " mp-ja-tem" : ""}${pego ? " mp-item-pego" : ""}${p.chave ? " mp-item-chave" : ""}${p.no === "bau" ? " mp-no-bau" : ""} ${estado}${longe}" data-tipo="item" data-i="${i}" tabindex="0"><title>${esc(nome + ondeEsta + (jaTem ? " (você já tem)" : "") + (pego ? " (já pegou aqui)" : ""))}</title><rect class="mp-moldura" x="${f1(sx - t / 2 - 2)}" y="${f1(sy - t / 2 - 2)}" width="${t + 4}" height="${t + 4}" rx="3"/>${img}${chave}${check}${marcaPego}${nomes && estado === "cheio" && !longe ? `<text class="mp-rotulo" x="${f1(sx)}" y="${f1(sy + t / 2 + 12)}">${esc(nome)}</text>` : ""}</g>`);
     });
     if (st.filtros.fogueiras) st.doc.fogueiras.forEach((f, i) => {
       const q = ver(f.pos);
@@ -844,14 +888,18 @@
       }
       const reserva = em3d() && st.iso.cena && !st.iso.temParte(p.parte)
         ? `<p class="mp-prova">Forma de reserva: o modelo do jogo${p.modelo ? ` (${esc(p.modelo)})` : ""} não entrou na cena${st.iso.motivoModelo(p.modelo) ? `: ${esc(st.iso.motivoModelo(p.modelo))}` : ""}.</p>` : "";
-      corpo = `<p class="mp-pop-tit">${esc(c.nome)}</p>${p.nome ? `<p class="mp-pop-sub">${esc(p.nome)} <span class="mp-fonte">(modelo do jogo)</span></p>` : ""}<p class="mp-pop-sub">${esc(OBJ_TEXTO[p.cat] || "")}</p>${extra}${reserva}`;
+      const est = estadoObjeto(p, mundoDaArea());
+      const noSave = est ? `<p class="mp-pop-sub mp-pop-estado mp-pop-${est}">${esc(textoEstado(p.cat, est).replace(/^./, (x) => x.toUpperCase()))} no seu save <span class="mp-fonte">(save)</span></p>` : "";
+      corpo = `<p class="mp-pop-tit">${esc(c.nome)}</p>${p.nome ? `<p class="mp-pop-sub">${esc(p.nome)} <span class="mp-fonte">(modelo do jogo)</span></p>` : ""}${noSave}<p class="mp-pop-sub">${esc(OBJ_TEXTO[p.cat] || "")}</p>${extra}${reserva}`;
     } else if (tipo === "fogueira") {
       const acesa = st.acesas ? (st.acesas.has(p.id) ? " · acesa no save" : " · ainda apagada") : "";
       corpo = `<p class="mp-pop-tit">${esc(p.nome)}</p><p class="mp-pop-sub">Fogueira${p.zona ? ` da zona ${esc(nomeZona(p.zona))}` : ""}${acesa}</p>`;
     } else {
       const no = p.no === "bau" ? "Dentro de um baú." : p.no === "cadaver" ? "Num cadáver." : "";
       const V = window.buildsmithVivo, tem = st.vivo && V ? p.itens.map((it) => [it.nome, V.itemNoSave(it.nome, st.vivo)]).filter(([, x]) => x) : [];
-      corpo = `<ul>${p.itens.map((it) => `<li>${esc(it.nome)}${it.qtd > 1 ? ` <span class="mp-qtd">×${it.qtd}</span>` : ""}</li>`).join("")}</ul>${no ? `<p class="mp-pop-sub">${no}</p>` : ""}${tem.length ? `<p class="mp-pop-sub mp-pop-tem">Você já tem: ${tem.map(([n, x]) => `${esc(n)}${x.qtd > 1 ? ` ×${fmt.format(x.qtd)}` : ""}`).join(", ")} <span class="mp-fonte">(save)</span></p>` : ""}${p.chave ? '<p class="mp-pop-sub">É uma chave: abre porta, portão ou cela.</p>' : ""}${p.item_id ? `<a class="req-link" href="#item-${esc(p.item_id)}" data-goto-item="${esc(p.item_id)}">ver em Onde pegar</a>` : ""}`;
+      const pego = itemPego(p, mundoDaArea());
+      const noSave = pego === null ? "" : `<p class="mp-pop-sub mp-pop-estado${pego ? " mp-pop-aberta" : ""}">${pego ? "Você já pegou aqui" : "Ainda está aqui"} <span class="mp-fonte">(save)</span></p>`;
+      corpo = `<ul>${p.itens.map((it) => `<li>${esc(it.nome)}${it.qtd > 1 ? ` <span class="mp-qtd">×${it.qtd}</span>` : ""}</li>`).join("")}</ul>${noSave}${no ? `<p class="mp-pop-sub">${no}</p>` : ""}${tem.length ? `<p class="mp-pop-sub mp-pop-tem">Você já tem: ${tem.map(([n, x]) => `${esc(n)}${x.qtd > 1 ? ` ×${fmt.format(x.qtd)}` : ""}`).join(", ")} <span class="mp-fonte">(save)</span></p>` : ""}${p.chave ? '<p class="mp-pop-sub">É uma chave: abre porta, portão ou cela.</p>' : ""}${p.item_id ? `<a class="req-link" href="#item-${esc(p.item_id)}" data-goto-item="${esc(p.item_id)}">ver em Onde pegar</a>` : ""}`;
     }
     const rota = API ? '<p><button type="button" class="pesq" data-rota-ate>Rota até aqui</button></p>' : "";
     pop.innerHTML = `<button type="button" class="mp-pop-x" aria-label="Fechar">&#10005;</button>${corpo}${rota}${meta}`;
@@ -1149,5 +1197,5 @@
   }
 
   window.buildsmithMapa = { montar, ver, setVivo, _teste: { caixa, ajustar, regua, tamanhoIcone, estadoAndar, corZona, andarDe, tintaParada, pino, trechosTela, liberadas,
-                                                   dimsObjeto, alturaInimigo, raioInimigo, iso: () => st.iso } };
+                                                   dimsObjeto, alturaInimigo, raioInimigo, estadoObjeto, itemPego, iso: () => st.iso } };
 })();

@@ -477,6 +477,10 @@ a.agora2-t:hover { text-decoration: underline; }
 .mp-obj-ponte .mp-obj-forma { fill: #9a8f7e; }
 .mp-obj-chave .mp-obj-forma { fill: #d9b04a; stroke: #3a2a08; }
 .mp-obj:hover .mp-obj-forma, .mp-obj:focus-visible .mp-obj-forma { stroke: var(--head); stroke-width: 2; }
+/* estado pelo save: porta aberta tracejada e clara, alavanca puxada e baú aberto em cinza */
+.mp-obj-porta.mp-obj-aberta .mp-obj-forma { fill: rgba(123, 201, 111, 0.25); stroke: #7bc96f; stroke-dasharray: 3 2; }
+.mp-obj-alavanca.mp-obj-aberta .mp-obj-forma, .mp-obj-alavanca.mp-obj-aberta .mp-obj-haste { fill: #6b7279; stroke: #7bc96f; }
+.mp-obj-bau.mp-obj-aberta .mp-obj-forma { fill: #4a4a4a; stroke: #7bc96f; }
 .mp-obj:focus-visible { outline: none; }
 .mp-badge-chave circle { fill: #1a1408; stroke: #d9b04a; stroke-width: 1.5; }
 .mp-badge-chave path { fill: none; stroke: #d9b04a; stroke-width: 1.6; stroke-linecap: round; }
@@ -633,6 +637,11 @@ a.agora2-t:hover { text-decoration: underline; }
 .mp-ja-tem image { opacity: 0.55; }
 .mp-ja-tem-k circle { fill: #10240f; stroke: #7bc96f; stroke-width: 1.5; }
 .mp-ja-tem-k path { fill: none; stroke: #7bc96f; stroke-width: 1.8; stroke-linecap: round; stroke-linejoin: round; }
+.mp-item-pego image, .mp-item-pego .mp-losango { opacity: 0.45; filter: grayscale(1); }
+.mp-pego-k circle { fill: #1c1c1c; stroke: #9a9a9a; stroke-width: 1.5; }
+.mp-pego-k path { fill: none; stroke: #c8c8c8; stroke-width: 1.8; stroke-linecap: round; stroke-linejoin: round; }
+.mp-pop-estado { color: var(--dim); }
+.mp-pop-estado.mp-pop-aberta { color: #7bc96f; }
 .mp-pop-tem { color: #9bd88f; }
 
 /* realçar inimigos: vermelho forte, anel pulsando, resto do mapa apagado */

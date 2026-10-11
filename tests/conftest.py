@@ -43,6 +43,18 @@ def build_bnd4(entries: dict[str, bytes], encrypt: bool = True, unicode: bool = 
     return bytes(header + headers + name_blob + data_blob)
 
 
+
+def registro_eventos(mapa: int, pares=(), lotes=()) -> bytes:
+    """Registro de 0xC08 da tabela de eventos do bloco de mundo: mapa, n, 192 pares, 192 lotes e o estado de cada lote."""
+    reg = bytearray(0xC08)
+    struct.pack_into("<II", reg, 0, mapa, len(pares))
+    for i, (ev, est) in enumerate(pares):
+        struct.pack_into("<II", reg, 8 + 8 * i, ev, est)
+    for i, (lote, est) in enumerate(lotes):
+        struct.pack_into("<I", reg, 0x608 + 4 * i, lote)
+        struct.pack_into("<I", reg, 0x908 + 4 * i, est)
+    return bytes(reg)
+
 import pytest
 
 

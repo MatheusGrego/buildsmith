@@ -31,7 +31,7 @@ def test_cli_levels_prints_json(capsys):
     assert json.loads(capsys.readouterr().out)["total"] == 6657
 
 
-from conftest import build_bnd4
+from conftest import build_bnd4, registro_eventos
 
 
 def test_read_bnd4_roundtrip():
@@ -249,23 +249,11 @@ def test_live_state_has_defeated_bosses(world_save, names):  # o save_file e o w
     assert set(w["chefes"]) == {"The Pursuer", "The Last Giant"}  # flags 100968 e 100971 ligadas
 
 
-def _registro(mapa: int, pares=(), lotes=()) -> bytes:
-    """Registro de 0xC08 da tabela de eventos do bloco de mundo: mapa, n, 192 pares, 192 lotes e o estado de cada lote."""
-    reg = bytearray(0xC08)
-    struct.pack_into("<II", reg, 0, mapa, len(pares))
-    for i, (ev, est) in enumerate(pares):
-        struct.pack_into("<II", reg, 8 + 8 * i, ev, est)
-    for i, (lote, est) in enumerate(lotes):
-        struct.pack_into("<I", reg, 0x608 + 4 * i, lote)
-        struct.pack_into("<I", reg, 0x908 + 4 * i, est)
-    return bytes(reg)
-
-
 def _mundo(onde=0x2EF2C) -> bytes:
-    bastille = _registro(0x0A100000, [(10160432, 30), (10160440, 10), (10162020, 33), (10165010, 80), (10165020, 20)],
+    bastille = registro_eventos(0x0A100000, [(10160432, 30), (10160440, 10), (10162020, 33), (10165010, 80), (10165020, 20)],
                          [(10166180, 0x1100001), (10166190, 0x100401), (10166201, 0x100401)])
-    harvest = _registro(0x0A110000, [(10172100, 20), (10173200, 10)], [(10176160, 0x1100003), (0, 0)])
-    majula = _registro(0x0A040000, [(10040450, 50)], [])
+    harvest = registro_eventos(0x0A110000, [(10172100, 20), (10173200, 10)], [(10176160, 0x1100003), (0, 0)])
+    majula = registro_eventos(0x0A040000, [(10040450, 50)], [])
     w = bytearray(0x50000)
     w[0x100:0x104] = struct.pack("<I", 0x0A040000)  # cabeçalho de outra tabela: não confunde a busca
     w[onde:onde + 3 * 0xC08] = bastille + harvest + majula
