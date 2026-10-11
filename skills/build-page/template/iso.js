@@ -270,6 +270,9 @@ float bsAlturaCorte( vec3 g ) {
       this._ultimo = 0;
       this.livre = null;     // câmera livre: { pos, yaw, pitch } (null = câmera fixa)
       this.entidades = [];   // última lista de setEntidades
+      this.geometrias = new Map();  // modelo -> submalhas (peças, objetos e personagens da cena)
+      this.partes = new Map();      // parte do MSB (objeto) -> instâncias dela, para realçar
+      this.personagens = {};        // modelo cXXXX -> { altura }
     }
 
     static suportado() { return typeof document !== "undefined" && webglDisponivel(); }
@@ -380,16 +383,19 @@ float bsAlturaCorte( vec3 g ) {
     _limpar() {
       if (!this.mundo) return;
       const vistos = new Set();
-      this.mundo.traverse((o) => {
-        if (o.geometry && !vistos.has(o.geometry)) { vistos.add(o.geometry); o.geometry.dispose(); }
-        if (o.material && !vistos.has(o.material)) {
-          vistos.add(o.material);
-          if (o.material.map) o.material.map.dispose();
-          o.material.dispose();
-        }
-      });
+      const solta = (g, m) => {
+        if (g && !vistos.has(g)) { vistos.add(g); g.dispose(); }
+        if (m && !vistos.has(m)) { vistos.add(m); if (m.map) m.map.dispose(); m.dispose(); }
+      };
+      this.mundo.traverse((o) => solta(o.geometry, o.material));
+      // modelos de personagem não ficam no mundo (só nas entidades): soltos aqui também
+      for (const subs of (this.geometrias || new Map()).values()) subs.forEach((x) => solta(x.g, x.material));
+      for (const { material } of (this.materiais || new Map()).values()) solta(null, material);
       this.mundo.clear();
       this.materiais = new Map();
+      this.geometrias = new Map();
+      this.partes = new Map();
+      this.personagens = {};
       this.chao = null;
       this.gradeTopo = null;
       if (this.corte && this.corte.textura) this.corte.textura.dispose();
@@ -432,20 +438,52 @@ float bsAlturaCorte( vec3 g ) {
     }
 
     // ---- entidades (inimigos, portas, baús...) ---------------------------------------------------------
-    // lista: [{ forma: "caixa"|"capsula"|"cilindro"|"losango", pos, rot?, dims: [larg, alt, prof], base?, cor, transp? }]
+    // O que a cena tem de verdade: objeto do MSB com modelo (pelo nome da parte) e modelo de personagem (cXXXX).
+    temParte(parte) { return !!(parte && this.partes && this.partes.has(parte)); }
+    temModelo(modelo) { return !!(modelo && this.geometrias && this.geometrias.has(modelo) && this.personagens && this.personagens[modelo]); }
+    alturaModelo(modelo) { return (this.personagens && this.personagens[modelo] && this.personagens[modelo].altura) || null; }
+
+    // Realça objetos reais da cena pela cor (multiplica a textura): { parte: 0xRRGGBB }; o resto volta ao normal.
+    realcar(cores) {
+      if (!this.partes || !THREE) return;
+      const c = new THREE.Color(), tocadas = new Set();
+      for (const [parte, lista] of this.partes) {
+        c.set(cores && cores[parte] != null ? cores[parte] : 0xffffff);
+        for (const { malha, i } of lista) { malha.setColorAt(i, c); tocadas.add(malha); }
+      }
+      tocadas.forEach((m) => { m.instanceColor.needsUpdate = true; });
+      this.sujo = true;
+    }
+
+    // lista: [{ forma: "caixa"|"capsula"|"cilindro"|"losango", pos, rot?, dims: [larg, alt, prof], base?, cor, transp?,
+    //           modelo?: "cXXXX", tinta? }] — com o modelo na cena, desenha o modelo (tingido por `tinta`); senão a forma.
     async setEntidades(lista) {
       this.entidades = lista || [];
       await this.iniciar();
       for (const o of [...this.grupoEnt.children]) { o.dispose && o.dispose(); this.grupoEnt.remove(o); }
       const grupos = new Map();
       for (const e of this.entidades) {
-        if (!this.formas[e.forma]) continue;
-        const k = `${e.forma}|${e.transp ? 1 : 0}`;
+        const k = this.temModelo(e.modelo) ? `modelo|${e.modelo}` : this.formas[e.forma] ? `${e.forma}|${e.transp ? 1 : 0}` : null;
+        if (!k) continue;
         if (!grupos.has(k)) grupos.set(k, []);
         grupos.get(k).push(e);
       }
       const m4 = new THREE.Matrix4(), cor = new THREE.Color();
       for (const [k, es] of grupos) {
+        if (k.startsWith("modelo|")) {
+          for (const { g, material } of this.geometrias.get(k.slice(7))) {
+            const malha = new THREE.InstancedMesh(g, material, es.length);
+            es.forEach((e, i) => {
+              malha.setMatrixAt(i, m4.fromArray(matrizEntidade(e.pos, e.rot, [1, 1, 1], 0)));
+              malha.setColorAt(i, cor.set(e.tinta ?? 0xffffff));
+            });
+            malha.instanceMatrix.needsUpdate = true;
+            malha.instanceColor.needsUpdate = true;
+            malha.computeBoundingSphere();
+            this.grupoEnt.add(malha);
+          }
+          continue;
+        }
         const [forma, transp] = k.split("|");
         if (!this.matEnt.has(k)) {
           const mat = new THREE.MeshLambertMaterial({ color: 0xffffff });
@@ -484,17 +522,34 @@ float bsAlturaCorte( vec3 g ) {
         }
         geometrias.set(nome, subs);
       }
+      this.geometrias = geometrias;
+      this.personagens = cena.personagens || {};
+      // peças de mapa e objetos (portas, baús, alavancas...) por modelo; objeto sempre instanciado, com cor por
+      // instância, para o filtro poder realçar uma parte só (realcar)
       const porModelo = new Map();
       for (const inst of cena.instancias || []) {
         if (!geometrias.has(inst.modelo)) continue;
-        if (!porModelo.has(inst.modelo)) porModelo.set(inst.modelo, []);
-        porModelo.get(inst.modelo).push(inst.matriz);
+        const k = `${inst.obj ? "o" : "m"}|${inst.modelo}`;
+        if (!porModelo.has(k)) porModelo.set(k, []);
+        porModelo.get(k).push(inst);
       }
-      const m4 = new THREE.Matrix4();
-      for (const [nome, matrizes] of porModelo) {
-        for (const { g, material, tipo } of geometrias.get(nome)) {
+      const m4 = new THREE.Matrix4(), branco = new THREE.Color(0xffffff);
+      for (const [k, insts] of porModelo) {
+        const obj3 = k.startsWith("o|"), matrizes = insts.map((i) => i.matriz);
+        for (const { g, material, tipo } of geometrias.get(k.slice(2))) {
           let obj;
-          if (matrizes.length === 1) {
+          if (obj3) {
+            obj = new THREE.InstancedMesh(g, material, insts.length);
+            insts.forEach((inst, i) => {
+              obj.setMatrixAt(i, m4.fromArray(inst.matriz));
+              obj.setColorAt(i, branco);
+              if (!this.partes.has(inst.nome)) this.partes.set(inst.nome, []);
+              this.partes.get(inst.nome).push({ malha: obj, i });
+            });
+            obj.instanceMatrix.needsUpdate = true;
+            obj.computeBoundingSphere();
+            obj.matrixAutoUpdate = false;
+          } else if (matrizes.length === 1) {
             obj = new THREE.Mesh(g, material);
             obj.matrixAutoUpdate = false;
             obj.matrix.fromArray(matrizes[0]);

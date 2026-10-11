@@ -14,7 +14,7 @@ Formatos lidos (conferidos contra a Lost Bastille, m10_16_00_00):
   faces em +0x2C, offsets de vértices/atributos/faces em +0x40; face = 3 índices no começo de 12 bytes.
 - FMG (texto do jogo): grupos em 0x0C, textos em 0x10, tabela de offsets em 0x14; grupo = (índice, primeiro, último).
 - Inimigo: `generatorregistparam_<mapa>` (linha = personagem do gerador, +8 do generatorparam) dá a linha do EnemyParam
-  no 1º int. EnemyParam: HP em +0x28, almas em +0xD0, lotes de drop (ItemLotParam2_Chr) em +0x4C e +0x134.
+  no 1º int. `generatorlocation_<mapa>`: posição relativa em +0x00 e rotação (graus, como o MSB) em +0x0C. EnemyParam: HP em +0x28, almas em +0xD0, lotes de drop (ItemLotParam2_Chr) em +0x4C e +0x134.
   Conferido com a wiki: Ruin Sentinel 2330 HP; Royal Swordsman 180 almas e drops do set Royal Swordsman.
 """
 import argparse
@@ -29,7 +29,7 @@ from pathlib import Path
 from ds2planta import PLANTA_VERSAO  # noqa: F401 (versão da planta guardada no cache)
 
 AREA = re.compile(r"^m(\d\d)_(\d\d)_(\d\d)_(\d\d)$")
-EXTRACAO_VERSAO = 5  # 2: NPCs e chefes; 3: início do mapa (zonas); 4: tipo de inimigo; 5: objetos (portas, baús...)
+EXTRACAO_VERSAO = 6  # 2: NPCs e chefes; 3: início do mapa (zonas); 4: tipo de inimigo; 5: objetos; 6: rotação do inimigo
 EP_HP, EP_ALMAS, EP_LOTES = 0x28, 0xD0, (0x4C, 0x134)  # EnemyParam
 INICIO_MAPA = "マップ開始地点"  # nome do ponto de início no MSB (texto do próprio jogo)
 JUNTAR_NPC = 15.0  # metros: geradores do mesmo NPC mais perto que isso viram um marcador só
@@ -376,7 +376,9 @@ def extrair_area(game_dir, area: str, cache_dir, names=None) -> dict:
     inst_obj = instancias_objeto(arq.ler(inst_path)) if arq.tem(inst_path) else {}
     instancias = {rid: i["param"] for rid, i in inst_obj.items()}
     ger_path = f"/param/generatorlocation_{area}.param"
-    geradores = [(rid, struct.unpack_from("<3f", raw)) for rid, raw in linhas_param(arq.ler(ger_path)) if len(raw) >= 12] if arq.tem(ger_path) else []
+    linhas_ger = linhas_param(arq.ler(ger_path)) if arq.tem(ger_path) else []
+    geradores = [(rid, struct.unpack_from("<3f", raw)) for rid, raw in linhas_ger if len(raw) >= 12]
+    rot_geradores = {rid: _r(struct.unpack_from("<3f", raw, 0x0C)) for rid, raw in linhas_ger if len(raw) >= 0x18}
     params = ds2regulation.load_params(ds2regulation.find_regulation(game_dir))
     lotes = lotes_itens(params["ItemLotParam2_Other"])
     names = names if names is not None else ds2save.load_item_names()
@@ -392,6 +394,7 @@ def extrair_area(game_dir, area: str, cache_dir, names=None) -> dict:
     reg_path = f"/param/generatorregistparam_{area}.param"
     registro = {rid: struct.unpack_from("<i", raw)[0] for rid, raw in linhas_param(arq.ler(reg_path)) if len(raw) >= 4} if arq.tem(reg_path) else {}
     for e in out["inimigos"]:
+        e["rot"] = rot_geradores.get(e["id"], [0.0, 0.0, 0.0])
         e["personagem"] = personagens.get(e["id"], 0)
         e["tipo"] = registro.get(e["personagem"])
         e["papel"] = papel_gerador(e["personagem"], e["tipo"], nomes_npc, out["chefes"])

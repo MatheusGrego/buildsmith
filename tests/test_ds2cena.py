@@ -48,14 +48,17 @@ def build_bhf4(files: dict[str, bytes]) -> tuple[bytes, bytes]:
     return bytes(bhd + names_data), bytes(bdt)
 
 
-def build_flver(malhas: list[dict], version: int = 0x20010) -> bytes:
+def build_flver(malhas: list[dict], version: int = 0x20010, ossos: list[dict] | None = None) -> bytes:
     """FLVER2 "L" mínimo. Cada malha: mtd, texturas [(caminho, tipo)], vertices [(pos, normal_bytes4, uv_int16)],
-    facesets [(flags, strip, indices)]. Layout: posição Float3, normal Byte4B, UV tipo 0x15 (int16)."""
+    facesets [(flags, strip, indices)] e, opcionais, dinamica, no (osso da malha) e ossos_malha (lista de ossos).
+    Layout: posição Float3, normal Byte4B (UByte4, 0x11), UV tipo 0x15 (int16). ossos: [{t, r, s, pai}]."""
+    ossos = ossos or []
     n_mat = n_mesh = n_vb = n_lay = len(malhas)
     n_fs = sum(len(m["facesets"]) for m in malhas)
     n_tex = sum(len(m["texturas"]) for m in malhas)
     off_mat = 0x80
-    off_mesh = off_mat + n_mat * 0x20
+    off_osso = off_mat + n_mat * 0x20
+    off_mesh = off_osso + len(ossos) * 0x80
     off_fs = off_mesh + n_mesh * 0x30
     off_vb = off_fs + n_fs * 0x20
     off_lay = off_vb + n_vb * 0x20
@@ -85,6 +88,11 @@ def build_flver(malhas: list[dict], version: int = 0x20010) -> bytes:
     cab[0x48] = 16
     cab[0x49] = 1
     struct.pack_into("<3i", cab, 0x50, n_fs, n_lay, n_tex)
+    for k, o in enumerate(ossos):
+        struct.pack_into("<3f", cab, off_osso + k * 0x80, *o.get("t", (0, 0, 0)))
+        struct.pack_into("<3f", cab, off_osso + k * 0x80 + 0x10, *o.get("r", (0, 0, 0)))
+        struct.pack_into("<h", cab, off_osso + k * 0x80 + 0x1C, o.get("pai", -1))
+        struct.pack_into("<3f", cab, off_osso + k * 0x80 + 0x20, *o.get("s", (1, 1, 1)))
     fs_i = tex_i = 0
     for k, m in enumerate(malhas):
         nome_o = poe("Material\0".encode("utf-16-le"))
@@ -101,7 +109,11 @@ def build_flver(malhas: list[dict], version: int = 0x20010) -> bytes:
             struct.pack_into("<5i", cab, o + 8, len(indices), ioff, len(indices) * 2, 0, 16)
             fs_i += 1
         o = off_mesh + k * 0x30
+        cab[o] = 1 if m.get("dinamica") else 0
         struct.pack_into("<i", cab, o + 4, k)
+        om = m.get("ossos_malha", [])
+        struct.pack_into("<2i", cab, o + 0x10, m.get("no", -1), len(om))
+        struct.pack_into("<i", cab, o + 0x1C, poe(struct.pack(f"<{len(om)}i", *om)) if om else 0)
         struct.pack_into("<4i", cab, o + 0x20, len(fs_lista), poe(struct.pack(f"<{len(fs_lista)}i", *fs_lista)), 1, poe(struct.pack("<i", k)))
         vbytes = b"".join(struct.pack("<3f", *p) + bytes(n) + struct.pack("<2h", *uv) for p, n, uv in m["vertices"])
         boff = poe_dados(vbytes)
@@ -112,7 +124,7 @@ def build_flver(malhas: list[dict], version: int = 0x20010) -> bytes:
     data_off = (len(corpo) + 15) // 16 * 16
     corpo += bytes(data_off - len(corpo))
     final = bytearray(corpo) + dados
-    struct.pack_into("<8i", final, 0x08, version, data_off, len(dados), 0, n_mat, 0, n_mesh, n_vb)
+    struct.pack_into("<8i", final, 0x08, version, data_off, len(dados), 0, n_mat, len(ossos), n_mesh, n_vb)
     struct.pack_into("<3f", final, 0x28, -1.0, 0.0, -1.0)
     struct.pack_into("<3f", final, 0x34, 1.0, 2.0, 1.0)
     return bytes(final)
@@ -353,3 +365,125 @@ def test_extrair_cena_majula_com_o_jogo(tmp_path):
     assert all(len(i["matriz"]) == 16 and i["modelo"] in cena["modelos"] for i in cena["instancias"])
     assert not list((tmp_path / "cena").glob(".*.tmp-*"))  # gravação atômica não deixa resto
     assert ds2cena.extrair_cena(GAME, "m10_04_00_00", tmp_path)["segundos"] == cena["segundos"]  # cache
+
+
+def build_bnd4(files: dict[str, bytes], esz: int = 0x24, formato: int = 0x74) -> bytes:
+    """BND4 de um arquivo só (cabeçalho e dados juntos). esz 0x24 = layout do DS2; 0x20 = sem compressão (formato 0x0A)."""
+    count = len(files)
+    cab = bytearray(0x40 + count * esz)
+    cab[:4] = b"BND4"
+    cab[0x0A] = 0  # bits invertidos: o formato é lido de trás para frente
+    struct.pack_into("<i", cab, 0x0C, count)
+    struct.pack_into("<q", cab, 0x10, 0x40)
+    struct.pack_into("<q", cab, 0x20, esz)
+    cab[0x30] = 1
+    cab[0x31] = formato
+    nomes = bytearray()
+    base_nomes = len(cab)
+    for name in files:
+        nomes += name.encode("utf-16-le") + b"\0\0"
+    dados_ini = base_nomes + len(nomes)
+    dados = bytearray()
+    off_nome = base_nomes
+    for i, (name, content) in enumerate(files.items()):
+        h = 0x40 + i * esz
+        struct.pack_into("<q", cab, h + 0x08, len(content))
+        if esz == 0x24:
+            struct.pack_into("<q", cab, h + 0x10, len(content))
+            struct.pack_into("<I", cab, h + 0x18, dados_ini + len(dados))
+            struct.pack_into("<i", cab, h + 0x1C, i)
+            struct.pack_into("<I", cab, h + 0x20, off_nome)
+        else:  # sem compressão: tamanho, offset de 4 bytes, ID e nome
+            struct.pack_into("<I", cab, h + 0x10, dados_ini + len(dados))
+            struct.pack_into("<i", cab, h + 0x14, i)
+            struct.pack_into("<I", cab, h + 0x18, off_nome)
+        off_nome += len(name.encode("utf-16-le")) + 2
+        dados += content
+    return bytes(cab + nomes + dados)
+
+
+def test_ler_binder_bnd4_com_dcx_e_layouts():
+    b = build_bnd4({"N:\\FRPG2\\model\\obj\\o00_0300\\o00_0300.flv.dcx": build_dcx(b"FLVER\0x"), "o00_0300.tpf": b"TPF\0y"})
+    arqs = ds2cena.ler_binder(build_dcx(b))  # o binder inteiro também pode vir em DCX
+    assert arqs == {"o00_0300.flv": b"FLVER\0x", "o00_0300.tpf": b"TPF\0y"}
+    assert ds2cena.ler_binder(b, ".tpf") == {"o00_0300.tpf": b"TPF\0y"}
+    outro = build_bnd4({"a.flv": b"123"}, esz=0x20, formato=0x0A)  # byte 0x0A = 0: formato lido como está (IDs e nomes)
+    assert ds2cena.ler_binder(outro) == {"a.flv": b"123"}
+    with pytest.raises(ds2cena.CenaError):
+        ds2cena.ler_binder(b"XXXX" + bytes(60))
+
+
+def test_ossos_compoem_com_o_pai():
+    pai = {"t": (0, 5, 0), "r": (0, math.pi / 2, 0), "s": (1, 1, 1), "pai": -1}
+    filho = {"t": (2, 0, 0), "r": (0, 0, 0), "s": (1, 1, 1), "pai": 0}
+    mundo = ds2cena.mundo_dos_ossos([pai, filho])
+    assert ds2cena.aplicar_matriz(mundo[1], (0, 0, 0)) == pytest.approx((0, 5, -2), abs=1e-5)  # girou 90° em Y e subiu
+
+
+def test_flver_malha_rigida_vai_para_o_osso_e_dinamica_fica():
+    tri = lambda **k: {**tri_malha(), **k}  # noqa: E731
+    ossos = [{"t": (0, 0, 0)}, {"t": (10, 0, 0)}, {"t": (0, 3, 0)}]
+    rigida_no = tri(no=1)  # normal UByte4 mas sem lista de ossos: vai pelo osso da malha
+    por_vertice = tri(ossos_malha=[0, 2], vertices=[((0.0, 0.0, 0.0), [127, 254, 127, 1], (0, 0)),
+                                                     ((1.0, 0.0, 0.0), [127, 254, 127, 0], (0, 0)),
+                                                     ((1.0, 0.0, 1.0), [127, 254, 127, 1], (0, 0))])
+    dinamica = tri(dinamica=True, no=1)
+    flv = build_flver([rigida_no, por_vertice, dinamica], ossos=ossos)
+    a, b, c = ds2cena.ler_flver(flv, ossos=True)["malhas"]
+    assert a["vertices"][1] == pytest.approx((11.0, 0.0, 0.0))
+    assert [tuple(v) for v in b["vertices"]] == [pytest.approx((0, 3, 0)), pytest.approx((1, 0, 0)), pytest.approx((1, 3, 1))]
+    assert c["vertices"][1] == pytest.approx((1.0, 0.0, 0.0))  # com pesos de osso: já no espaço do modelo
+    assert len(a["normais"][0]) == 3  # o 4º byte da normal (osso) não vai para a geometria
+    sem = ds2cena.ler_flver(flv)["malhas"][0]  # peça de mapa: sem ossos, como sempre
+    assert sem["vertices"][1] == pytest.approx((1.0, 0.0, 0.0))
+
+
+def test_modelo_do_binder_pega_o_flv_do_modelo_e_as_texturas():
+    dds = bytearray(128 + 8)
+    dds[:4] = b"DDS "
+    struct.pack_into("<2I", dds, 12, 4, 4)
+    dds[84:88] = b"DXT1"
+    nome_tex = b"c1020_body_d.dds\0"
+    tpf = bytearray(0x10 + 0x14)
+    tpf[:4] = b"TPF\0"
+    struct.pack_into("<i", tpf, 0x08, 1)
+    struct.pack_into("<2I", tpf, 0x10, len(tpf) + len(nome_tex), len(dds))
+    struct.pack_into("<I", tpf, 0x10 + 0x0C, len(tpf))
+    tpf = bytes(tpf) + nome_tex + bytes(dds)
+    flv = build_flver([tri_malha()])
+    arquivos = {"/model/chr/c1020.bnd": build_bnd4({"c1020_x.flv": b"lixo", "c1020.flv": flv}),
+                "/model/chr/c1020.texbnd": build_bnd4({"c1020.tpf": tpf})}
+    modelo, tex, aviso = ds2cena.modelo_do_binder(arquivos.get, "/model/chr/c1020.bnd", "/model/chr/c1020.texbnd", "c1020")
+    assert aviso is None and len(modelo["malhas"]) == 1 and list(tex) == ["c1020_body_d"]
+    assert ds2cena.modelo_do_binder(arquivos.get, "/model/obj/o99.bnd") == (None, {}, "sem arquivo no jogo")
+
+
+def test_pacotes_procura_em_todos_gamedata_primeiro(tmp_path, monkeypatch):
+    for n in ("LqChr", "HqChr", "GameData"):
+        (tmp_path / f"{n}Ebl.bhd").write_bytes(b"x")
+    abertos = []
+
+    class Falso:
+        def __init__(self, _dir, nome):
+            abertos.append(nome)
+            self.nome = nome
+
+        def tem(self, caminho):
+            return self.nome == "HqChr" and caminho == "/model/chr/c1020.bnd"
+
+        def ler(self, caminho):
+            return b"BND4"
+
+    monkeypatch.setattr(ds2cena.ds2arquivos, "Arquivo", Falso)
+    pac = ds2cena.Pacotes(tmp_path)
+    assert pac.nomes == ["GameData", "HqChr", "LqChr"]
+    assert pac.ler("/model/chr/c1020.bnd") == b"BND4" and abertos == ["GameData", "HqChr"]
+    assert pac.ler("/model/chr/c9999.bnd") is None and abertos == ["GameData", "HqChr", "LqChr"]
+
+
+@pytest.mark.skipif(not (GAME / "GameDataEbl.bhd").exists(), reason="DS2 SotFS não instalado")
+def test_extrair_cena_lost_bastille_objetos_e_inimigos(tmp_path):
+    cena = ds2cena.extrair_cena(GAME, "m10_16_00_00", tmp_path)
+    assert sum(1 for i in cena["instancias"] if i.get("obj")) >= 20, cena["avisos"]
+    assert "c3180" in cena["personagens"], cena["avisos"]  # o Pursuer perto do McDuff
+    assert 2.0 < cena["personagens"]["c3180"]["altura"] < 6.0

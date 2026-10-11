@@ -41,6 +41,11 @@
     bau: "Baú.",
   };
   const COR_CHAVE = 0xd9b04a;
+  // Tinta do objeto real da cena quando o filtro dele está ligado (multiplica a textura do jogo).
+  const TINTA_OBJ = { porta: 0xffc48a, nevoa: 0xffffff, alavanca: 0x9fd8ff, elevador: 0x9fd8ff, ponte: 0xffe0a0,
+                      pharros: 0xffe27a, escada: 0xffe0a0, bau: 0xffcf6a };
+  const TINTA_CHAVE = 0xffc23a;
+  const modeloInimigo = (tipo) => `c${String(Math.floor(Number(tipo) / 100)).padStart(4, "0")}`;
   const Iso = () => (typeof window !== "undefined" && window.MapaIsometrico) || null;
 
   // ---- funções puras (testadas no node) ------------------------------------------------------------
@@ -486,28 +491,41 @@
   }
 
   // Formas 3D dos inimigos e objetos visíveis pelos filtros (refeitas só quando a lista muda, não a cada quadro).
+  // Inimigo: o modelo do jogo quando a cena trouxe (cXXXX = linha do EnemyParam // 100, virado como o gerador), senão a
+  // cápsula; objeto com modelo na cena já está no cenário (o filtro só realça), sem modelo vira a forma de reserva.
   function entidades3d() {
     const out = [];
     if (st.filtros.inimigos) st.doc.inimigos.forEach((e) => {
       const t = tipoInimigo(e.tipo), h = alturaInimigo(t), igual = st.tipoSel && e.tipo === st.tipoSel;
-      out.push({ forma: "capsula", pos: e.pos, dims: [h * 0.36, h, h * 0.36],
+      out.push({ modelo: modeloInimigo(e.tipo), rot: e.rot ? [0, e.rot[1], 0] : null,
+                 tinta: igual ? 0xffd27a : st.tipoSel ? 0x5a4a48 : 0xffffff,
+                 forma: "capsula", pos: e.pos, dims: [h * 0.36, h, h * 0.36],
                  cor: igual ? 0xf2c14e : st.tipoSel ? 0x4a2420 : t.chefe ? 0xd1572f : 0xb8352a });
     });
     (st.doc.objetos || []).forEach((o) => {
       const c = OBJ[o.cat];
-      if (!c || !objetoVisivel(o)) return;
+      if (!c || !objetoVisivel(o) || st.iso.temParte(o.parte)) return;
       out.push({ forma: c.forma, pos: o.pos, rot: o.rot, dims: dimsObjeto(o), base: c.base, transp: c.transp,
                  cor: o.chave ? COR_CHAVE : c.cor });
     });
     return out;
   }
+  function realces3d() {
+    const cores = {};
+    (st.doc.objetos || []).forEach((o) => {
+      if (o.parte && OBJ[o.cat] && objetoVisivel(o)) cores[o.parte] = o.chave ? TINTA_CHAVE : TINTA_OBJ[o.cat];
+    });
+    return cores;
+  }
   function sincronizarEntidades() {
     if (!st.iso || !st.doc) return;
-    const lista = em3d() ? entidades3d() : [];
-    const chave = `${st.doc.area}|${JSON.stringify(st.filtros)}|${st.tipoSel}|${lista.length}`;
+    const tres = em3d(), lista = tres ? entidades3d() : [];
+    const cena = st.iso.cena ? st.iso.area : "-";
+    const chave = `${st.doc.area}|${cena}|${JSON.stringify(st.filtros)}|${st.tipoSel}|${lista.length}`;
     if (chave === st.entChave) return;
     st.entChave = chave;
     st.iso.setEntidades(lista);
+    st.iso.realcar(tres ? realces3d() : {});
   }
 
   // Leva o enquadramento do 2D (st.vista) para a câmera 3D, mantendo giro e inclinação.
@@ -670,7 +688,7 @@
       const classe = `mp-inimigo ${estadoAndar(e.andar, andarSel)}${longe}${igual ? " mp-inimigo-sel" : st.tipoSel ? " mp-inimigo-fora" : ""}${t.chefe ? " mp-inimigo-chefe" : ""}`;
       const titulo = `<title>${esc(t.nome || "Inimigo (nome não confirmado)")}</title>`;
       if (tres) {
-        const [cx, cy, r] = alvo3d(e.pos, alturaInimigo(t));
+        const [cx, cy, r] = alvo3d(e.pos, st.iso.alturaModelo(modeloInimigo(e.tipo)) || alturaInimigo(t));
         partes.push(`<circle class="mp-alvo3d ${classe}" data-tipo="inimigo" data-i="${i}" tabindex="0" cx="${f1(cx)}" cy="${f1(cy)}" r="${f1(r)}">${titulo}</circle>`);
         return;
       }

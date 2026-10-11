@@ -15,6 +15,12 @@ Formatos (conferidos no Huntsman's Copse, m10_23_00_00, e em Majula, m10_04_00_0
   Matriz = T · Ry · Rz · Rx · S (gira em X, depois Z, depois Y; o sinal padrão bateu com o navmesh).
 - O chão andável (navmesh, as mesmas malhas do mapa 2D) entra no geo.bin: a página usa para o corte de interior.
 - O geo.bin fica no cache em gzip (geo.bin.gz, ~3× menor); o servidor manda com Content-Encoding: gzip.
+- Objetos (MSB tipo 1: portas, baús, alavancas, elevadores, estátuas...) e inimigos: modelos em /model/obj/<oXX_XXXX>.bnd
+  e /model/chr/<cXXXX>.bnd (texturas do personagem em <cXXXX>.texbnd), binders BND4 (lista de arquivos do DS2 SotFS do
+  Smithbox). Os pacotes são vários (*Ebl.bhd na pasta Game); o arquivo é procurado em todos. O modelo do inimigo é a
+  linha do EnemyParam // 100. Malha rígida (sem pesos de osso) fica no espaço do osso: posição pelo osso de cada
+  vértice (4º byte da normal UByte4/Byte4E, índice na lista de ossos da malha) ou pelo osso da malha, como o Smithbox
+  faz; o osso local é T · Ry · Rz · Rx · S (rotação em radianos) e o do mundo compõe com os pais.
 """
 import gzip
 import json
@@ -30,7 +36,7 @@ from pathlib import Path
 import ds2arquivos
 import ds2mapa
 
-CENA_VERSAO = 2  # 2: UV int16, normais por tipo, LOD0, céu/NoLit fora, matriz, chão andável, cache atômico
+CENA_VERSAO = 3  # 2: UV int16, normais por tipo, LOD0, céu/NoLit fora, matriz, chão andável; 3: objetos e inimigos
 TEX_MAX = 512  # lado máximo das texturas (descarta os mipmaps maiores)
 FORA_M = 40.0  # peças além desta margem do chão andável (céu, montanhas de fundo) ficam de fora
 LOD_FLAGS = 0x01000000 | 0x02000000
@@ -63,23 +69,69 @@ def ler_bhf4(bhd: bytes, bdt: bytes, filtro_ext: str = None) -> dict[str, bytes]
     """Lê arquivos de um contêiner BHF4/BDF4 descompactando DCX onde couber."""
     if bhd[:4] != b"BHF4":
         raise CenaError("cabeçalho BHF4 inválido")
-    count = struct.unpack_from("<i", bhd, 0x0C)[0]
-    esz = struct.unpack_from("<q", bhd, 0x20)[0]
-    unicode = bhd[0x30] != 0
+    return _arquivos_binder4(bhd, bdt, filtro_ext)
+
+
+def _formato_binder(bruto: int, bit_big_endian: bool) -> int:
+    """Formato do binder (bits: 0x02 IDs, 0x04/0x08 nomes, 0x10 offset longo, 0x20 compressão), como o SoulsFormats lê."""
+    inverte = bit_big_endian or (bruto & 1 and not bruto & 0x80)
+    return bruto if inverte else int(f"{bruto:08b}"[::-1], 2)
+
+
+def _nome_curto(nome: str) -> str:
+    curto = nome.replace("/", "\\").split("\\")[-1]
+    return curto[:-4] if curto.lower().endswith(".dcx") else curto
+
+
+def _arquivos_binder4(cab: bytes, dados: bytes, filtro_ext: str | None) -> dict[str, bytes]:
+    count = struct.unpack_from("<i", cab, 0x0C)[0]
+    esz = struct.unpack_from("<q", cab, 0x20)[0]
+    unicode = cab[0x30] != 0
+    fmt = _formato_binder(cab[0x31], not cab[0x0A])
     out = {}
     for i in range(count):
         h = 0x40 + i * esz
-        size = struct.unpack_from("<q", bhd, h + 0x08)[0]
-        off = struct.unpack_from("<I", bhd, h + 0x18)[0]
-        name_off = struct.unpack_from("<I", bhd, h + esz - 4)[0]
-        nome = _cstr(bhd, name_off, unicode)
-        short = nome.split("\\")[-1]
-        nome_sem_dcx = short[:-4] if short.endswith(".dcx") else short
-        if filtro_ext and not nome_sem_dcx.endswith(filtro_ext):
+        size = struct.unpack_from("<q", cab, h + 0x08)[0]
+        if esz == 0x24:  # o layout do DS2 (compressão + IDs + nomes, offset de 4 bytes)
+            off = struct.unpack_from("<I", cab, h + 0x18)[0]
+            name_off = struct.unpack_from("<I", cab, h + esz - 4)[0]
+        else:
+            o = 0x10 + (8 if fmt & 0x20 else 0)
+            off = struct.unpack_from("<q" if fmt & 0x10 else "<I", cab, h + o)[0]
+            o += (8 if fmt & 0x10 else 4) + (4 if fmt & 0x02 else 0)
+            name_off = struct.unpack_from("<I", cab, h + o)[0] if fmt & 0x0C else None
+        nome = _nome_curto(_cstr(cab, name_off, unicode)) if name_off else f"arquivo_{i}"
+        if filtro_ext and not nome.lower().endswith(filtro_ext):
             continue
-        raw = bdt[off:off + size]
-        out[nome_sem_dcx] = ds2arquivos.dcx(raw)
+        out[nome] = ds2arquivos.dcx(dados[off:off + size])
     return out
+
+
+def _arquivos_binder3(data: bytes, filtro_ext: str | None) -> dict[str, bytes]:
+    fmt = _formato_binder(data[0x0C], bool(data[0x0E]))
+    count = struct.unpack_from("<i", data, 0x10)[0]
+    esz = 0x0C + (4 if fmt & 0x10 else 0) + (4 if fmt & 0x02 else 0) + (4 if fmt & 0x0C else 0) + (4 if fmt & 0x20 else 0)
+    out = {}
+    for i in range(count):
+        h = 0x20 + i * esz
+        size = struct.unpack_from("<i", data, h + 4)[0]
+        off = struct.unpack_from("<q" if fmt & 0x10 else "<I", data, h + 8)[0]
+        o = h + 8 + (8 if fmt & 0x10 else 4) + (4 if fmt & 0x02 else 0)
+        nome = _nome_curto(_cstr(data, struct.unpack_from("<I", data, o)[0], False)) if fmt & 0x0C else f"arquivo_{i}"
+        if filtro_ext and not nome.lower().endswith(filtro_ext):
+            continue
+        out[nome] = ds2arquivos.dcx(data[off:off + size])
+    return out
+
+
+def ler_binder(data: bytes, filtro_ext: str | None = None) -> dict[str, bytes]:
+    """Arquivos de um binder BND4 ou BND3 (nome curto, sem .dcx; conteúdo com DCX aberto)."""
+    data = ds2arquivos.dcx(data)
+    if data[:4] == b"BND4":
+        return _arquivos_binder4(data, data, filtro_ext)
+    if data[:4] == b"BND3":
+        return _arquivos_binder3(data, filtro_ext)
+    raise CenaError(f"binder em formato inesperado ({data[:4]!r})")
 
 
 def classe_material(mtd: str) -> str:
@@ -135,8 +187,8 @@ def _membro(tipo: int, semantica: int, uv_fator: float):
         if tipo == 0x03:
             return "4f", lambda v: v[:3]
     elif semantica == 3:  # normal
-        if tipo in (0x10, 0x11, 0x13, 0x2F):
-            return "4B", lambda v: ((v[0] - 127) / 127.0, (v[1] - 127) / 127.0, (v[2] - 127) / 127.0)
+        if tipo in (0x10, 0x11, 0x13, 0x2F):  # o 4º byte é o osso do vértice em malha rígida (UByte4/Byte4E)
+            return "4B", lambda v: ((v[0] - 127) / 127.0, (v[1] - 127) / 127.0, (v[2] - 127) / 127.0, v[3])
         if tipo == 0x02:
             return "3f", lambda v: v
         if tipo == 0x03:
@@ -197,8 +249,45 @@ def _ler_vertices(data: bytes, vb: dict, layout: list[dict], uv_fator: float, ex
     return out
 
 
-def ler_flver(data: bytes) -> dict:
-    """Modelo FLVER2 do DS2: malhas (LOD0) com posições, normais, UV, índices em lista, difusa e tipo de material."""
+def _mul4(a: list[float], b: list[float]) -> list[float]:
+    """a · b, matrizes 4×4 coluna a coluna."""
+    return [sum(a[k * 4 + lin] * b[col * 4 + k] for k in range(4)) for col in range(4) for lin in range(4)]
+
+
+def mundo_dos_ossos(ossos: list[dict]) -> list[list[float]]:
+    """Matriz do mundo de cada osso: a do pai · a local (T · Ry · Rz · Rx · S, rotação em radianos)."""
+    locais = [matriz_instancia(o["t"], [math.degrees(a) for a in o["r"]], o["s"]) for o in ossos]
+    mundo: list = [None] * len(ossos)
+
+    def de(i, guarda=0):
+        if mundo[i] is None:
+            pai = ossos[i]["pai"]
+            mundo[i] = _mul4(de(pai, guarda + 1), locais[i]) if 0 <= pai < len(ossos) and pai != i and guarda < 64 else locais[i]
+        return mundo[i]
+
+    for i in range(len(ossos)):
+        de(i)
+    return mundo
+
+
+IDENTIDADE = [1.0, 0, 0, 0, 0, 1.0, 0, 0, 0, 0, 1.0, 0, 0, 0, 0, 1.0]
+
+
+def _aplicar_osso(m: list[float], p, n):
+    x, y, z = p
+    q = (m[0] * x + m[4] * y + m[8] * z + m[12], m[1] * x + m[5] * y + m[9] * z + m[13], m[2] * x + m[6] * y + m[10] * z + m[14])
+    if n is None:
+        return q, None
+    a, b, c = n[0], n[1], n[2]
+    r = (m[0] * a + m[4] * b + m[8] * c, m[1] * a + m[5] * b + m[9] * c, m[2] * a + m[6] * b + m[10] * c)
+    k = math.sqrt(r[0] ** 2 + r[1] ** 2 + r[2] ** 2) or 1.0
+    return q, (r[0] / k, r[1] / k, r[2] / k)
+
+
+def ler_flver(data: bytes, ossos: bool = False) -> dict:
+    """Modelo FLVER2 do DS2: malhas (LOD0) com posições, normais, UV, índices em lista, difusa e tipo de material.
+
+    ossos=True põe as malhas rígidas no lugar pelos ossos (objetos e personagens; as peças de mapa já vêm no lugar)."""
     if data[:6] != b"FLVER\0":
         raise CenaError("formato FLVER2 não reconhecido")
     if data[6:8] != b"L\0":
@@ -217,15 +306,25 @@ def ler_flver(data: bytes) -> dict:
         name_o, mtd_o, tcount, tidx = struct.unpack_from("<4i", data, off + i * 0x20)
         mats.append({"nome": _cstr(data, name_o, unicode_flv), "mtd": _cstr(data, mtd_o, unicode_flv),
                      "tcount": tcount, "tidx": tidx})
-    off += n_mat * 0x20 + n_bone * 0x80
+    off += n_mat * 0x20
+    lista_ossos = []
+    for i in range(n_bone):
+        o = off + i * 0x80
+        lista_ossos.append({"t": struct.unpack_from("<3f", data, o), "r": struct.unpack_from("<3f", data, o + 0x10),
+                            "pai": struct.unpack_from("<h", data, o + 0x1C)[0], "s": struct.unpack_from("<3f", data, o + 0x20)})
+    off += n_bone * 0x80
+    mundo_ossos = mundo_dos_ossos(lista_ossos) if ossos and lista_ossos else []
 
     meshes = []
     for i in range(n_mesh):
         o = off + i * 0x30
         mat = struct.unpack_from("<i", data, o + 4)[0]
+        no, n_ossos_malha, _bb_off, ossos_off = struct.unpack_from("<4i", data, o + 0x10)
         fs_count, fs_idx_off, vb_count, vb_idx_off = struct.unpack_from("<4i", data, o + 0x20)
         meshes.append({"mat": mat, "fs": list(struct.unpack_from(f"<{fs_count}i", data, fs_idx_off)),
-                       "vb": list(struct.unpack_from(f"<{vb_count}i", data, vb_idx_off))})
+                       "vb": list(struct.unpack_from(f"<{vb_count}i", data, vb_idx_off)),
+                       "dinamica": data[o] != 0, "no": no,
+                       "ossos": list(struct.unpack_from(f"<{n_ossos_malha}i", data, ossos_off)) if 0 < n_ossos_malha < 4096 else []})
     off += n_mesh * 0x30
 
     fsets = []
@@ -282,6 +381,24 @@ def ler_flver(data: bytes) -> dict:
                 attrs.setdefault(nome, valores)
         if "pos" not in attrs or not indices or max(indices) >= len(attrs["pos"]):
             continue
+        normais = attrs.get("nrm", [])
+        osso_vertice = [n[3] for n in normais] if normais and len(normais[0]) > 3 else []
+        normais = [n[:3] for n in normais]
+        if mundo_ossos and not m["dinamica"]:
+            tipo_nrm = next((mb["type"] for k in m["vb"] for mb in lays[vbs[k]["lay"]] if mb["semantic"] == 3), None)
+            if tipo_nrm in (0x11, 0x2F) and m["ossos"] and osso_vertice:  # cada vértice no espaço do seu osso
+                mats = [mundo_ossos[b] if 0 <= b < len(mundo_ossos) else IDENTIDADE for b in m["ossos"]]
+                por_vertice = [mats[w] if w < len(mats) else IDENTIDADE for w in osso_vertice]
+            elif 0 <= m["no"] < len(mundo_ossos):
+                por_vertice = [mundo_ossos[m["no"]]] * len(attrs["pos"])
+            else:
+                por_vertice = []
+            if por_vertice and any(mt != IDENTIDADE for mt in por_vertice):
+                novos = [_aplicar_osso(mt, p, normais[k] if k < len(normais) else None)
+                         for k, (mt, p) in enumerate(zip(por_vertice, attrs["pos"]))]
+                attrs["pos"] = [q for q, _ in novos]
+                if normais:
+                    normais = [n if n is not None else (0.0, 1.0, 0.0) for _, n in novos]
 
         tex_difusa = None
         if mat_info["tcount"] > 0:
@@ -295,11 +412,15 @@ def ler_flver(data: bytes) -> dict:
             "tipo": tipo,
             "indices": indices,
             "vertices": attrs["pos"],
-            "normais": attrs.get("nrm", []),
+            "normais": normais,
             "uvs": attrs.get("uv", []),
             "textura_difusa": tex_difusa,
         })
 
+    if ossos and malhas_saida:  # a caixa do cabeçalho é a do modelo sem os ossos: refaz pelos vértices postos no lugar
+        pts = [v for ms in malhas_saida if ms["tipo"] != "ignorar" for v in ms["vertices"]] or [v for ms in malhas_saida for v in ms["vertices"]]
+        bb_min = tuple(min(p[k] for p in pts) for k in range(3))
+        bb_max = tuple(max(p[k] for p in pts) for k in range(3))
     return {"version": hex(version), "bb": (bb_min, bb_max), "materiais": mats, "malhas": malhas_saida}
 
 
@@ -435,8 +556,8 @@ def caixa_mundo(m: list[float], bb) -> tuple[list[float], list[float]]:
     return [min(p[k] for p in pts) for k in range(3)], [max(p[k] for p in pts) for k in range(3)]
 
 
-def msb_instancias(msb_bytes: bytes) -> tuple[list[dict], set[str]]:
-    """Peças de mapa do MSB: modelo, posição, rotação (graus), escala e a matriz."""
+def msb_instancias(msb_bytes: bytes, tipo_parte: int = 0) -> tuple[list[dict], set[str]]:
+    """Partes do MSB de um tipo (0 = peça de mapa, 1 = objeto): modelo, posição, rotação (graus), escala e a matriz."""
     listas = ds2mapa._listas_msb(msb_bytes)
     modelos_msb = []
     for e in listas.get("MODEL_PARAM_ST", []):
@@ -445,7 +566,7 @@ def msb_instancias(msb_bytes: bytes) -> tuple[list[dict], set[str]]:
     instancias = []
     modelos_usados = set()
     for e in listas.get("PARTS_PARAM_ST", []):
-        if msb_bytes[e + 8] != 0:  # 0 = peça de mapa
+        if msb_bytes[e + 8] != tipo_parte:
             continue
         nome = _wstr(msb_bytes, e + struct.unpack_from("<q", msb_bytes, e)[0])
         m_idx = struct.unpack_from("<h", msb_bytes, e + 0x0C)[0]
@@ -461,8 +582,89 @@ def msb_instancias(msb_bytes: bytes) -> tuple[list[dict], set[str]]:
             "rot": [round(c, 3) for c in rot],
             "esc": [round(c, 4) for c in esc],
             "matriz": matriz_instancia(pos, rot, esc),
+            **({"obj": True} if tipo_parte == 1 else {}),
         })
     return instancias, modelos_usados
+
+
+class Pacotes:
+    """Todos os pacotes da pasta Game (*Ebl.bhd + .bdt + KeyCode.pem), abertos só quando preciso: o arquivo é procurado
+    em todos (GameData primeiro, os de alta qualidade antes dos de baixa)."""
+
+    def __init__(self, game_dir):
+        self.game_dir = Path(game_dir)
+        nomes = sorted(p.name[:-len("Ebl.bhd")] for p in self.game_dir.glob("*Ebl.bhd"))
+        self.nomes = sorted(nomes, key=lambda n: (n != "GameData", n.lower().startswith("lq"), n))
+        self._abertos: dict = {}
+        self._lock = threading.Lock()
+
+    def pacote(self, nome: str):
+        with self._lock:
+            if nome not in self._abertos:
+                try:
+                    self._abertos[nome] = ds2arquivos.Arquivo(self.game_dir, nome)
+                except (ds2arquivos.ArquivoError, OSError, ValueError):
+                    self._abertos[nome] = None
+            return self._abertos[nome]
+
+    def ler(self, caminho: str) -> bytes | None:
+        for nome in self.nomes:
+            arq = self.pacote(nome)
+            if arq is not None and arq.tem(caminho):
+                return arq.ler(caminho)
+        return None
+
+
+_pacotes: dict[str, Pacotes] = {}
+
+
+def pacotes(game_dir) -> Pacotes:
+    chave = str(Path(game_dir).resolve())
+    with _travas_lock:
+        if chave not in _pacotes:
+            _pacotes[chave] = Pacotes(game_dir)
+        return _pacotes[chave]
+
+
+def modelo_do_binder(ler, caminho: str, caminho_tex: str | None = None, preferido: str | None = None):
+    """(modelo, {textura: dds}, aviso) de um modelo de objeto ou personagem: o .flv do binder (o de nome igual ao modelo,
+    senão o primeiro) com os ossos aplicados, e as texturas dos .tpf do binder e do binder de texturas.
+
+    ler(caminho) -> bytes ou None (Pacotes.ler)."""
+    data = ler(caminho)
+    if data is None:
+        return None, {}, "sem arquivo no jogo"
+    try:
+        arqs = ler_binder(data)
+        flvs = {k: v for k, v in arqs.items() if k.lower().endswith((".flv", ".flver"))}
+        if not flvs:
+            return None, {}, "binder sem .flv"
+        nome = next((k for k in flvs if preferido and k.lower().rsplit(".", 1)[0] == preferido.lower()), sorted(flvs)[0])
+        modelo = ler_flver(flvs[nome], ossos=True)
+        tex = {}
+        fontes = [arqs]
+        extra = ler(caminho_tex) if caminho_tex else None
+        if extra is not None:
+            fontes.append(ler_binder(extra))
+        for fonte in fontes:
+            for k, v in fonte.items():
+                if k.lower().endswith(".tpf"):
+                    for stem, dds in extrair_dds_tpf(v, TEX_MAX).items():
+                        if dds[:4] == b"DDS " and dds[84:88] in (b"DXT1", b"DXT3", b"DXT5"):
+                            tex.setdefault(stem, dds)
+        return modelo, tex, None
+    except Exception as err:  # um modelo estranho não derruba a cena: fica a forma de reserva, com aviso
+        return None, {}, f"{type(err).__name__}: {err}"[:120]
+
+
+def modelos_inimigos(game_dir, area: str, cache_base) -> list[str]:
+    """Modelos (cXXXX) dos inimigos comuns da área: linha do EnemyParam // 100 (pela extração do mapa, ds2mapa)."""
+    try:
+        dados = ds2mapa.extrair_area(game_dir, area, cache_base)
+    except Exception:  # sem navmesh/params: a área fica sem inimigos no 3D (as formas de reserva cobrem)
+        return []
+    tipos = {int(e["tipo"]) for e in dados.get("inimigos", []) if e.get("tipo") and not e.get("papel")}
+    return sorted({f"c{t // 100:04d}" for t in tipos})
 
 
 def chao_area(arq, area: str, msb_bytes: bytes) -> tuple[list[float], list[int]]:
@@ -532,7 +734,7 @@ def extrair_cena(game_dir=None, area: str = "m10_04_00_00", cache_dir=None, forc
                 return pronto
         t0 = time.time()
         avisa("Lendo MSB e chão andável...", 0.05)
-        arq = ds2arquivos.Arquivo(game_dir, "GameData")
+        arq = pacotes(game_dir).pacote("GameData") or ds2arquivos.Arquivo(game_dir, "GameData")
         msb_bytes = arq.ler(f"/map/{area}/{area}.msb")
         if not arq.tem(f"/model/map/{area}.mapbhd"):
             raise CenaError(f"área {area} sem modelos de mapa")
@@ -565,10 +767,47 @@ def extrair_cena(game_dir=None, area: str = "m10_04_00_00", cache_dir=None, forc
                 continue
             inst["caixa"] = [round(c, 2) for c in caixa[0] + caixa[1]]
             mantidas.append(inst)
-        usados = {i["modelo"] for i in mantidas}
-        modelos = {k: v for k, v in modelos.items() if k in usados}
         if fora:
             avisos.append(f"{fora} peças fora da área jogável (fundo/céu) ficaram de fora")
+
+        # objetos do MSB (portas, baús, alavancas, elevadores, estátuas...) e modelos dos inimigos comuns
+        avisa("Lendo objetos e inimigos...", 0.4)
+        pac = pacotes(game_dir)
+        objetos, modelos_obj = msb_instancias(msb_bytes, tipo_parte=1)
+        tex_extra, sem_modelo = {}, []
+        for nome in sorted(modelos_obj):
+            mod, tex, aviso = modelo_do_binder(pac.ler, f"/model/obj/{nome}.bnd", preferido=nome)
+            if mod is None:
+                sem_modelo.append(f"{nome} ({aviso})")
+                continue
+            modelos[nome] = mod
+            for k, v in tex.items():
+                tex_extra.setdefault(k, v)
+        for inst in objetos:
+            mod = modelos.get(inst["modelo"])
+            if not mod or not any(m["tipo"] != "ignorar" for m in mod["malhas"]):
+                continue
+            caixa = caixa_mundo(inst["matriz"], mod["bb"])
+            if jogavel and not _dentro(caixa, jogavel, FORA_M):
+                continue
+            inst["caixa"] = [round(c, 2) for c in caixa[0] + caixa[1]]
+            mantidas.append(inst)
+        personagens = {}
+        for cid in modelos_inimigos(game_dir, area, cache_base):
+            mod, tex, aviso = modelo_do_binder(pac.ler, f"/model/chr/{cid}.bnd", f"/model/chr/{cid}.texbnd", preferido=cid)
+            if mod is None or not any(m["tipo"] != "ignorar" for m in mod["malhas"]):
+                sem_modelo.append(f"{cid} ({aviso or 'só malhas ignoradas'})")
+                continue
+            modelos[cid] = mod
+            personagens[cid] = {"altura": round(mod["bb"][1][1] - mod["bb"][0][1], 2)}
+            for k, v in tex.items():
+                tex_extra.setdefault(k, v)
+        if sem_modelo:
+            avisos.append(f"{len(sem_modelo)} modelos de objeto/inimigo sem FLVER legível (ficam com a forma de reserva): "
+                          + ", ".join(sem_modelo[:8]))
+
+        usados = {i["modelo"] for i in mantidas} | set(personagens)
+        modelos = {k: v for k, v in modelos.items() if k in usados}
 
         tex_necessarias = {m["textura_difusa"] for mod in modelos.values() for m in mod["malhas"]
                            if m["textura_difusa"] and m["tipo"] != "ignorar"}
@@ -586,6 +825,9 @@ def extrair_cena(game_dir=None, area: str = "m10_04_00_00", cache_dir=None, forc
                             tex_salvas[stem] = dds
                 except (CenaError, struct.error) as err:
                     avisos.append(f"textura {k} pulada: {err}")
+        for stem in tex_necessarias - set(tex_salvas):  # texturas de objeto e personagem vêm dos binders deles
+            if stem in tex_extra:
+                tex_salvas[stem] = tex_extra[stem]
         faltam = sorted(tex_necessarias - set(tex_salvas))
         if faltam:
             avisos.append(f"{len(faltam)} texturas sem DDS legível (ficam cinza): {', '.join(faltam[:8])}")
@@ -619,7 +861,9 @@ def extrair_cena(game_dir=None, area: str = "m10_04_00_00", cache_dir=None, forc
             "area": area,
             "limites": limites,
             "margem": FORA_M,
-            "instancias": [{k: i[k] for k in ("nome", "modelo", "matriz", "caixa")} for i in mantidas],
+            "instancias": [{**{k: i[k] for k in ("nome", "modelo", "matriz", "caixa")}, **({"obj": True} if i.get("obj") else {})}
+                           for i in mantidas],
+            "personagens": personagens,
             "modelos": catalogo["modelos"],
             "texturas": sorted(tex_salvas),
             "chao": chao,
@@ -663,7 +907,9 @@ def main():
         return
     cena = extrair_cena(args.game_dir, args.area, args.cache_dir, forcar=args.forcar,
                         progresso_callback=lambda msg, p: print(f"[{int(p * 100):3d}%] {msg}", file=sys.stderr))
-    print(json.dumps({"area": cena["area"], "instancias": len(cena["instancias"]), "modelos": len(cena["modelos"]),
+    print(json.dumps({"area": cena["area"], "instancias": len(cena["instancias"]),
+                      "objetos": sum(1 for i in cena["instancias"] if i.get("obj")), "inimigos": sorted(cena.get("personagens", {})),
+                      "modelos": len(cena["modelos"]),
                       "texturas": len(cena["texturas"]), "mb": cena.get("mb"), "segundos": cena.get("segundos"),
                       "chao_triangulos": (cena["chao"] or {}).get("i_count", 0) // 3, "avisos": cena["avisos"]},
                      ensure_ascii=False, indent=2))

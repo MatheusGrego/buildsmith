@@ -199,3 +199,24 @@ inimigo), não está na lista de inimigos da wiki (está na de chefes) e não dr
    fogueiras).
 4. Detectar sozinho o que mudou no save (como a posição já é relida): item do plano pego (inventário), nível e atributos
    subindo, e atualizar a página.
+
+## Modelos reais de objetos e inimigos no 3D (2026-10-11, depois)
+
+As formas (caixa, cápsula) eram só reserva. Agora a cena traz os modelos do jogo:
+
+- **Onde estão** (lista de arquivos do DS2 SotFS do Smithbox): objetos em `/model/obj/<oXX_XXXX>.bnd`, personagens em
+  `/model/chr/<cXXXX>.bnd` e as texturas deles em `/model/chr/<cXXXX>.texbnd`. São binders BND4; os pacotes do jogo são
+  vários (`*Ebl.bhd`), então `ds2cena.Pacotes` procura em todos (GameData primeiro, os de baixa qualidade por último).
+- **Ossos**: malha rígida do FLVER fica no espaço do osso. Como o Smithbox faz: com normal UByte4/Byte4E, o 4º byte da
+  normal é o osso de cada vértice (índice na lista de ossos da malha); senão, a malha toda vai pelo osso dela. Osso local
+  = T · Ry · Rz · Rx · S (radianos), mundo = pai · local. Só nos modelos novos: as peças de mapa seguem como estavam.
+- **Objetos** (MSB tipo 1: portas, baús, alavancas, elevadores, estátuas, barris...) entram no cenário como as peças de
+  mapa, sempre visíveis (estão no mundo). O filtro do objeto (Portas e alavancas, Baús, Chaves) **realça** a peça com cor
+  (porta com chave em ouro); objeto sem modelo legível continua com a forma de reserva, ligada pelo filtro.
+- **Inimigos**: modelo = linha do EnemyParam // 100, virado pela rotação do gerador (`generatorlocation` +0x0C, graus);
+  aparecem e somem pelo filtro Inimigos, na pose de referência do modelo (sem animação). Tipo destacado fica dourado.
+- Cache: `CENA_VERSAO` 3 (a cena 3D de cada área é refeita na primeira vez que abrir) e `EXTRACAO_VERSAO` 6.
+
+Não conferido daqui (sem o jogo): o formato exato dos binders de `chr`/`obj` (o leitor aceita os layouts de BND4 e BND3 do
+SoulsFormats), se as texturas dos personagens são DXT (as que não forem ficam cinza, com aviso no `cena.json`) e se a
+rotação do gerador é em graus. Os avisos da extração (`cena.json` → `avisos`) dizem quais modelos ficaram de fora.

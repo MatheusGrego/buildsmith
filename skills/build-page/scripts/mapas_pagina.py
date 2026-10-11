@@ -127,7 +127,7 @@ def objetos_para_pagina(dados: dict, onde_chave, pagina_wiki=None, icone_local=N
     """Objetos da área para a página; porta com chave leva o nome, o ícone e onde a chave está no chão do jogo."""
     out = []
     for o in dados.get("objetos", []):
-        item = {k: o.get(k) for k in ("cat", "nome", "pos", "rot", "andar", "zona", "lote")}
+        item = {k: o.get(k) for k in ("parte", "cat", "nome", "pos", "rot", "andar", "zona", "lote")}
         if o.get("chave"):
             cid, cnome = o["chave"]
             item["chave"] = {"id": cid, "nome": cnome, "icone": icone_local(cnome) if icone_local else None,
@@ -153,7 +153,7 @@ def area_para_pagina(dados: dict, nomes_plano: dict, icone_local, precisa: dict 
         "area": dados["area"], "nome": dados["nome"], "planta": {"andares": andares},
         "fogueiras": [{"id": f["id"], "nome": f["nome"], "pos": f["pos"], "andar": f.get("andar"), "zona": f.get("zona")} for f in dados["fogueiras"]],
         "itens": [ponto_item(p) for p in dados["itens"]],
-        "inimigos": [{"id": e["id"], "pos": e["pos"], "andar": e.get("andar"), "zona": e.get("zona"), "tipo": str(e["tipo"])}
+        "inimigos": [{"id": e["id"], "pos": e["pos"], "rot": e.get("rot"), "andar": e.get("andar"), "zona": e.get("zona"), "tipo": str(e["tipo"])}
                      for e in dados.get("inimigos", []) if e.get("tipo") and not e.get("papel")],
         "tipos_inimigo": tipos_para_pagina(dados, nomes_inimigo or {}, pagina_wiki, icone_local, chefes_jogo),
         "objetos": objetos_para_pagina(dados, onde_chave or (lambda _id: []), pagina_wiki, icone_local),
