@@ -89,7 +89,7 @@ class IconStore:
         return rel
 
 
-TEMPLATE_JS = ("pagina.js", "mapa.js", "equip.js", "iso.js")
+TEMPLATE_JS = ("pagina.js", "mapa.js", "equip.js", "iso.js", "vivo.js")
 DS2_SCRIPTS = ROOT / "skills" / "ds2-save" / "scripts"
 def _ds2mapa():
     if str(DS2_SCRIPTS) not in sys.path:

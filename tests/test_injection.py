@@ -450,3 +450,36 @@ console.log(JSON.stringify({
     assert r["matriz"] == [0, 0, -2, 0, 0, 3, 0, 0, 0.3, 0, 0, 0, 10, 3.5, 5, 1]
     assert r["semRot"][13] == 0.9  # sem rotação: só sobe meia altura
     assert r["dir"] == [[0, 0, 1], [1, 0, 0], [0, -1, 0]]  # yaw 0 = norte (+z), 90° = leste; pitch -90° = para baixo
+
+
+@pytest.mark.skipif(shutil.which("node") is None, reason="sem node para rodar o JS da página")
+def test_live_save_detection_on_the_example_plan(tmp_path):
+    script = tmp_path / "vivo.js"
+    script.write_text(r"""
+const V = require(process.argv[2]);
+const plano = require(process.argv[3]);
+const ix = V.indice({itens: [{nome: "Large Titanite Shard", qtd: 2}, {nome: "large titanite shard", qtd: 1}, {nome: "Uchigatana", qtd: 1, up: 6},
+                             {nome: "Dull Ember", qtd: 1}, {nome: "Great Heavy Soul Arrow", qtd: 1}],
+                     equipado: ["Ring of Binding"], chefes: ["Ruin Sentinels"], stats: {VGR: 14}});
+const out = {};
+for (const s of plano.passos) out[s.titulo] = V.estadoPasso(s, ix);
+const sem = V.indice({itens: [], equipado: ["Old Leo Ring", "Ring of Binding"], chefes: [], stats: {VGR: 20}});
+const out2 = {};
+for (const s of plano.passos) out2[s.titulo] = V.estadoPasso(s, sem);
+console.log(JSON.stringify({out, out2, item: V.itemNoSave("LARGE TITANITE SHARD", ix), nada: V.itemNoSave("Titanite Slab", ix),
+  alvo: [V._teste.alvoNumero("tem 2 → 3"), V._teste.alvoNumero("×3"), V._teste.alvoNumero("anel")], stat: V._teste.statDe("Inteligência")}));
+""", encoding="utf-8")
+    out = subprocess.run(["node", str(script), str(ROOT / "skills/build-page/template/vivo.js"),
+                          str(ROOT / "skills/build-page/example/plano.json")], capture_output=True, encoding="utf-8", timeout=20, check=True)
+    r = json.loads(out.stdout)
+    o, o2 = r["out"], r["out2"]
+    assert o["Trocar anel"] == {"feito": True, "texto": "equipado no jogo"}
+    assert o2["Trocar anel"] is None  # o anel que sai ainda está equipado
+    assert o["Ruin Sentinels"]["feito"] and o2["Ruin Sentinels"] is None
+    assert o["Large Titanite Shard ×1"] == {"feito": True, "texto": "Large Titanite Shard ×3 no inventário"}  # "tem 2 → 3"
+    assert o["Uchigatana +5 → +6"] == {"feito": True, "texto": "+6 no jogo"}
+    assert o["Dull Ember para o McDuff"] == {"feito": False, "texto": "Dull Ember no inventário"}  # pegar não é entregar
+    assert o["VGR 9 → 20"] == {"feito": False, "texto": "VGR 14 de 20"} and o2["VGR 9 → 20"]["feito"]
+    assert o["Libertar o Straid"] is None and o["Ring of Knowledge"] is None
+    assert r["item"]["qtd"] == 3 and r["item"]["up"] is None and r["nada"] is None  # soma as entradas do mesmo item
+    assert r["alvo"] == [3, 3, None] and r["stat"] == "INT"

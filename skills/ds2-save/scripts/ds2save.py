@@ -365,6 +365,33 @@ def posicoes(path) -> dict[str, dict]:
             for number, slot in ocupados}
 
 
+def ao_vivo(path, names=None) -> dict[str, dict]:
+    """slug -> o que a página mostra ao vivo: nível, almas, atributos, inventário (nome, quantidade, reforço,
+    categoria), equipado e chefes derrotados (flags do bosses.json no bloco de mundo). Uma leitura do save para todos."""
+    names = names if names is not None else load_item_names()
+    entries = _read_entries(path)
+    ocupados = list(_occupied(entries))
+    slugs = slugs_unicos([{"slot": n, "name": _utf16z(s, OFF_NAME, NAME_CHARS),
+                           "level": struct.unpack_from("<I", s, OFF_LEVEL)[0]} for n, s in ocupados])
+    chefes = _game_json("bosses.json")["chefes"]
+    out = {}
+    for number, slot in ocupados:
+        info = parse_slot(slot, names)
+        world = entries.get(f"USER_DATA{10 + number:03d}", b"")
+        eq = info["equipped"]
+        equipado = [x["name"] for x in list(eq["hands"].values()) + list(eq["armor"].values()) + eq["rings"] + eq["spells"]]
+        ok_flag = lambda f: FLAG_BASE_OFFSET + (f - FLAG_BASE_ID) // 8 < len(world) and world_flag(world, f)  # noqa: E731
+        out[slugs[number]] = {
+            "slot": number, "nome": info["name"], "nivel": info["level"], "almas": info["souls"],
+            "soul_memory": info["soul_memory"], "stats": info["stats"],
+            "itens": [{"nome": i["name"], "qtd": i["quantity"], "up": i["upgrade"], "cat": i["category"]}
+                      for i in info["inventory"] if i["category"] != "?"],
+            "equipado": equipado,
+            "chefes": [c["nome"] for c in chefes if ok_flag(c["flag"])],
+        }
+    return out
+
+
 def personagens(path, names=None) -> list[dict]:
     """Personagens do save com o que a seleção da página mostra: nível, soul memory e o equipamento do retrato."""
     names = names if names is not None else load_item_names()

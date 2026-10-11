@@ -30,6 +30,8 @@ python app/serve.py parar
 python app/serve.py reiniciar
 ```
 
+**Ao vivo:** com a página aberta pelo servidor local, o save é relido sempre que o jogo grava (sem Claude, sem token): nível e almas no topo (com quanto subiu desde o plano), atributos na hora, "✓ você tem" nos itens do plano que já estão no inventário (e no mapa), e os passos que o jogo já mostra feitos (anel equipado, chefe derrotado, compra no inventário, arma no reforço, atributo no alvo) entram na conta de feitos.
+
 Na página local, **Atualizar plano** e **Responder fila** rodam a skill sem abrir o Claude Code (`claude -p` em segundo plano, uma execução por vez, com etapas e custo na tela). Precisa do `claude` no PATH e logado: rode `claude` uma vez no terminal e use `/login`.
 
 Essa execução lê a wiki sem ninguém olhando, então roda trancada: sem as suas configurações do Claude Code, em modo `dontAsk`, e com `app/guard.py` decidindo cada ferramenta (só os scripts do buildsmith, gravação só em `~/.buildsmith/`, WebFetch só na wiki). O que o guarda bloqueia aparece na barra de progresso.

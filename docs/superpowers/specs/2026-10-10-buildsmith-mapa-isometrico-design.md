@@ -220,3 +220,21 @@ As formas (caixa, cápsula) eram só reserva. Agora a cena traz os modelos do jo
 Não conferido daqui (sem o jogo): o formato exato dos binders de `chr`/`obj` (o leitor aceita os layouts de BND4 e BND3 do
 SoulsFormats), se as texturas dos personagens são DXT (as que não forem ficam cinza, com aviso no `cena.json`) e se a
 rotação do gerador é em graus. Os avisos da extração (`cena.json` → `avisos`) dizem quais modelos ficaram de fora.
+
+## Save ao vivo na página (2026-10-11)
+
+Pedido: "identificar quando pegamos os itens do plano automaticamente, igual ele atualiza o mapa, ou subimos de
+nível/atributos". O servidor já relia o save para a posição; agora também para o resto:
+
+- `ds2save.ao_vivo(save)`: por personagem, nível, almas, soul memory, atributos, inventário (nome, quantidade, reforço,
+  categoria), equipado e chefes derrotados (flags do `bosses.json`). `GET /api/ds2/<personagem>/save` (relê só quando
+  o arquivo muda; 404 se o personagem não está no save, 503 se o save não abre).
+- `vivo.js` (funções puras, testadas no node): o que o save diz de cada passo do plano. `equipar`: o que "entra" está
+  equipado e o que "sai" não; `chefe`: chefe derrotado; `compra`/`troca`: o item entregue no inventário (com a quantidade
+  do "→ N" do `sub`); `upgrade`: o item do nó "+N" no reforço N; `nivel`: o atributo do nó `atributo` "a → b" chegou em b.
+  O que avançou sem fechar vira texto ("VGR 14 de 20", "Dull Ember no inventário": pegar não é entregar).
+- Página (a cada 6 s com a aba visível, só pelo servidor local): nível com "+N desde o plano" e almas no topo, selo
+  "ao vivo", atributos e ficha com os valores do save, "✓ você tem ×N" nos itens do plano, selo no passo, "N de M
+  feitos" contando o que o jogo mostra, e no mapa o item do plano que você já tem ganha um ✓.
+- Nada é gravado no estado da página: a marca sai sozinha se o save voltar atrás. A fogueira (marcar feito à mão)
+  continua igual.

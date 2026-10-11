@@ -202,6 +202,8 @@ class MapaVivo:
         self.home, self.save = Path(home), save
         self.carregar_area = carregar_area  # área -> dados com malhas; None = jogo instalado + cache de ~/.buildsmith
         self._save = (None, {})
+        self._vivo = (None, {})
+        self._nomes = None
         self._areas: OrderedDict = OrderedDict()
         self._lock = threading.Lock()
 
@@ -218,6 +220,23 @@ class MapaVivo:
         if p is None:
             return None
         return {**p, "gravado_em": datetime.fromtimestamp(st.st_mtime, timezone.utc).isoformat(timespec="seconds")}
+
+    def ao_vivo(self, slug_: str) -> dict | None:
+        """Nível, atributos, inventário, equipado e chefes derrotados (relê o save só quando o arquivo muda)."""
+        import ds2save
+
+        path = Path(self.save) if self.save else ds2save.find_save()
+        st = path.stat()
+        chave = (str(path), st.st_mtime_ns, st.st_size)
+        with self._lock:
+            if self._vivo[0] != chave:
+                if self._nomes is None:
+                    self._nomes = ds2save.load_item_names()
+                self._vivo = (chave, ds2save.ao_vivo(path, self._nomes))
+            v = self._vivo[1].get(slug_)
+        if v is None:
+            return None
+        return {**v, "gravado_em": datetime.fromtimestamp(st.st_mtime, timezone.utc).isoformat(timespec="seconds")}
 
     def _area(self, area: str):
         with self._lock:
@@ -371,6 +390,8 @@ class Handler(BaseHTTPRequestHandler):
             return self._rota()
         if len(parts) == 4 and parts[:2] == ["api", "ds2"] and parts[3] == "posicao" and SEGMENT.match(parts[2]):
             return self._posicao(parts[2])
+        if len(parts) == 4 and parts[:2] == ["api", "ds2"] and parts[3] == "save" and SEGMENT.match(parts[2]):
+            return self._save_vivo(parts[2])
         if len(parts) == 5 and parts[:3] == ["api", "ds2", "cena"] and AREA_OK.match(parts[3]):
             if parts[4] == "cena.json":
                 return self._cena_json(parts[3])
@@ -473,6 +494,15 @@ class Handler(BaseHTTPRequestHandler):
         if p is None:
             return self._json({"erro": "personagem não está no save"}, status=404)
         return self._json(p)
+
+    def _save_vivo(self, personagem: str):
+        try:
+            v = self.mapa.ao_vivo(personagem)
+        except Exception as err:  # sem save, save sendo gravado, pycryptodome ausente
+            return self._json({"erro": f"não consegui ler o save ({type(err).__name__})"}, status=503)
+        if v is None:
+            return self._json({"erro": "personagem não está no save"}, status=404)
+        return self._json(v)
 
     def _rota(self):
         q = parse_qs(urlsplit(self.path).query)

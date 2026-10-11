@@ -399,3 +399,13 @@ def test_page_scripts_are_served_as_javascript(server):
     (vendor / "three.module.js").write_text("export const REVISION = '160';", encoding="utf-8")
     status, ctype, _ = get(f"{base}/p/ds2/personagem-um/vendor/three.module.js")
     assert status == 200 and ctype.startswith("text/javascript")  # módulo ES não carrega com text/plain
+
+
+def test_live_save_level_stats_and_items(server_mapa):
+    base, _ = server_mapa
+    v = json.loads(get(f"{base}/api/ds2/personagem-teste/save")[2])
+    assert v["nivel"] == 65 and v["stats"]["INT"] == 26 and v["gravado_em"] and v["chefes"] == []
+    assert isinstance(v["itens"], list) and isinstance(v["equipado"], list)
+    with pytest.raises(urllib.error.HTTPError) as err:
+        get(f"{base}/api/ds2/outro/save")
+    assert err.value.code == 404

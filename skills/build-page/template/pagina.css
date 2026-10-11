@@ -620,3 +620,14 @@ a.agora2-t:hover { text-decoration: underline; }
   .eq-antes, .eq-depois { width: 34px; height: 34px; }
   .eq-antes img, .eq-depois img { width: 30px; height: 30px; }
 }
+
+/* save ao vivo: nível e almas relidos do save, item do plano no inventário, passo que o jogo mostra feito */
+.vivo-tag { display: inline-flex; align-items: center; gap: 5px; font-size: 11px; color: var(--pos); letter-spacing: 0.04em; }
+.vivo-tag::before { content: ""; width: 7px; height: 7px; border-radius: 50%; background: var(--pos); box-shadow: 0 0 6px var(--fogueira-glow); }
+.vivo-chip { display: inline-block; margin-left: 6px; padding: 0 6px; font-size: 11px; line-height: 1.6; border: 1px solid var(--line); color: var(--dim); border-radius: 3px; }
+.vivo-chip.feito { color: var(--pos); border-color: var(--pos); }
+.vivo-chip[hidden] { display: none; }
+.mp-ja-tem image { opacity: 0.55; }
+.mp-ja-tem-k circle { fill: #10240f; stroke: #7bc96f; stroke-width: 1.5; }
+.mp-ja-tem-k path { fill: none; stroke: #7bc96f; stroke-width: 1.8; stroke-linecap: round; stroke-linejoin: round; }
+.mp-pop-tem { color: #9bd88f; }

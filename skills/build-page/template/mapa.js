@@ -124,7 +124,7 @@
   const st = { raiz: null, plano: null, indice: null, docs: {}, doc: null, andar: "todos", vista: null, rota: null,
                destaque: null, zonaSel: null, pop: null, jogador: null, tipoSel: null, poll: null,
                modo: "2d", iso: null, interior: false, foco: true, acesas: null, fogChave: undefined, escolhida: false,
-               entChave: null,
+               entChave: null, vivo: null,
                filtros: { zonas: true, fogueiras: true, chefes: true, npcs: true, plano: true, outros: true, chaves: true,
                           baus: false, objetos: false, inimigos: false } };
   const em3d = () => st.modo === "iso" && st.iso;
@@ -710,8 +710,10 @@
       const img = p.icone && ICONE_OK.test(p.icone) ? `<image href="${esc(p.icone)}" x="${f1(sx - t / 2)}" y="${f1(sy - t / 2)}" width="${t}" height="${t}"/>` : `<rect class="mp-losango" x="${f1(sx - t / 4)}" y="${f1(sy - t / 4)}" width="${t / 2}" height="${t / 2}" transform="rotate(45 ${f1(sx)} ${f1(sy)})"/>`;
       const nome = p.itens[0] ? `${p.itens[0].nome}${p.itens[0].qtd > 1 ? ` ×${p.itens[0].qtd}` : ""}${p.itens.length > 1 ? ` +${p.itens.length - 1}` : ""}` : "";
       const chave = p.chave && st.filtros.chaves ? badgeChave(sx + t / 2 + 1, sy - t / 2 - 1, null) : "";
+      const jaTem = destaque && temNoSave(p);  // item do plano que o save já mostra no inventário
+      const check = jaTem ? `<g class="mp-ja-tem-k"><circle cx="${f1(sx - t / 2 - 1)}" cy="${f1(sy - t / 2 - 1)}" r="7"/><path d="M${f1(sx - t / 2 - 4.5)} ${f1(sy - t / 2 - 1)}l2.5 2.6 4.6-5"/></g>` : "";
       const ondeEsta = p.no === "bau" ? " (baú)" : p.no === "cadaver" ? " (cadáver)" : "";
-      partes.push(`<g class="mp-item ${destaque ? "mp-do-plano" : ""}${p.chave ? " mp-item-chave" : ""}${p.no === "bau" ? " mp-no-bau" : ""} ${estado}${longe}" data-tipo="item" data-i="${i}" tabindex="0"><title>${esc(nome + ondeEsta)}</title><rect class="mp-moldura" x="${f1(sx - t / 2 - 2)}" y="${f1(sy - t / 2 - 2)}" width="${t + 4}" height="${t + 4}" rx="3"/>${img}${chave}${nomes && estado === "cheio" && !longe ? `<text class="mp-rotulo" x="${f1(sx)}" y="${f1(sy + t / 2 + 12)}">${esc(nome)}</text>` : ""}</g>`);
+      partes.push(`<g class="mp-item ${destaque ? "mp-do-plano" : ""}${jaTem ? " mp-ja-tem" : ""}${p.chave ? " mp-item-chave" : ""}${p.no === "bau" ? " mp-no-bau" : ""} ${estado}${longe}" data-tipo="item" data-i="${i}" tabindex="0"><title>${esc(nome + ondeEsta + (jaTem ? " (você já tem)" : ""))}</title><rect class="mp-moldura" x="${f1(sx - t / 2 - 2)}" y="${f1(sy - t / 2 - 2)}" width="${t + 4}" height="${t + 4}" rx="3"/>${img}${chave}${check}${nomes && estado === "cheio" && !longe ? `<text class="mp-rotulo" x="${f1(sx)}" y="${f1(sy + t / 2 + 12)}">${esc(nome)}</text>` : ""}</g>`);
     });
     if (st.filtros.fogueiras) st.doc.fogueiras.forEach((f, i) => {
       const q = ver(f.pos);
@@ -833,7 +835,8 @@
       corpo = `<p class="mp-pop-tit">${esc(p.nome)}</p><p class="mp-pop-sub">Fogueira${p.zona ? ` da zona ${esc(nomeZona(p.zona))}` : ""}${acesa}</p>`;
     } else {
       const no = p.no === "bau" ? "Dentro de um baú." : p.no === "cadaver" ? "Num cadáver." : "";
-      corpo = `<ul>${p.itens.map((it) => `<li>${esc(it.nome)}${it.qtd > 1 ? ` <span class="mp-qtd">×${it.qtd}</span>` : ""}</li>`).join("")}</ul>${no ? `<p class="mp-pop-sub">${no}</p>` : ""}${p.chave ? '<p class="mp-pop-sub">É uma chave: abre porta, portão ou cela.</p>' : ""}${p.item_id ? `<a class="req-link" href="#item-${esc(p.item_id)}" data-goto-item="${esc(p.item_id)}">ver em Onde pegar</a>` : ""}`;
+      const V = window.buildsmithVivo, tem = st.vivo && V ? p.itens.map((it) => [it.nome, V.itemNoSave(it.nome, st.vivo)]).filter(([, x]) => x) : [];
+      corpo = `<ul>${p.itens.map((it) => `<li>${esc(it.nome)}${it.qtd > 1 ? ` <span class="mp-qtd">×${it.qtd}</span>` : ""}</li>`).join("")}</ul>${no ? `<p class="mp-pop-sub">${no}</p>` : ""}${tem.length ? `<p class="mp-pop-sub mp-pop-tem">Você já tem: ${tem.map(([n, x]) => `${esc(n)}${x.qtd > 1 ? ` ×${fmt.format(x.qtd)}` : ""}`).join(", ")} <span class="mp-fonte">(save)</span></p>` : ""}${p.chave ? '<p class="mp-pop-sub">É uma chave: abre porta, portão ou cela.</p>' : ""}${p.item_id ? `<a class="req-link" href="#item-${esc(p.item_id)}" data-goto-item="${esc(p.item_id)}">ver em Onde pegar</a>` : ""}`;
     }
     const rota = API ? '<p><button type="button" class="pesq" data-rota-ate>Rota até aqui</button></p>' : "";
     pop.innerHTML = `<button type="button" class="mp-pop-x" aria-label="Fechar">&#10005;</button>${corpo}${rota}${meta}`;
@@ -1048,6 +1051,17 @@
     atualizar();
   }
 
+  // Save ao vivo (pagina.js): marca no mapa os itens do plano que você já tem.
+  function temNoSave(p) {
+    const V = typeof window !== "undefined" && window.buildsmithVivo;
+    return Boolean(st.vivo && V && p.itens.some((it) => V.itemNoSave(it.nome, st.vivo)));
+  }
+  function setVivo(v) {
+    const V = window.buildsmithVivo;
+    st.vivo = v && V ? V.indice(v) : null;
+    if (st.raiz && st.doc) atualizar();
+  }
+
   // "ver no mapa" da chave de uma porta: abre a área do lote e mostra o item.
   async function irParaLote(area, lote) {
     if (!AREA_OK.test(area)) return;
@@ -1105,6 +1119,6 @@
     }
   }
 
-  window.buildsmithMapa = { montar, ver, _teste: { caixa, ajustar, regua, tamanhoIcone, estadoAndar, corZona, andarDe, tintaParada, pino, trechosTela, liberadas,
+  window.buildsmithMapa = { montar, ver, setVivo, _teste: { caixa, ajustar, regua, tamanhoIcone, estadoAndar, corZona, andarDe, tintaParada, pino, trechosTela, liberadas,
                                                    dimsObjeto, alturaInimigo, raioInimigo } };
 })();

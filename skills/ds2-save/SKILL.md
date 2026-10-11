@@ -60,4 +60,6 @@ Script: `scripts/ds2save.py` nesta pasta. Precisa de Python 3 e `pycryptodome` (
 - `ds2calc.py ar` calcula **AR físico de arma** (validado: Uchigatana +5 = 218, Cleric's Parma = 54, punho = 49 com FOR 10 / DES 18).
 - Catalisadores e feitiços ainda **não** são calculados: use `"—"`.
 
+Ao vivo (`ds2save.ao_vivo`, usado pelo servidor em `/api/ds2/<personagem>/save`): por personagem, nível, almas, soul memory, atributos, inventário (nome, quantidade, reforço, categoria), equipado e chefes derrotados (flags do `bosses.json`). O servidor relê só quando o arquivo do save muda.
+
 Nomes de inimigo e de objeto (`ds2nomes.py`): o jogo não guarda nome de inimigo comum nem de objeto; a tabela `games/ds2/nomes_smithbox.json` (Smithbox, MIT, licença em `games/ds2/LICENSE-SMITHBOX`) dá nome à linha do EnemyParam (`318030` = "The Pursuer - Lost Bastille"), ao modelo de personagem (`c3180` = The Pursuer; a linha // 100 é o modelo) e ao modelo de objeto (`o04_0470` = "Large Stone Door (Forgotten Key)"). A categoria do objeto sai do nome do modelo ou, sem nome, do tipo da instância (MapObjectInstanceTypeParam). Ao citar um nome desses, diga que é o nome da comunidade para a linha/modelo do jogo.

@@ -233,3 +233,17 @@ def test_empty_hand_and_armor_slots_are_left_out(tmp_path, names):
     eq = ds2save.snapshot(path, names=names, regulation=False)["equipped"]
     assert set(eq["hands"]) == {"L1", "R1"}  # punho = mão vazia
     assert list(eq["armor"]) == ["peito"]  # 2100110x = sem peça
+
+
+def test_live_state_has_inventory_and_equipment(save_file, names):
+    v = ds2save.ao_vivo(save_file, names)["personagem-um"]
+    assert v["nivel"] == 65 and v["stats"]["DEX"] == 18 and v["almas"] == 1234
+    itens = {i["nome"]: i for i in v["itens"]}
+    assert itens["Human Effigy"]["qtd"] == 15 and itens["Uchigatana"]["up"] == 5 and itens["Soldier Key"]["cat"] == "KeyItems"
+    assert {"Uchigatana", "Sorcerer's Staff", "Clear Bluestone Ring", "Soul Arrow"} <= set(v["equipado"])
+    assert "desconhecido #12345678" not in itens  # item que o jogo não nomeia fica de fora
+
+
+def test_live_state_has_defeated_bosses(world_save, names):  # o save_file e o world_save são o mesmo arquivo
+    w = ds2save.ao_vivo(world_save, names)["personagem-um"]
+    assert set(w["chefes"]) == {"The Pursuer", "The Last Giant"}  # flags 100968 e 100971 ligadas

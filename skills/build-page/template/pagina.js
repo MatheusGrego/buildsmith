@@ -12,7 +12,7 @@
     ["Combate", [["dano", "Dano"], ["feiticos", "Feitiços"], ["atributos", "Atributos"]]],
     ["Registro", [["ficha", "Ficha"], ["progresso", "Progresso"], ["builds", "Builds"], ["fontes", "Fontes"]]],
   ];
-  const state = { db: null, plano: null, feitos: {}, pedidos: {}, selecao: null };
+  const state = { db: null, plano: null, feitos: {}, pedidos: {}, selecao: null, vivo: null, vivoPassos: {} };
   const ui = { secao: null, passo: null, item: null, fonte: {} };
   const slug = (text) => String(text).normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "").slice(0, 180) || "pedido";
   const fogueira = (attr, value, label) => `<button class="fogueira" type="button" ${attr}="${esc(value)}" aria-pressed="false" aria-label="${esc(label)}" title="${esc(label)}" hidden><img src="icons/fogueira.png" alt=""></button>`;
@@ -78,7 +78,7 @@
         <div class="topo-id"><p class="meta">${esc(p.jogo)} · atualizado ${when(p.gerado_em)}</p><h1>${esc(c.name)}</h1>
           <button class="trocar" type="button" id="trocar" hidden>Trocar personagem</button></div>
       </div>
-      <div class="topo-meta"><span>Nível <b>${fmt.format(c.level)}</b></span><span>Almas <b>${fmt.format(c.souls)}</b></span><span>Soul memory <b>${fmt.format(c.soul_memory)}</b></span>
+      <div class="topo-meta"><span>Nível <b data-vivo="nivel">${fmt.format(c.level)}</b></span><span>Almas <b data-vivo="almas">${fmt.format(c.souls)}</b></span><span>Soul memory <b data-vivo="soul_memory">${fmt.format(c.soul_memory)}</b></span><span class="vivo-tag" id="vivo-tag" hidden title="Lido do save agora (relido quando o jogo grava)">ao vivo</span>
         <span class="legend"><span class="l-pos">ganho</span><span class="l-neg">perda / falta</span><span class="l-link">link da wiki</span></span></div>
       <div class="acoes" id="forja-acoes" hidden>
         <button class="acao" type="button" data-rodar="plano"><img src="icons/fogueira.png" alt="">Atualizar plano</button>
@@ -123,7 +123,7 @@
     const byId = Object.fromEntries(p.passos.map((s) => [s.id, s]));
     const acoes = a.acoes.map((id) => byId[id]).filter(Boolean).map((s) => `<li class="agora2-i">
       ${fogueira("data-passo", s.id, "Marcar como feito")}
-      <div><a class="agora2-t" href="#passo-${esc(s.id)}" data-goto-passo="${esc(s.id)}">${esc(s.titulo)}</a>${fluxoInline(s.fluxo)}</div>
+      <div><a class="agora2-t" href="#passo-${esc(s.id)}" data-goto-passo="${esc(s.id)}">${esc(s.titulo)}</a><span class="vivo-chip" data-vivo-passo="${esc(s.id)}" hidden></span>${fluxoInline(s.fluxo)}</div>
     </li>`).join("");
     const faltam = (a.faltam || []).length ? `<span>Faltam:</span>${fluxoInline(a.faltam)}` : "";
     return `<section class="agora2 grande" aria-label="Próximas ações"><h2>Agora</h2><ol>${acoes}</ol>
@@ -137,7 +137,7 @@
     const numero = Object.fromEntries(ordenados.map((s, i) => [s.id, i + 1]));
     return `<section><h2>Próximos passos<small id="passos-feitos"></small></h2>${mestreDetalhe("passo", ordenados,
       (s) => `<div class="md-l1"><span class="md-fog">${fogueira("data-passo", s.id, "Marcar como feito")}</span><span class="step-no">${numero[s.id]}</span><span class="md-t">${esc(s.titulo)}</span></div>
-        <div class="md-l2"><span class="label">${esc(GRUPO[s.tipo] || s.tipo)}</span><span class="confirmado" data-confirma="${esc(s.id)}"></span></div>`,
+        <div class="md-l2"><span class="label">${esc(GRUPO[s.tipo] || s.tipo)}</span><span class="confirmado" data-confirma="${esc(s.id)}"></span><span class="vivo-chip" data-vivo-passo="${esc(s.id)}" hidden></span></div>`,
       (s) => `<div class="det-head" id="passo-${esc(s.id)}"><span class="det-tit">${esc(s.titulo)}</span>${selo(GRUPO[s.tipo] || s.tipo)}${s.mapa ? `<button class="pesq" type="button" data-ver-mapa="passo" data-passo-id="${esc(s.id)}">Ver no mapa</button>` : ""}</div>
         ${flow(s.fluxo)}
         ${rows(s.dados, ["Dado", "Agora", "Depois", "Efeito"])}`, "21rem")}</section>`;
@@ -154,7 +154,7 @@
         const m = maisCedo(it);
         const a = m ? ACESSO[m.acesso] || [m.acesso, ""] : null;
         return `<div class="md-l1">${noInline(it.item, true)}</div>
-          <div class="md-l2">${a ? selo(a[0], a[1]) : ""}<span>${esc(m ? m.rendimento || "" : "")}</span><span class="md-fim">${(it.fontes || []).length} fontes</span></div>`;
+          <div class="md-l2">${a ? selo(a[0], a[1]) : ""}<span>${esc(m ? m.rendimento || "" : "")}</span><span class="vivo-chip" data-vivo-item="${esc(it.id)}" hidden></span><span class="md-fim">${(it.fontes || []).length} fontes</span></div>`;
       },
       (it) => `<div class="det-head" id="item-${esc(it.id)}">${node({ ...it.item, sub: `${(it.fontes || []).length} fontes` })}${it.fonte ? ext(it.fonte, "fonte na wiki", "muted") : ""}<button class="pesq" type="button" data-ver-mapa="item" data-item="${esc(it.id)}">Ver no mapa</button></div>
         <ol class="fontes-v">${(it.fontes || []).map((f, i) => {
@@ -395,7 +395,8 @@
       el.textContent = f && f.marcado ? (f.confirmado === true ? "confirmado pelo save" : f.confirmado === false ? "o save ainda não mostra" : "confirma no próximo /build") : "";
     });
     const feitosEl = document.getElementById("passos-feitos");
-    if (feitosEl && state.plano) feitosEl.textContent = `${state.plano.passos.filter((s) => state.feitos[s.id] && state.feitos[s.id].marcado).length} de ${state.plano.passos.length} feitos`;
+    const feito = (s) => (state.feitos[s.id] && state.feitos[s.id].marcado) || (state.vivoPassos[s.id] && state.vivoPassos[s.id].feito);
+    if (feitosEl && state.plano) feitosEl.textContent = `${state.plano.passos.filter(feito).length} de ${state.plano.passos.length} feitos`;
     const chosen = selectedSpells();
     app.querySelectorAll("[data-feitico]").forEach((b) => b.setAttribute("aria-pressed", String(chosen.includes(b.dataset.feitico))));
     const used = (state.plano.feiticos ? state.plano.feiticos.lista : []).filter((sp) => chosen.includes(sp.id)).reduce((n, sp) => n + sp.slots, 0);
@@ -816,6 +817,71 @@
     });
   }
 
+  // ---- Save ao vivo (servidor local) ---------------------------------------------------------
+  // Nível, almas, atributos, inventário, equipado e chefes derrotados relidos do save: a página marca sozinha o item do
+  // plano que já está no inventário e o passo que o jogo mostra feito (vivo.js), sem Claude e sem token.
+  const VIVO_MS = 6000;
+  function aplicarVivo() {
+    const v = state.vivo, p = state.plano, V = window.buildsmithVivo;
+    if (!v || !p || !V) return;
+    const c = p.personagem;
+    const conta = (campo, agora, antes) => {
+      const el = app.querySelector(`[data-vivo="${campo}"]`);
+      if (!el || agora == null) return;
+      const dif = antes != null ? agora - antes : 0;
+      el.innerHTML = `${fmt.format(agora)}${campo === "nivel" && dif > 0 ? ` <small class="pos">+${fmt.format(dif)}</small>` : ""}`;
+    };
+    conta("nivel", v.nivel, c.level);
+    conta("almas", v.almas, null);
+    conta("soul_memory", v.soul_memory, null);
+    const tag = document.getElementById("vivo-tag");
+    if (tag) { tag.hidden = false; tag.title = `Lido do save gravado em ${when(v.gravado_em)}`; }
+    const ix = V.indice(v);
+    state.vivoPassos = Object.fromEntries(p.passos.map((s) => [s.id, V.estadoPasso(s, ix)]));
+    app.querySelectorAll("[data-vivo-passo]").forEach((el) => {
+      const e = state.vivoPassos[el.dataset.vivoPasso];
+      el.hidden = !e;
+      el.className = `vivo-chip${e && e.feito ? " feito" : ""}`;
+      el.textContent = e ? (e.feito ? `✓ ${e.texto}` : e.texto) : "";
+    });
+    const porId = Object.fromEntries(p.itens.map((it) => [it.id, it]));
+    app.querySelectorAll("[data-vivo-item]").forEach((el) => {
+      const it = porId[el.dataset.vivoItem], no = it && V.itemNoSave(it.item.nome, ix);
+      el.hidden = !no;
+      el.className = `vivo-chip${no ? " feito" : ""}`;
+      el.textContent = no ? `✓ você tem${no.qtd > 1 ? ` ×${fmt.format(no.qtd)}` : ""}${no.up ? ` (+${no.up})` : ""}` : "";
+    });
+    const atr = app.querySelector('[data-pane="atributos"]');
+    if (atr && v.stats) atr.innerHTML = stats({ ...p, personagem: { ...c, stats: v.stats } });
+    const ficha = app.querySelector('[data-pane="ficha"]');
+    if (ficha) {
+      ficha.innerHTML = sheet({ ...p, personagem: { ...c, level: v.nivel, souls: v.almas, soul_memory: v.soul_memory } }) + changes(p);
+      fallbackIcons(ficha);
+    }
+    if (window.buildsmithMapa && window.buildsmithMapa.setVivo) window.buildsmithMapa.setVivo(v);
+    applyState();
+  }
+
+  function iniciarVivo(base) {
+    let chave = null;
+    const buscar = async () => {
+      if (document.hidden) return;
+      try {
+        const r = await fetch(`${base}/save`, { cache: "no-store" });
+        if (!r.ok) return;
+        const v = await r.json();
+        const nova = JSON.stringify(v);
+        if (nova === chave) return;  // o jogo não gravou nada novo
+        chave = nova;
+        state.vivo = v;
+        aplicarVivo();
+      } catch (e) { /* servidor fora: a página fica com o que tinha */ }
+    };
+    buscar();
+    setInterval(buscar, VIVO_MS);
+    document.addEventListener("visibilitychange", () => { if (!document.hidden) buscar(); });
+  }
+
   // Servidor local do buildsmith (app/serve.py): mesma interface mínima do banco do Artifact.
   async function localDb() {
     const m = location.pathname.match(/^\/p\/([a-z0-9._-]+)\/([a-z0-9._-]+)\/?/);
@@ -867,6 +933,7 @@
       const trocar = document.getElementById("trocar");
       if (trocar) trocar.hidden = false;
       carregarPersonagens();
+      if (forja.jogo === "ds2") iniciarVivo(forja.base);
     }
     const fail = () => { /* sem banco: a página segue só leitura */ };
     db.collection("feitos").onSnapshot((snap) => { state.feitos = Object.fromEntries(snap.docs.map((d) => [d.id, d.data()])); applyState(); }, fail);
