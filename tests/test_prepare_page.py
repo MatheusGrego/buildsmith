@@ -162,6 +162,19 @@ def faixa_area():
             "inicio": [0.1, 0, 0.1]}
 
 
+def test_plan_route_lists_the_doors_on_the_way(tmp_path):
+    src = tmp_path / "p.json"
+    src.write_text(json.dumps(plano_com_pontos(), ensure_ascii=False), encoding="utf-8")
+    porta = {"parte": "o00_0316_0002", "modelo": "o00_0316", "cat": "porta", "nome": "Prison Door - The Lost Bastille",
+             "pos": [2.0, 0, 0.5], "rot": [0, 90, 0], "chave": None, "ref": 10160432, "lote": None,
+             "estado_ref": "porta:10160432"}
+    prepare_page.prepare(src, tmp_path / "saida", "ds2", cache_root=tmp_path / "cache", fetch=FakeFetch(),
+                         carregar_area=lambda area: {**faixa_area(), "objetos": [porta]})
+    mapa = final_plan(tmp_path)["itens"][0]["fontes"][0]["mapa"]
+    assert [(p["parte"], p["estado_ref"]) for p in mapa["portas"]] == [("o00_0316_0002", "porta:10160432")]
+    assert 1.5 <= mapa["portas"][0]["metros"] <= 2.2
+
+
 def plano_com_pontos():
     plano = example()
     fonte = plano["itens"][0]["fontes"][0]
@@ -180,6 +193,7 @@ def test_plan_points_become_area_and_route(tmp_path):
     assert [p["tipo"] for p in mapa["pontos"]] == ["fogueira", "item"] and mapa["pontos"][0]["n"] == 1
     assert len(mapa["trechos"]) == 1 and mapa["trechos"][0][0] == [0.2, 0, 0.3] and 2.7 <= mapa["metros"] <= 4
     assert all("andar" in p for p in mapa["pontos"])
+    assert mapa["portas"] == []  # a faixa não tem porta
     area = json.loads(Path(out["files"]["mapas/m10_16_00_00.json"]).read_text(encoding="utf-8"))
     assert area["nome"] == "The Lost Bastille" and "malhas" not in area and area["planta"]["andares"]
     pontos = {p["lote"]: p for p in area["itens"]}

@@ -261,6 +261,21 @@ def test_route_on_the_floor_keeps_the_area_in_memory(server_mapa):
     assert chamadas == ["m10_16_00_00"]
 
 
+def test_route_lists_the_doors_it_crosses_with_the_real_doorway(tmp_path):
+    """Porta de dobradiça girada 90° em x = 1, com a dobradiça em z = 0,5: centrada (sem cena) o vão pega z = 0,9;
+    com a caixa do modelo na cena 3D (x de 0 a 1,4: o vão vai de z 0,5 a -0,9), a rota em z = 0,9 passa ao lado."""
+    porta = {"parte": "o00_0308_0000", "modelo": "o00_0308", "cat": "porta", "nome": "Iron Door", "pos": [1.0, 0.0, 0.5],
+             "rot": [0.0, 90.0, 0.0], "chave": None, "estado_ref": "porta:10160300"}
+    mapa = serve.MapaVivo(tmp_path, None, carregar_area=lambda area: {**area_faixa(area), "objetos": [porta]})
+    r = mapa.rota("m10_16_00_00", [0.2, 0, 0.9], [1.8, 0, 0.9])
+    assert [(p["parte"], p["estado_ref"]) for p in r["portas"]] == [("o00_0308_0000", "porta:10160300")]
+    cena = tmp_path / "cache" / "ds2" / "cena" / "m10_16_00_00"
+    cena.mkdir(parents=True)
+    (cena / "cena.json").write_text(json.dumps({"modelos": {"o00_0308": {"bb": [[0, 0, -0.1], [1.4, 2.4, 0.1]]}}}), encoding="utf-8")
+    assert mapa.rota("m10_16_00_00", [0.2, 0, 0.9], [1.8, 0, 0.9])["portas"] == []
+    assert [p["parte"] for p in mapa.rota("m10_16_00_00", [0.2, 0, 0.2], [1.8, 0, 0.2])["portas"]] == ["o00_0308_0000"]
+
+
 @pytest.mark.parametrize("query", ["area=../x&de=0,0,0&ate=1,0,0", "area=m10_16_00_00&de=0,0&ate=1,0,0",
                                    "area=m10_16_00_00&de=nan,0,0&ate=1,0,0", "area=m10_16_00_00&de=0,0,0&ate=1e9,0,0"])
 def test_route_rejects_bad_input(server_mapa, query):

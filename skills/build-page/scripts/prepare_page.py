@@ -259,7 +259,8 @@ def prepare(plano_path, out_dir, jogo: str, cache_root=None, fetch=default_fetch
         if area_jogador is None:
             area_jogador = area_do_jogador(plano) if jogo == "ds2" else None
         map_files = mapas_pagina.preparar(plano, out_dir, carregar_area, listar_areas or (lambda: []), icone_local,
-                                          icones.prebuscar, icones.pagina, inimigos.nomes, area_jogador or None)
+                                          icones.prebuscar, icones.pagina, inimigos.nomes, area_jogador or None,
+                                          caixas_de=lambda area: _ds2mapa().caixas_da_cena(cache_root / jogo, area))
     except ValueError:
         raise
     except Exception as err:  # jogo ausente, arquivo trocado por atualização: página sem mapa, com aviso

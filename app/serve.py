@@ -296,7 +296,7 @@ class MapaVivo:
         import ds2mapa
 
         dados, grafo = self._area(area)
-        return ds2mapa.rota(dados, de, ate, grafo)
+        return ds2mapa.rota(dados, de, ate, grafo, ds2mapa.caixas_da_cena(self.home / "cache" / "ds2", area))
 
 
 class Cenas:

@@ -20,6 +20,7 @@ Formatos lidos (conferidos contra a Lost Bastille, m10_16_00_00):
 import argparse
 from collections import defaultdict
 import json
+import math
 import os
 import re
 import struct
@@ -589,12 +590,93 @@ def _simplificar3d(pts: list, tol: float) -> list:
     return _simplificar3d(pts[:k_pior + 1], tol)[:-1] + _simplificar3d(pts[k_pior:], tol)
 
 
-def rota(area: dict, de, ate, grafo=None) -> dict | None:
-    """Caminho mais curto pelo chão de um ponto a outro; None se não há caminho.
+def _girar(rot_graus, v) -> tuple[float, float, float]:
+    """v girado como as partes do MSB: Ry · Rz · Rx (gira em X, depois Z, depois Y; graus)."""
+    rx, ry, rz = (math.radians(a) for a in rot_graus)
+    x, y, z = v
+    y, z = y * math.cos(rx) - z * math.sin(rx), y * math.sin(rx) + z * math.cos(rx)
+    x, y = x * math.cos(rz) - y * math.sin(rz), x * math.sin(rz) + y * math.cos(rz)
+    x, z = x * math.cos(ry) + z * math.sin(ry), -x * math.sin(ry) + z * math.cos(ry)
+    return x, y, z
+
+
+def _dims_porta(nome: str) -> tuple[float, float]:
+    """Largura e altura da porta sem o modelo da cena 3D: as mesmas do mapa.js (dimsObjeto)."""
+    if re.search(r"large|heavy|king's|double|both|rotunda", nome or "", re.I):
+        return 4.4, 5.0
+    if re.search(r"gate|bars", nome or "", re.I):
+        return 3.0, 3.4
+    return 2.2, 3.0
+
+
+def vao_porta(o: dict, caixa=None) -> tuple[tuple, tuple, float, float]:
+    """Vão da porta no chão: pontas (x, z) do mundo, base (y) e altura.
+
+    Com a caixa do modelo (cena 3D, espaço do modelo), o vão é o lado mais comprido dela no chão: porta de dobradiça
+    do jogo tem a origem na dobradiça (Iron Door: x de 0 a 1,4), grade e portão no meio. Sem a caixa, centrado na
+    posição, com a largura pelo nome."""
+    pos, rot = o["pos"], o.get("rot") or (0, 0, 0)
+    if caixa:
+        (x0, y0, z0), (x1, y1, z1) = caixa
+        if x1 - x0 >= z1 - z0:
+            pa, pb = (x0, 0.0, (z0 + z1) / 2), (x1, 0.0, (z0 + z1) / 2)
+        else:
+            pa, pb = ((x0 + x1) / 2, 0.0, z0), ((x0 + x1) / 2, 0.0, z1)
+        base, altura = pos[1] + y0, y1 - y0
+    else:
+        largura, altura = _dims_porta(o.get("nome", ""))
+        pa, pb, base = (-largura / 2, 0.0, 0.0), (largura / 2, 0.0, 0.0), pos[1]
+    pontas = []
+    for p in (pa, pb):
+        x, _y, z = _girar(rot, p)
+        pontas.append((pos[0] + x, pos[2] + z))
+    return pontas[0], pontas[1], base, altura
+
+
+def caixas_da_cena(cache_dir, area: str) -> dict:
+    """Caixa (espaço do modelo) de cada modelo de objeto da cena 3D já extraída pelo ds2cena; {} sem cena."""
+    try:
+        cena = json.loads((Path(cache_dir) / "cena" / area / "cena.json").read_text("utf-8"))
+    except (OSError, ValueError):
+        return {}
+    return {k: v["bb"] for k, v in (cena.get("modelos") or {}).items() if k.startswith("o") and v.get("bb")}
+
+
+def portas_no_caminho(pontos: list, objetos: list[dict], caixas: dict | None = None) -> list[dict]:
+    """Portas cujo vão a rota atravessa, na ordem do caminho e uma vez cada: {parte, nome, pos, metros, estado_ref}.
+
+    Vale o vão inteiro (não o centro da porta) e a altura: a rota tem de passar entre a base da porta (1,5 m abaixo,
+    para rampa e degrau) e o topo dela. caixas: modelo -> caixa do modelo na cena 3D (ds2cena), quando já extraída."""
+    caixas = caixas or {}
+    achadas = {}
+    for o in objetos:
+        if o.get("cat") != "porta":
+            continue
+        (ax, az), (bx, bz), base, altura = vao_porta(o, caixas.get(o.get("modelo")))
+        andado = 0.0
+        for p, q in zip(pontos, pontos[1:]):
+            dx, dz, ex, ez = q[0] - p[0], q[2] - p[2], bx - ax, bz - az
+            den = dx * ez - dz * ex
+            trecho = _dist(p, q)
+            if abs(den) > 1e-9:
+                t = ((ax - p[0]) * ez - (az - p[2]) * ex) / den
+                u = ((ax - p[0]) * dz - (az - p[2]) * dx) / den
+                y = p[1] + t * (q[1] - p[1])
+                if 0 <= t <= 1 and 0 <= u <= 1 and base - 1.5 <= y <= base + max(altura, 2.0):
+                    achadas[o["parte"]] = {"parte": o["parte"], "nome": o.get("nome", ""), "pos": o["pos"],
+                                           "metros": round(andado + t * trecho, 1), "estado_ref": o.get("estado_ref")}
+                    break
+            andado += trecho
+    return sorted(achadas.values(), key=lambda d: d["metros"])
+
+
+def rota(area: dict, de, ate, grafo=None, caixas=None) -> dict | None:
+    """Caminho mais curto pelo chão de um ponto a outro, com as portas que ele atravessa; None se não há caminho.
 
     Os triângulos vêm de um Dijkstra pelos centróides; o traçado é o funil pelas arestas atravessadas (reto onde dá,
     dobrando só nas quinas) e acompanha a altura do chão em cada aresta.
-    grafo: o de _grafo(area), para quem calcula várias rotas na mesma área (o servidor guarda em memória)."""
+    grafo: o de _grafo(area), para quem calcula várias rotas na mesma área (o servidor guarda em memória).
+    caixas: caixa de cada modelo de objeto da cena 3D (vão real das portas); sem ela, a largura pelo nome."""
     import heapq
 
     centros, vizinhos = grafo or _grafo(area)
@@ -633,7 +715,7 @@ def rota(area: dict, de, ate, grafo=None) -> dict | None:
     pontos = _simplificar3d(pontos, 0.25)
     pontos = [list(de)] + [_r(p) for p in pontos[1:-1]] + [list(ate)]
     metros = sum(_dist(pontos[i], pontos[i + 1]) for i in range(len(pontos) - 1))
-    return {"pontos": pontos, "metros": round(metros, 1)}
+    return {"pontos": pontos, "metros": round(metros, 1), "portas": portas_no_caminho(pontos, area.get("objetos", []), caixas)}
 
 
 def relatorio_inimigos(dados_areas: list[dict]) -> dict:

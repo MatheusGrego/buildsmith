@@ -170,7 +170,7 @@ def area_para_pagina(dados: dict, nomes_plano: dict, icone_local, precisa: dict 
 
 
 def preparar(plano: dict, out_dir: Path, carregar_area, listar_areas, icone_local, prebuscar=None, pagina_wiki=None,
-             nomes_inimigos=None, area_jogador: str | None = None, todas_areas: bool = True) -> dict:
+             nomes_inimigos=None, area_jogador: str | None = None, todas_areas: bool = True, caixas_de=None) -> dict:
     import ds2mapa
     import ds2planta
 
@@ -202,10 +202,17 @@ def preparar(plano: dict, out_dir: Path, carregar_area, listar_areas, icone_loca
                 raise ValueError(f"ponto {pt['tipo']}:{pt['ref']} não existe em {area_id}") from None
             pontos.append({"n": n_idx, "tipo": pt["tipo"], "ref": pt["ref"], "pos": pos, "nome": node.get("nome", ""),
                            "andar": ds2planta.andar_de(dados["planta"], pos[1])})
-        trechos = [ds2mapa.rota(dados, a["pos"], b["pos"]) for a, b in zip(pontos, pontos[1:])]
+        caixas = caixas_de(area_id) if caixas_de else None  # vão real das portas, com a cena 3D já extraída
+        trechos = [ds2mapa.rota(dados, a["pos"], b["pos"], caixas=caixas) for a, b in zip(pontos, pontos[1:])]
+        portas, andado = {}, 0.0
+        for t in trechos:
+            for porta in (t or {}).get("portas", []):
+                portas.setdefault(porta["parte"], {**porta, "metros": round(andado + porta["metros"], 1)})
+            andado += t["metros"] if t else 0.0
         atribuir.append((alvo, {"area": area_id, "nome": dados["nome"], "pontos": pontos,
                                 "trechos": [t["pontos"] if t else None for t in trechos],
-                                "metros": round(sum(t["metros"] for t in trechos if t), 1), "areas": nomes_areas}))
+                                "metros": round(sum(t["metros"] for t in trechos if t), 1), "areas": nomes_areas,
+                                "portas": list(portas.values())}))
         if area_id not in ordem:
             ordem.append(area_id)
 

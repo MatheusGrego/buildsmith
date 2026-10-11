@@ -313,3 +313,19 @@ estava mesmo errado.
   `CENA_VERSAO` 6 refaz a cena de toda área já extraída na próxima abertura. Embaixo da Threshold Bridge, antes só havia
   lava (y 165,11); agora há o piso `floor_05_d` em y 165,64, na altura da fogueira (165,6). Teste com o jogo instalado:
   `test_iron_keep_pecas_de_mapa_no_lugar_e_chao_na_threshold_bridge`.
+
+## Rota × portas (2026-10-11, Task 4 do plano)
+
+- **Vão real da porta** (responde ao "centro do modelo não conferido" de "Limites", acima): pela caixa dos modelos na
+  cena 3D, a porta de dobradiça do jogo tem a origem **na dobradiça** e o vão ao longo de +x (Wooden Door, Iron Door,
+  Prison Door: x de 0 a 1,4 m), enquanto grade e portão são centrados (Iron Bars: x de -1,53 a 1,53; Large Iron Bars
+  Gate: -2,34 a 2,34). Uma grade (Iron Bars da arena da Lost Bastille) tem o vão no z do modelo: vale o lado mais
+  comprido da caixa no chão.
+- `ds2mapa.portas_no_caminho` cruza a rota com o vão de cada porta (caixa do modelo quando a cena já foi extraída,
+  senão centrada com a largura pelo nome, como o `mapa.js`) e com a altura (entre 1,5 m abaixo da base e o topo); a
+  rota do servidor e as rotas do plano trazem `portas` na ordem do caminho. Conferido com o jogo: da fogueira Straid's
+  Cell até a Petrified Dragon Bone a rota passa pelas duas Prison Doors (7,6 m e 14,1 m).
+- Página: o aviso da rota diz "Passa por N portas" e, pelo save, "aberta no seu save" ou "fechada no seu save, abre com
+  X" (só quando a chave é conhecida). **Fechada não é trancada**: o save só diz que a porta ainda não abriu.
+- Fica para depois: o desenho da porta no 2D continua centrado na posição (sem a cena na hora de montar a página, o
+  vão real não é conhecido); a chave das portas comuns é a Parte B do plano.

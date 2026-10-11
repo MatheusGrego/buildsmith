@@ -1,4 +1,5 @@
 import json
+import math
 import struct
 
 import pytest
@@ -497,3 +498,50 @@ def test_objects_and_items_carry_the_save_state_ref():
                                instancias={}, nomes_fogueira={}, lotes={10165290: [(60140000, 1)]},
                                nomes_itens={60140000: "Firebomb"}, malhas=[], geradores=[], assinatura="x")
     assert area["itens"][0]["estado_ref"] == "lote:10165290"
+
+
+def porta(parte, pos, rot_y=0.0, nome="Iron Door", **extra):
+    return {"parte": parte, "modelo": "o00_0308", "cat": "porta", "nome": nome, "pos": pos, "rot": [0.0, rot_y, 0.0],
+            "chave": None, "estado_ref": f"porta:{parte}", **extra}
+
+
+def test_portas_no_caminho_pelo_vao_e_pela_altura():
+    """Rota reta em x (z = 0,5) de 0 a 10. Porta girada 90° em x = 4 (vão ao longo de z): cruza. Porta sem giro em x = 6
+    (vão ao longo de x, paralelo à rota) a 2 m de lado: não cruza. Porta 6 m acima: não conta. Alavanca: não é porta."""
+    pontos = [[0.0, 0.0, 0.5], [10.0, 0.0, 0.5]]
+    objetos = [porta("p_cruza", [4.0, 0.0, 0.5], rot_y=90.0), porta("p_lado", [6.0, 0.0, 2.5]),
+               porta("p_acima", [8.0, 6.0, 0.5], rot_y=90.0), {**porta("alav", [5.0, 0.0, 0.5], rot_y=90.0), "cat": "alavanca"}]
+    achadas = ds2mapa.portas_no_caminho(pontos, objetos)
+    assert [p["parte"] for p in achadas] == ["p_cruza"]
+    assert achadas[0]["metros"] == pytest.approx(4.0, abs=0.01) and achadas[0]["estado_ref"] == "porta:p_cruza"
+
+
+def test_portas_no_caminho_na_ordem_da_rota_e_uma_vez_cada():
+    pontos = [[0.0, 0.0, 0.5], [10.0, 0.0, 0.5], [0.0, 0.0, 0.6]]  # vai e volta: cada porta aparece uma vez
+    objetos = [porta("longe", [8.0, 0.0, 0.5], rot_y=90.0), porta("perto", [2.0, 0.0, 0.5], rot_y=90.0)]
+    assert [p["parte"] for p in ds2mapa.portas_no_caminho(pontos, objetos)] == ["perto", "longe"]
+
+
+def test_vao_da_porta_pela_caixa_do_modelo_com_dobradica():
+    """Porta de dobradiça do jogo (Iron Door o00_0308: x de 0 a 1,4 no modelo) tem a origem na dobradiça: o vão vai de
+    pos até pos + 1,4 m no x local. Sem a caixa, o vão é centrado com a largura pelo nome."""
+    o = porta("d", [10.0, 2.0, 20.0], rot_y=90.0)  # +x local vira -z do jogo
+    a, b, base, altura = ds2mapa.vao_porta(o, [[0.0, 0.0, -0.09], [1.4, 2.4, 0.11]])
+    assert a == pytest.approx((10.01, 20.0)) and b == pytest.approx((10.01, 18.6))
+    assert (base, altura) == pytest.approx((2.0, 2.4))
+    a, b, _, altura = ds2mapa.vao_porta(o)
+    assert a == pytest.approx((10.0, 21.1)) and b == pytest.approx((10.0, 18.9)) and altura == pytest.approx(3.0)
+    largo = ds2mapa.vao_porta({**o, "nome": "Large Iron Door"})
+    assert math.dist(largo[0], largo[1]) == pytest.approx(4.4)
+    # grade cujo vão está no z do modelo (Iron Bars da arena da Lost Bastille: z de -1,11 a 1,11)
+    a, b, _, _ = ds2mapa.vao_porta(porta("g", [0.0, 0.0, 0.0]), [[-0.12, 0.0, -1.11], [0.1, 2.47, 1.11]])
+    assert a == pytest.approx((-0.01, -1.11)) and b == pytest.approx((-0.01, 1.11))
+
+
+def test_rota_devolve_as_portas_no_caminho():
+    area = {**faixa_area(), "objetos": [porta("meio", [1.5, 0.0, 0.5], rot_y=90.0)]}
+    r = ds2mapa.rota(area, ds2mapa.ponto_de(area, "fogueira", 16675), ds2mapa.ponto_de(area, "item", 10165010))
+    assert [p["parte"] for p in r["portas"]] == ["meio"]
+    caixas = {"o00_0308": [[0.0, 0.0, -0.1], [1.4, 2.4, 0.1]]}  # dobradiça em z = 0,5: o vão vai de z 0,5 a -0,9
+    r = ds2mapa.rota(area, [0.2, 0, 0.9], [2.9, 0, 0.9], caixas=caixas)
+    assert r["portas"] == []  # a rota passa em z = 0,9, fora do vão real (a porta centrada pegaria)

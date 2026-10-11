@@ -31,7 +31,7 @@
     bau: { nome: "Baú", forma: "caixa", dims: [1.1, 0.7, 0.7], cor: 0x7b4f24 },
   };
   const OBJ_TEXTO = {
-    porta: "Porta ou portão. A rota pelo chão não sabe se está trancada.",
+    porta: "Porta ou portão. A rota avisa quando passa por ela; aberta ou fechada vem do seu save.",
     nevoa: "Névoa: passagem para outra área ou para a sala do chefe.",
     alavanca: "Alavanca ou interruptor: costuma abrir portão, ponte ou chamar elevador por perto.",
     elevador: "Elevador.",
@@ -142,7 +142,7 @@
   const st = { raiz: null, plano: null, indice: null, docs: {}, doc: null, andar: "todos", vista: null, rota: null,
                destaque: null, zonaSel: null, pop: null, jogador: null, tipoSel: null, poll: null,
                modo: "2d", iso: null, interior: false, foco: true, acesas: null, fogChave: undefined, escolhida: false,
-               entChave: null, vivo: null, realce: false, mundo: null, mundoChave: "",
+               entChave: null, vivo: null, realce: false, mundo: null, mundoChave: "", rotaTexto: "",
                filtros: { zonas: true, fogueiras: true, chefes: true, npcs: true, plano: true, outros: true, chaves: true,
                           baus: false, objetos: false, inimigos: false } };
   const em3d = () => st.modo === "iso" && st.iso;
@@ -217,7 +217,7 @@
           <p class="mp-nota"></p>
         </aside>
       </div>
-      <p class="mp-leg"><span class="mp-k mp-k-zonas"></span>zona 1 → última <span class="mp-k mp-k-chefe"></span>chefe <span class="mp-k mp-k-npc"></span>NPC <span class="mp-k mp-k-plano"></span>do plano <span class="mp-k mp-k-outro"></span>item <span class="mp-k mp-k-rota"></span>rota <span class="mp-k mp-k-parada"></span>paradas 1 → última <span class="mp-k mp-k-eu"></span>você <span class="mp-k mp-k-inimigo"></span>inimigo <span class="mp-k mp-k-porta"></span>porta <span class="mp-k mp-k-chave"></span>chave <span class="mp-k mp-k-bau"></span>baú <span class="mp-aviso">rota pelo chão: não sabe se a porta está trancada</span></p>
+      <p class="mp-leg"><span class="mp-k mp-k-zonas"></span>zona 1 → última <span class="mp-k mp-k-chefe"></span>chefe <span class="mp-k mp-k-npc"></span>NPC <span class="mp-k mp-k-plano"></span>do plano <span class="mp-k mp-k-outro"></span>item <span class="mp-k mp-k-rota"></span>rota <span class="mp-k mp-k-parada"></span>paradas 1 → última <span class="mp-k mp-k-eu"></span>você <span class="mp-k mp-k-inimigo"></span>inimigo <span class="mp-k mp-k-porta"></span>porta <span class="mp-k mp-k-chave"></span>chave <span class="mp-k mp-k-bau"></span>baú <span class="mp-aviso">rota pelo chão: avisa as portas do caminho</span></p>
     </div>`;
     ligar(raiz);
     return carregar("mapas/indice.json").then((indice) => {
@@ -275,7 +275,7 @@
     if (chave === st.mundoChave) return;
     st.mundo = m;
     st.mundoChave = chave;
-    if (st.doc && st.doc.area === area) atualizar();
+    if (st.doc && st.doc.area === area) { atualizar(); mostrarRotaInfo(); }
   }
 
   // Seletor de áreas na ordem da rota; com o save, separado em liberadas e ainda não liberadas.
@@ -324,9 +324,28 @@
   }
 
   function statusRota(texto) {
-    const el = st.raiz.querySelector(".mp-rota-info");
-    el.innerHTML = texto ? `${texto} <button type="button" class="mp-x" data-limpar-rota aria-label="Apagar rota">&#10005;</button>` : "";
+    st.rotaTexto = texto || "";
+    mostrarRotaInfo();
+  }
+  // O aviso da rota com as portas que ela atravessa; o estado de cada uma vem do save e muda sem refazer a rota.
+  function mostrarRotaInfo() {
+    const el = st.raiz.querySelector(".mp-rota-info"), texto = st.rotaTexto;
+    el.innerHTML = texto ? `<span>${texto}${textoPortas(st.rota && st.rota.portas)}</span> <button type="button" class="mp-x" data-limpar-rota aria-label="Apagar rota">&#10005;</button>` : "";
     el.hidden = !texto;
+  }
+  // Fechada não é trancada: o jogo só diz que ainda não abriu; com a chave conhecida, diz qual é.
+  function textoPortas(portas) {
+    if (!portas || !portas.length || !st.doc) return "";
+    const mundo = mundoDaArea();
+    const itens = portas.map((p) => {
+      const o = (st.doc.objetos || []).find((x) => x.parte === p.parte) || { ...p, cat: "porta", chave: null };
+      const est = estadoObjeto(o, mundo), chave = o.chave ? esc(o.chave.nome) : "";
+      const nome = `${esc(o.nome || nomeObjeto(o))} (${fmt.format(p.metros)} m)`;
+      if (est === "aberta") return `${nome}: <span class="mp-rota-aberta">aberta no seu save</span>`;
+      if (est === "fechada") return `${nome}: <span class="mp-rota-fechada">fechada no seu save${chave ? `, abre com ${chave}` : ""}</span>`;
+      return chave ? `${nome}: abre com ${chave}` : nome;
+    });
+    return ` Passa por ${itens.length === 1 ? "1 porta" : `${itens.length} portas`}: ${itens.join("; ")}.`;
   }
 
   // "Rota até aqui": daqui (você na mesma área) ou da fogueira da zona do alvo (você em outra área).
@@ -354,7 +373,7 @@
     if (!j) { statusRota("O servidor local não respondeu."); return; }
     if (!j.rota) { statusRota("Não achei caminho pelo chão até aí (pode ter queda, porta, elevador ou alavanca no meio)."); return; }
     const andares = st.doc.planta.andares;
-    st.rota = { area, trechos: [j.rota.pontos], metros: j.rota.metros,
+    st.rota = { area, trechos: [j.rota.pontos], metros: j.rota.metros, portas: j.rota.portas || [],
                 pontos: [{ n: 1, pos: de, andar: andarDe(andares, de[1]), nome: nomeDe },
                          { n: 2, pos: alvo.pos, andar: alvo.andar ?? andarDe(andares, alvo.pos[1]), nome: alvo.nome }] };
     const tela = st.raiz.querySelector(".mp-tela");
@@ -410,7 +429,7 @@
     st.entChave = null;
     if (st.iso) st.iso.setEntidades([]);  // as formas da área anterior saem já; as desta entram com o cenário
     st.raiz.querySelector(".mp-pop").hidden = true;
-    statusRota("");
+    statusRota(st.rota && st.rota.portas && st.rota.portas.length ? `Rota do passo: ${fmt.format(st.rota.metros)} m pelo chão.` : "");
     const andares = d.planta.andares;
     const contagem = (id) => d.itens.filter((p) => p.andar === id && (p.plano || (st.destaque && p.item_id === st.destaque))).length;
     st.andar = opcoes.andar != null ? opcoes.andar
