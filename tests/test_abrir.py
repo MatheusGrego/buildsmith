@@ -67,3 +67,20 @@ def test_pages_are_rebuilt_only_when_the_code_changes(tmp_path):
     assert chamadas == [("outro", "ds2")]  # a que deu erro tenta de novo
     assert abrir.refazer_paginas(tmp_path, "v2", avisos.append, preparar=preparar) == ["ds2/pssk"]
     assert json.loads((tmp_path / "app" / "paginas.json").read_text(encoding="utf-8")) == {"ds2/pssk": "v2"}
+
+
+def test_rebuild_forwards_script_progress_and_keeps_saying_it_is_working(tmp_path):
+    """A janela do atalho não fica muda enquanto a página é refeita (senão parece travada e a pessoa fecha)."""
+    script = tmp_path / "lento.py"
+    script.write_text(
+        "import sys, time, json\n"
+        "print('mapa extraído do jogo: Majula', file=sys.stderr, flush=True)\n"
+        "time.sleep(0.6)\n"
+        "print(json.dumps({'index': 'x', 'files': {str(i): 'y' * 100 for i in range(2000)}}))\n",  # stdout grande
+        encoding="utf-8")
+    avisos = []
+    saida, erro = abrir.rodar_avisando([sys.executable, str(script)], avisos.append, a_cada=0.2)
+    assert json.loads(saida)["index"] == "x"
+    assert "  mapa extraído do jogo: Majula" in avisos
+    assert any(a.startswith("  ainda refazendo") for a in avisos)
+    assert "Majula" in erro

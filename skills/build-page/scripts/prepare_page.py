@@ -109,9 +109,20 @@ def _jogo_instalado():
     return game
 
 
+def progresso(texto: str) -> None:
+    """Linha de progresso no stderr (o stdout é só o JSON do fim): o abridor mostra na janela dele."""
+    print(texto, file=sys.stderr, flush=True)
+
+
 def carregar_area_do_jogo(cache_root: Path, jogo: str):
     def carregar(area: str) -> dict:
-        return _ds2mapa().extrair_area(_jogo_instalado(), area, Path(cache_root) / jogo)
+        cache = Path(cache_root) / jogo
+        arquivo = cache / "mapas" / f"{area}.json"
+        antes = arquivo.stat().st_mtime_ns if arquivo.is_file() else None
+        dados = _ds2mapa().extrair_area(_jogo_instalado(), area, cache)
+        if (arquivo.stat().st_mtime_ns if arquivo.is_file() else None) != antes:
+            progresso(f"mapa extraído do jogo: {dados.get('nome') or area}")
+        return dados
     return carregar
 
 

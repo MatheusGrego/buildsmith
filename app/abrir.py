@@ -15,6 +15,7 @@ import json
 import os
 import subprocess
 import sys
+import threading
 import time
 import urllib.request
 import webbrowser
@@ -149,19 +150,52 @@ def subir(home: Path, port: int = PORT) -> bool:
     return _esperar(lambda: ping(port) is not None, 20)
 
 
-def _preparar_padrao(plano: Path, jogo: str) -> dict:
+def rodar_avisando(cmd: list[str], avisa=print, a_cada: float = 10.0, limite: float = 1800) -> tuple[str, str]:
+    """Roda o comando e devolve (stdout, stderr). Cada linha do stderr vira aviso na hora e, sem novidade por
+    `a_cada` segundos, avisa que ainda está trabalhando: a janela do atalho nunca fica muda (parece travada)."""
+    proc = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, stdin=subprocess.DEVNULL,
+                            text=True, encoding="utf-8", errors="replace", creationflags=SEM_JANELA,
+                            env={**os.environ, "PYTHONIOENCODING": "utf-8"})
+    saida, erro, ultimo = [], [], [time.monotonic()]
+
+    def ler_erro():
+        for linha in proc.stderr:
+            erro.append(linha)
+            if linha.strip():
+                ultimo[0] = time.monotonic()
+                avisa("  " + linha.rstrip())
+
+    leitores = [threading.Thread(target=lambda: saida.append(proc.stdout.read()), daemon=True),
+                threading.Thread(target=ler_erro, daemon=True)]
+    for t in leitores:
+        t.start()
+    inicio = time.monotonic()
+    while proc.poll() is None:
+        if time.monotonic() - inicio > limite:
+            proc.kill()
+            break
+        time.sleep(0.05)
+        if time.monotonic() - ultimo[0] >= a_cada:
+            ultimo[0] = time.monotonic()
+            avisa(f"  ainda refazendo ({int(time.monotonic() - inicio)} s)... não feche a janela")
+    proc.wait()
+    for t in leitores:
+        t.join(5)
+    return "".join(saida), "".join(erro)
+
+
+def _preparar_padrao(plano: Path, jogo: str, avisa=print) -> dict:
     script = REPO / "skills" / "build-page" / "scripts" / "prepare_page.py"
-    r = subprocess.run([_python(True), str(script), str(plano), str(plano.parent), "--jogo", jogo],
-                       capture_output=True, text=True, encoding="utf-8", errors="replace", timeout=1800,
-                       creationflags=SEM_JANELA, env={**os.environ, "PYTHONIOENCODING": "utf-8"})
+    saida, erro = rodar_avisando([_python(True), str(script), str(plano), str(plano.parent), "--jogo", jogo], avisa)
     try:
-        return json.loads(r.stdout)
+        return json.loads(saida)
     except ValueError:
-        return {"error": (r.stderr or r.stdout).strip().splitlines()[-1] if (r.stderr or r.stdout).strip() else f"código {r.returncode}"}
+        return {"error": (erro or saida).strip().splitlines()[-1] if (erro or saida).strip() else "sem resposta"}
 
 
-def refazer_paginas(home: Path, versao: str, avisa=print, forcar: bool = False, preparar=_preparar_padrao) -> list[str]:
+def refazer_paginas(home: Path, versao: str, avisa=print, forcar: bool = False, preparar=None) -> list[str]:
     """Refaz as páginas geradas com outro código, a partir do plano.json de cada uma. Devolve as que refez."""
+    preparar = preparar or (lambda plano, jogo: _preparar_padrao(plano, jogo, avisa))
     marca = home / "app" / "paginas.json"
     try:
         feitas = json.loads(marca.read_text(encoding="utf-8"))

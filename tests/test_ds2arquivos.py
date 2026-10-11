@@ -1,3 +1,4 @@
+import os
 import struct
 import zlib
 from pathlib import Path
@@ -87,3 +88,19 @@ def test_signature_changes_with_the_index(jogo_falso, tmp_path):
 @pytest.mark.skipif(not (GAME / "GameDataEbl.bhd").exists(), reason="DS2 SotFS não instalado")
 def test_real_game_map_file():
     assert ds2arquivos.Arquivo(GAME, "GameData").ler("/map/m10_16_00_00/m10_16_00_00.msb")[:4] == b"MSB "
+
+
+def test_index_is_decrypted_once_per_process_until_the_game_updates(jogo_falso, monkeypatch):
+    pasta, claro = jogo_falso
+    chamadas = []
+    original = ds2arquivos._decifrar_indice
+    monkeypatch.setattr(ds2arquivos, "_decifrar_indice", lambda pem, bhd: chamadas.append(bhd) or original(pem, bhd))
+    monkeypatch.setattr(ds2arquivos, "_INDICES", {})
+    for _ in range(3):  # uma área por vez abre o pacote: o RSA do índice (~1 s no jogo real) só roda na primeira
+        assert ds2arquivos.Arquivo(pasta, "GameData").ler("/param/teste.param") == claro
+    assert len(chamadas) == 1
+    bhd = pasta / "GameDataEbl.bhd"
+    st = bhd.stat()
+    os.utime(bhd, (st.st_atime, st.st_mtime + 10))  # o jogo atualizou: índice novo
+    ds2arquivos.Arquivo(pasta, "GameData")
+    assert len(chamadas) == 2

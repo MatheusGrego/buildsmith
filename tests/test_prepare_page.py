@@ -375,3 +375,22 @@ def test_iso_module_and_styles_included_in_page(tmp_path):
     assert "mp-modo-toggle" in index_html
     assert "mp-iso-container" in index_html
     assert ".mp-iso-ctrl" in index_html
+
+
+def test_area_extracted_from_the_game_is_reported_as_progress(tmp_path, monkeypatch, capsys):
+    """Depois de uma atualização, cada área sai do jogo de novo (~1 s cada): o abridor mostra isso na janela."""
+    class FakeMapa:
+        def extrair_area(self, game, area, cache):
+            destino = Path(cache) / "mapas" / f"{area}.json"
+            if not destino.is_file():
+                destino.parent.mkdir(parents=True, exist_ok=True)
+                destino.write_text("{}", encoding="utf-8")
+            return {"area": area, "nome": "Iron Keep"}
+
+    monkeypatch.setattr(prepare_page, "_ds2mapa", lambda: FakeMapa())
+    monkeypatch.setattr(prepare_page, "_jogo_instalado", lambda: tmp_path)
+    carregar = prepare_page.carregar_area_do_jogo(tmp_path / "cache", "ds2")
+    assert carregar("m10_19_00_00")["nome"] == "Iron Keep"
+    assert "mapa extraído do jogo: Iron Keep" in capsys.readouterr().err
+    carregar("m10_19_00_00")  # já no cache: nada a avisar
+    assert capsys.readouterr().err == ""

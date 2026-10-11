@@ -54,6 +54,18 @@ def _decifrar_indice(pem: Path, bhd: Path) -> bytes:
     return bytes(out)
 
 
+_INDICES: dict[tuple, bytes] = {}  # índice já decifrado neste processo, por arquivo + tamanho + data
+
+
+def _indice(pem: Path, bhd: Path) -> bytes:
+    """O RSA do índice leva ~1 s no jogo real: decifra uma vez por processo (de novo só se o jogo atualizar)."""
+    st = bhd.stat()
+    chave = (str(bhd.resolve()), st.st_size, st.st_mtime_ns)
+    if chave not in _INDICES:
+        _INDICES[chave] = _decifrar_indice(pem, bhd)
+    return _INDICES[chave]
+
+
 def assinatura(game_dir) -> str:
     """Tamanho e data dos índices: muda quando o jogo atualiza, e o cache extraído é refeito."""
     partes = []
@@ -69,7 +81,7 @@ class Arquivo:
         pem, bhd, self.bdt = game_dir / f"{nome}KeyCode.pem", game_dir / f"{nome}Ebl.bhd", game_dir / f"{nome}Ebl.bdt"
         if not (pem.is_file() and bhd.is_file() and self.bdt.is_file()):
             raise ArquivoError(f"pacote {nome} não encontrado em {game_dir}")
-        raw = _decifrar_indice(pem, bhd)
+        raw = _indice(pem, bhd)
         buckets, buckets_off = struct.unpack_from("<ii", raw, 0x10)
         self.arquivos: dict[int, tuple[int, int, tuple | None]] = {}
         for b in range(buckets):
