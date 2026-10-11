@@ -472,3 +472,149 @@ def test_world_state_keeps_the_last_good_one_while_the_game_writes(server_mundo)
     bom = json.loads(get(url)[2])
     save.write_bytes(save.read_bytes()[:5000])  # o jogo no meio da gravação
     assert json.loads(get(url)[2]) == bom
+
+
+# ---- Catálogo, fontes por código e itens marcados (sem IA) --------------------------------------------------------
+
+def mundo_com_fogueiras(acesas) -> bytes:
+    import struct
+    import ds2save
+    mundo = bytearray(0x30000)
+    for i, fog in enumerate(acesas):
+        struct.pack_into("<H", mundo, ds2save.OFF_FOGUEIRAS + 2 * i, fog)
+        mundo[ds2save.OFF_FOGUEIRAS + 2 * ds2save.FOGUEIRAS_MAX + i] = 1
+    return bytes(mundo)
+
+
+@pytest.fixture
+def server_catalogo(tmp_path):
+    from test_ds2fontes import INDICE, MAPAS
+    page = tmp_path / "paginas" / "ds2" / "personagem-teste"
+    page.mkdir(parents=True)
+    (page / "index.html").write_text("<p>ok</p>", encoding="utf-8")
+    (page / "plano.json").write_text("{}", encoding="utf-8")
+    save = tmp_path / "DS2SOFS0000.co2"
+    save.write_bytes(build_bnd4({"USER_DATA001": bytes(make_slot(name="Personagem (teste)", souls=1500)),
+                                 "USER_DATA011": mundo_com_fogueiras([14650, 16650])}))
+    liberar, chamadas = threading.Event(), []
+
+    def montar():
+        chamadas.append(1)
+        liberar.wait(5)
+        if (tmp_path / "quebrar").exists():
+            raise OSError("sem o jogo")
+        return INDICE
+
+    httpd = serve.make_server(tmp_path, port=0, runner=serve.Runner(command=lambda p: [sys.executable, "-c", "0"], cwd=tmp_path),
+                              save=save, mapa=serve.MapaVivo(tmp_path, save, carregar_area=lambda a: MAPAS[a]),
+                              catalogo=serve.Catalogo(tmp_path, montar))
+    threading.Thread(target=httpd.serve_forever, daemon=True).start()
+    yield f"http://127.0.0.1:{httpd.server_address[1]}", tmp_path, liberar, chamadas
+    liberar.set()
+    httpd.shutdown()
+
+
+def test_catalog_is_built_in_background_and_lists_every_item(server_catalogo):
+    base, home, liberar, chamadas = server_catalogo
+    icones = home / "cache" / "ds2" / "icons"
+    icones.mkdir(parents=True)
+    (icones / "Magic_Stone.png").write_bytes(PNG)
+    url = f"{base}/api/ds2/catalogo"
+    status, _, body = get(url)
+    assert status == 202 and json.loads(body) == {"estado": "montando"}
+    get(url)
+    liberar.set()
+    assert esperar(url, 200) and chamadas == [1]
+    itens = {i["nome"]: i for i in json.loads(get(url)[2])["itens"]}
+    pedra = itens["Magic Stone"]
+    assert pedra["cat"] == "material" and pedra["fontes"] == {"compra": 2, "chao": 3, "drop": 1}
+    assert itens["Uchigatana"]["req"] == {"STR": 10, "DEX": 16} and itens["Uchigatana"]["fontes"] == {"troca": 1}
+    assert "icone" not in pedra  # o índice de teste não tem a URL do ícone
+
+
+def test_catalog_icon_is_the_cached_wiki_icon(tmp_path):
+    icones = tmp_path / "cache" / "ds2" / "icons"
+    icones.mkdir(parents=True)
+    (icones / "Soul_Spear.png").write_bytes(PNG)
+    item = {"id": 1, "nome": "Soul Spear", "cat": "feitico", "req": {}, "fontes": [],
+            "icone": "https://static0.fextralifeimages.com/file/darksouls2/x/Soul_Spear.png"}
+    assert serve.resumo_catalogo(tmp_path, item)["icone"] == "icons/Soul_Spear.png"
+    assert "icone" not in serve.resumo_catalogo(tmp_path, {**item, "icone": "https://x.example/Outro.png"})
+
+
+def test_catalog_error_is_reported(server_catalogo):
+    base, home, liberar, _ = server_catalogo
+    (home / "quebrar").write_text("1", encoding="utf-8")
+    liberar.set()
+    url = f"{base}/api/ds2/catalogo"
+    get(url)
+    assert esperar(url, 500)
+    with pytest.raises(urllib.error.HTTPError) as err:
+        get(url)
+    assert "sem o jogo" in json.loads(err.value.read())["erro"]
+
+
+def test_sources_of_an_item_come_from_the_save_and_the_game(server_catalogo):
+    from test_ds2fontes import ITEM, ARMA
+    base, _, liberar, _ = server_catalogo
+    liberar.set()
+    assert esperar(f"{base}/api/ds2/catalogo", 200)
+    r = json.loads(get(f"{base}/api/ds2/personagem-teste/fontes?item={ITEM}")[2])
+    assert r["item"]["id"] == f"quero-{ITEM}" and r["item"]["item"]["nome"] == "Magic Stone"
+    primeira = r["item"]["fontes"][0]
+    assert primeira["acesso"] == "agora" and "mais_cedo" in primeira["destaques"] and primeira["mapa"]["area"]
+    assert [p["tipo"] for p in r["passos"]] in (["compra"], ["explorar"])
+    arma = json.loads(get(f"{base}/api/ds2/personagem-teste/fontes?item={ARMA}")[2])
+    assert [p["tipo"] for p in arma["passos"]] == ["troca"] and arma["requisito"] is None  # STR 10 e DEX 18 do slot
+    for url, codigo in ((f"{base}/api/ds2/personagem-teste/fontes?item=abc", 400), (f"{base}/api/ds2/personagem-teste/fontes", 400),
+                        (f"{base}/api/ds2/personagem-teste/fontes?item=123", 404), (f"{base}/api/ds2/outro/fontes?item={ITEM}", 404)):
+        with pytest.raises(urllib.error.HTTPError) as err:
+            get(url)
+        assert err.value.code == codigo, url
+
+
+def test_sources_wait_for_the_catalog(server_catalogo):
+    base, _, _, _ = server_catalogo
+    status, _, body = get(f"{base}/api/ds2/personagem-teste/fontes?item=61140000")
+    assert status == 202 and json.loads(body) == {"estado": "montando"}
+
+
+def test_marked_items_are_kept_per_character(server_catalogo):
+    base, home, _, _ = server_catalogo
+    api = f"{base}/api/ds2/personagem-teste"
+    state = post(f"{api}/quero/61140000", {"item_id": 61140000, "desde": "2026-10-11T10:00:00Z", "marcado": True})
+    assert state["quero"]["61140000"] == {"item_id": 61140000, "desde": "2026-10-11T10:00:00Z", "marcado": True}
+    post(f"{api}/quero/61140000", {"item_id": 61140000, "desde": "2026-10-11T10:00:00Z", "marcado": False})
+    on_disk = json.loads((home / "estado" / "ds2" / "personagem-teste.json").read_text(encoding="utf-8"))
+    assert on_disk["quero"]["61140000"]["marcado"] is False
+    for doc, body in (("61140000", {"item_id": 1, "marcado": True}), ("61140000", {"item_id": 61140000, "marcado": True, "x": 1}),
+                      ("magic-stone", {"item_id": 61140000, "marcado": True}), ("61140000", {"item_id": "61140000", "marcado": True}),
+                      ("61140000", {"item_id": 61140000, "marcado": "sim"})):
+        with pytest.raises(urllib.error.HTTPError) as err:
+            post(f"{api}/quero/{doc}", body)
+        assert err.value.code == 400, body
+
+
+def test_marked_items_have_a_limit(server_catalogo, monkeypatch):
+    base, _, _, _ = server_catalogo
+    monkeypatch.setattr(serve, "MAX_QUERO", 2)
+    api = f"{base}/api/ds2/personagem-teste"
+    for i in (1, 2):
+        post(f"{api}/quero/{i}", {"item_id": i, "marcado": True})
+    with pytest.raises(urllib.error.HTTPError) as err:
+        post(f"{api}/quero/3", {"item_id": 3, "marcado": True})
+    assert err.value.code == 409
+    post(f"{api}/quero/1", {"item_id": 1, "marcado": False})  # desmarcar sempre pode
+    post(f"{api}/quero/3", {"item_id": 3, "marcado": True})
+
+
+def test_page_icon_falls_back_to_the_icon_cache(server_catalogo):
+    base, home, _, _ = server_catalogo
+    icones = home / "cache" / "ds2" / "icons"
+    icones.mkdir(parents=True)
+    (icones / "Magic_Stone.png").write_bytes(PNG)
+    status, ctype, body = get(f"{base}/p/ds2/personagem-teste/icons/Magic_Stone.png")
+    assert status == 200 and body == PNG and ctype == "image/png"
+    with pytest.raises(urllib.error.HTTPError) as err:
+        get(f"{base}/p/ds2/personagem-teste/icons/Outro.png")
+    assert err.value.code == 404

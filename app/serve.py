@@ -2,7 +2,8 @@
 """Servidor local do buildsmith.
 
 Mostra as páginas de ~/.buildsmith/paginas/<jogo>/<personagem>/ e guarda o que a página grava
-(fila de pesquisa, fogueiras de feito, seleção de feitiços) em ~/.buildsmith/estado/<jogo>/<personagem>.json.
+(fila de pesquisa, fogueiras de feito, seleção de feitiços, itens marcados no Catálogo) em
+~/.buildsmith/estado/<jogo>/<personagem>.json.
 Só biblioteca padrão. Escuta apenas em 127.0.0.1.
 
   pythonw serve.py --open          sobe o servidor (ou reaproveita o que já está de pé) e abre o navegador
@@ -12,6 +13,7 @@ Só biblioteca padrão. Escuta apenas em 127.0.0.1.
 
 Os botões "Atualizar plano" e "Responder fila" da página rodam a skill sem janela (claude -p) pelo runner.py.
 O mapa da página pergunta a posição do personagem (relida do save) e a rota pelo chão até um ponto.
+O Catálogo lista todos os itens do jogo (ds2itens) e "Onde pegar" dos marcados sai por código (ds2fontes), sem IA.
 Pedidos que gravam ou rodam algo exigem o cabeçalho X-Buildsmith: 1 e Host/Origin locais.
 """
 import argparse
@@ -43,14 +45,16 @@ PORT = 8642
 VERSAO = abrir.versao_codigo()  # o abridor compara com a do disco: código novo depois de um pull = reinicia
 SEGMENT = re.compile(r"^[a-z0-9][a-z0-9._-]{0,180}$")
 GAME_OK = re.compile(r"^[a-z0-9]+$")
-COLLECTIONS = {"feitos", "pedidos", "config"}
+COLLECTIONS = {"feitos", "pedidos", "config", "quero"}
 MODOS = {"plano", "fila"}
 MAX_BODY = 4 * 1024
 AREA_OK = re.compile(r"^m\d\d_\d\d_\d\d_\d\d$")
 TEX_OK = re.compile(r"^[a-z0-9][a-z0-9_-]{0,120}\.dds$")  # textura da cena 3D (o extrator grava em minúsculas)
 TIPOS_ESTATICOS = {".js": "text/javascript", ".mjs": "text/javascript", ".json": "application/json"}  # o registro do Windows erra o .js
 COORD_MAX = 10000.0
-AREAS_EM_MEMORIA = 4
+AREAS_EM_MEMORIA = 12  # ~3 MB de grafo cada; as fontes de um item passam por várias áreas
+MAX_QUERO = 200  # itens marcados ao mesmo tempo no Catálogo
+ICONE_OK = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]{0,180}$")
 MAX_FILA = 50  # pedidos na_fila ao mesmo tempo
 TEXTO_MAX = 160
 CONTROLE = re.compile(r"[\x00-\x1f\x7f-\x9f\u2028\u2029]")
@@ -81,7 +85,7 @@ def state_path(home: Path, jogo: str, personagem: str) -> Path:
 
 def read_state(home: Path, jogo: str, personagem: str) -> dict:
     path = state_path(home, jogo, personagem)
-    state = {"feitos": {}, "pedidos": {}, "config": {}}
+    state = {"feitos": {}, "pedidos": {}, "config": {}, "quero": {}}
     if path.is_file():
         state.update(json.loads(path.read_text(encoding="utf-8")))
     return state
@@ -108,6 +112,13 @@ def clean_doc(collection: str, doc_id: str, data) -> dict | None:
     if collection == "feitos":
         if (set(data) - {"marcado", "em", "confirmado"} or not isinstance(data.get("marcado"), bool)
                 or not _linha(data.get("em", "-"), 40) or data.get("confirmado") is not None):
+            return None
+        return data
+    if collection == "quero":
+        item_id = data.get("item_id")
+        if (set(data) - {"item_id", "desde", "marcado"} or not doc_id.isdigit() or len(doc_id) > 10
+                or not isinstance(item_id, int) or isinstance(item_id, bool) or str(item_id) != doc_id
+                or not isinstance(data.get("marcado"), bool) or not _linha(data.get("desde", "-"), 40)):
             return None
         return data
     if collection == "config" and doc_id == "feiticos":
@@ -298,6 +309,105 @@ class MapaVivo:
         dados, grafo = self._area(area)
         return ds2mapa.rota(dados, de, ate, grafo, ds2mapa.caixas_da_cena(self.home / "cache" / "ds2", area))
 
+    def fontes(self, slug_: str, item: dict, indice: dict) -> dict | None:
+        """Onde pegar o item para este personagem (ds2fontes): fontes no formato do plano e os passos."""
+        import ds2fontes
+        import ds2mapa
+
+        vivo, pos = self.ao_vivo(slug_), self.posicao(slug_)
+        if vivo is None or pos is None:
+            return None
+        pers = {**vivo, "fogueiras": pos["fogueiras"]}
+        res = ds2fontes.fontes(item, indice, pers, carregar_area=self._area,
+                               estado_area=lambda area: self.estado_area(slug_, area),
+                               caixas_de=lambda area: ds2mapa.caixas_da_cena(self.home / "cache" / "ds2", area))
+        return {"item": ds2fontes.pagina(res), "passos": ds2fontes.passos(res, pers), "tem": res["tem"],
+                "requisito": res["requisito"]}
+
+
+class Catalogo:
+    """Índice de itens do jogo (ds2itens) em memória: montado em segundo plano na primeira vez (o GET não espera)."""
+
+    def __init__(self, home: Path, montar=None):
+        self.home = Path(home)
+        self.montar = montar  # () -> índice; None = ds2itens.carregar com o jogo instalado e o cache de ~/.buildsmith
+        self._indice = None
+        self._estado: str | None = None
+        self._lock = threading.Lock()
+
+    def indice(self) -> dict | None:
+        with self._lock:
+            return self._indice
+
+    def estado(self) -> str | None:
+        with self._lock:
+            return self._estado
+
+    def iniciar(self) -> bool:
+        with self._lock:
+            if self._estado is not None or self._indice is not None:
+                return False
+            self._estado = "montando"
+        threading.Thread(target=self._rodar, daemon=True).start()
+        return True
+
+    def _rodar(self) -> None:
+        try:
+            if self.montar:
+                indice = self.montar()
+            else:
+                import ds2arquivos
+                import ds2itens
+
+                game = ds2arquivos.game_dir_padrao()
+                if game is None:
+                    raise OSError("DS2 SotFS não encontrado")
+                indice = ds2itens.carregar(game, self.home / "cache" / "ds2")
+            with self._lock:
+                self._indice, self._estado = indice, None
+        except Exception as err:  # jogo ausente, formato inesperado
+            with self._lock:
+                self._estado = f"{type(err).__name__}: {err}"[:200]
+
+
+def icone_local(home: Path, url) -> str | None:
+    """Ícone da wiki já baixado no cache (icons/<arquivo>, o mesmo nome do prepare_page); None se não tem."""
+    if not isinstance(url, str) or not url:
+        return None
+    scripts = str(REPO / "skills" / "build-page" / "scripts")
+    if scripts not in sys.path:
+        sys.path.insert(0, scripts)
+    import prepare_page
+
+    if not prepare_page.wiki_icon(url):
+        return None
+    nome = prepare_page.icon_name(url)
+    return f"icons/{nome}" if (Path(home) / "cache" / "ds2" / "icons" / nome).is_file() else None
+
+
+def resumo_catalogo(home: Path, item: dict) -> dict:
+    """O que o Catálogo mostra de um item: nome, categoria, requisito, ícone local e quantas fontes de cada tipo."""
+    contagem = {}
+    for f in item.get("fontes", []):
+        contagem[f["tipo"]] = contagem.get(f["tipo"], 0) + 1
+    icone = icone_local(home, item.get("icone"))
+    return {"id": item["id"], "nome": item["nome"], "cat": item["cat"], "req": item.get("req", {}), "fontes": contagem,
+            **({"icone": icone} if icone else {})}
+
+
+def com_icones_locais(home: Path, valor):
+    """Troca a URL de ícone da wiki de cada nó pelo arquivo do cache (a página só mostra ícone local)."""
+    if isinstance(valor, list):
+        return [com_icones_locais(home, v) for v in valor]
+    if not isinstance(valor, dict):
+        return valor
+    out = {k: com_icones_locais(home, v) for k, v in valor.items() if k != "icone"}
+    if "icone" in valor:
+        icone = icone_local(home, valor["icone"])
+        if icone:
+            out["icone"] = icone
+    return out
+
 
 class Cenas:
     """Cena 3D por área: o que já está no cache e a extração em segundo plano (uma por área; o GET nunca extrai)."""
@@ -355,6 +465,7 @@ class Handler(BaseHTTPRequestHandler):
     steam_dirs: list | None = None  # None = pastas padrão da Steam
     mapa: "MapaVivo | None" = None
     cenas: "Cenas | None" = None
+    catalogo: "Catalogo | None" = None
     server_version = "buildsmith"
 
     def log_message(self, *args):  # sem log no console (roda com pythonw)
@@ -419,6 +530,10 @@ class Handler(BaseHTTPRequestHandler):
             return self._json(personagens(self.home, parts[1], self.save, self.steam_dirs))
         if parts == ["api", "ds2", "rota"]:
             return self._rota()
+        if parts == ["api", "ds2", "catalogo"]:
+            return self._catalogo()
+        if len(parts) == 4 and parts[:2] == ["api", "ds2"] and parts[3] == "fontes" and SEGMENT.match(parts[2]):
+            return self._fontes(parts[2])
         if len(parts) == 4 and parts[:2] == ["api", "ds2"] and parts[3] == "posicao" and SEGMENT.match(parts[2]):
             return self._posicao(parts[2])
         if len(parts) == 4 and parts[:2] == ["api", "ds2"] and parts[3] == "save" and SEGMENT.match(parts[2]):
@@ -476,6 +591,11 @@ class Handler(BaseHTTPRequestHandler):
         if data is None:
             return self._send(400, b"documento invalido", "text/plain; charset=utf-8")
         jogo, personagem, collection, doc_id = parts[1:]
+        if collection == "quero" and data["marcado"]:
+            quero = read_state(self.home, jogo, personagem)["quero"]
+            marcados = sum(1 for k, v in quero.items() if k != doc_id and isinstance(v, dict) and v.get("marcado"))
+            if marcados >= MAX_QUERO:
+                return self._send(409, b"lista cheia", "text/plain; charset=utf-8")
         if collection == "pedidos":
             pedidos = read_state(self.home, jogo, personagem)["pedidos"]
             abertos = sum(1 for k, v in pedidos.items() if k != doc_id and isinstance(v, dict) and v.get("estado") == "na_fila")
@@ -561,6 +681,45 @@ class Handler(BaseHTTPRequestHandler):
             return self._json({"erro": f"rota indisponível ({type(err).__name__})"}, status=503)
         return self._json({"area": area, "rota": r})
 
+    def _indice_ou_espera(self):
+        """Índice pronto, ou a resposta já mandada (202 montando / 500 com o erro)."""
+        indice = self.catalogo.indice()
+        if indice is not None:
+            return indice
+        estado = self.catalogo.estado()
+        if estado in (None, "montando"):
+            self.catalogo.iniciar()
+            self._json({"estado": "montando"}, status=202)
+            return None
+        self._json({"erro": f"não consegui montar o catálogo ({estado})",
+                    "comando": "python skills/ds2-save/scripts/ds2itens.py montar"}, status=500)
+        return None
+
+    def _catalogo(self):
+        indice = self._indice_ou_espera()
+        if indice is None:
+            return None
+        itens = sorted(indice["itens"].values(), key=lambda i: (i["cat"], i["nome"]))
+        return self._json({"itens": [resumo_catalogo(self.home, i) for i in itens]})
+
+    def _fontes(self, personagem: str):
+        item_id = parse_qs(urlsplit(self.path).query).get("item", [""])[0]
+        if not item_id.isdigit() or len(item_id) > 10:
+            return self._send(400, b"item invalido", "text/plain; charset=utf-8")
+        indice = self._indice_ou_espera()
+        if indice is None:
+            return None
+        item = indice["itens"].get(item_id)
+        if item is None:
+            return self._json({"erro": "item não está no catálogo"}, status=404)
+        try:
+            r = self.mapa.fontes(personagem, item, indice)
+        except Exception as err:  # sem save, save sendo gravado, jogo ausente
+            return self._json({"erro": f"não consegui calcular as fontes ({type(err).__name__})"}, status=503)
+        if r is None:
+            return self._json({"erro": "personagem não está no save"}, status=404)
+        return self._json(com_icones_locais(self.home, r))
+
     def _body(self) -> dict | None:
         try:
             length = int(self.headers.get("Content-Length") or 0)
@@ -623,6 +782,12 @@ class Handler(BaseHTTPRequestHandler):
     def _file(self, jogo: str, personagem: str, rest: list[str]):
         root = (Path(self.home) / "paginas" / jogo / personagem).resolve()
         target = (root / Path(*rest)).resolve() if rest else root / "index.html"
+        if len(rest) == 2 and rest[0] == "icons" and ICONE_OK.match(rest[1]) and not target.is_file():
+            # ícone de item do Catálogo que a página ainda não copiou: o mesmo arquivo do cache de ícones da wiki
+            target = Path(self.home) / "cache" / jogo / "icons" / rest[1]
+            if not target.is_file():
+                return self._send(404, b"nao encontrado", "text/plain; charset=utf-8")
+            return self._send(200, target.read_bytes(), mimetypes.guess_type(target.name)[0] or "application/octet-stream")
         if root not in target.parents and target != root / "index.html" or not target.is_file():
             return self._send(404, b"nao encontrado", "text/plain; charset=utf-8")
         body = target.read_bytes()
@@ -644,11 +809,12 @@ class Handler(BaseHTTPRequestHandler):
 
 
 def make_server(home: Path, port: int = PORT, runner: Runner | None = None, save=None, steam_dirs=None,
-                mapa: MapaVivo | None = None, extrair_cena=None) -> ThreadingHTTPServer:
+                mapa: MapaVivo | None = None, extrair_cena=None, catalogo: Catalogo | None = None) -> ThreadingHTTPServer:
     runner = runner or Runner(cwd=Path(home), log_path=Path(home) / "execucoes" / "ultima.jsonl")
     handler = type("BuildsmithHandler", (Handler,), {"home": Path(home), "runner": runner, "save": save,
                                                      "steam_dirs": steam_dirs, "mapa": mapa or MapaVivo(home, save),
-                                                     "cenas": Cenas(home, extrair_cena)})
+                                                     "cenas": Cenas(home, extrair_cena),
+                                                     "catalogo": catalogo or Catalogo(home)})
     return ThreadingHTTPServer(("127.0.0.1", port), handler)
 
 
