@@ -346,3 +346,28 @@ estava mesmo errado.
 - **Na extração** (`EXTRACAO_VERSAO` 9): `objetos[].chave` vem do nome do modelo e, se ele não diz, do evento;
   `chave_fonte` = `modelo` ou `evento`. A página mostra "Abre com" e onde pegar a chave para essas portas, e o popover
   diz de onde veio a chave. Evento com mais de uma chave, sem linha no `eventparam` ou ESD que não abre: sem chave.
+
+## Personagens na pose de espera (2026-10-11, Tasks 7/8 do plano)
+
+- **Formato**: o DS2 SotFS não usa Havok para animar personagens, usa o **Morpheme 4** da NaturalMotion:
+  `/morpheme4/chr/<cXXXX>.anibnd.dcx` (BND4) com `<cXXXX>.nmb` (a rede e o rig) e as animações `.nsa`
+  (`a00_00_0000_Idle_untitled_<hash>.nsa`; 234 no Hollow Soldier). As ferramentas públicas que leem isso usam o runtime
+  da NaturalMotion (código proprietário); `ds2anim.py` foi escrito a partir dos bytes, sem esse código. Layout no
+  docstring do módulo.
+- **Rig ↔ FLVER**: o rig do `.nmb` é o esqueleto do FLVER com Y e Z trocados (posição FLVER = (x, z, y), rotação =
+  (−qx, −qz, −qy, qw)); os ossos casam pelo nome. Prova: aplicando a pose de referência do rig na malha do FLVER, os
+  vértices não mudam (desvio ≤ 0,00001 m no Hollow Soldier, Pursuer, Straid e Lucatiel).
+- **NSA**: canais parados (u16×3 numa faixa) e amostrados por seção (posição u32 11:11:10, rotação u16×3 em tangente de
+  um quarto do ângulo, média de 8 bits + conjunto de quantização por canal); canal c = osso c+1. Conferido: no quadro 0
+  do Idle os dedos dos pés ficam em z ≈ 0 em 52 dos 53 personagens das cenas extraídas (o outro não tem Idle).
+- **Na cena** (`CENA_VERSAO` 7): cada inimigo e NPC com modelo sai no quadro 0 da espera (`a00_00_0000_Idle`), com a
+  malha com pele posta pelos pesos (soma dos pesos × mundo posado × inverso do mundo de referência). Modelo variante sem
+  animação própria usa a do modelo base (c7643 → c7640). Sem animação legível, fica a pose de referência e
+  `personagens[c].sem_pose` diz por quê. Custo: +0,3 MB e +0,7 s na Lost Bastille.
+- **Sentado × em pé (falta a regra)**: cada NPC tem animações `a75_01_71x0_Wep01_StartUp_0N` cujo quadro 0 é a pose
+  em que ele espera (Straid StartUp_01: pelve a 0,11 m, sentado no chão; McDuff StartUp_01/03: pelve a 0,78 m, sentado
+  num banco; Lucatiel StartUp_03: agachada). Qual delas cada gerador usa **não foi achado**: não está nos scripts de
+  evento nem de conversa (nenhuma constante 7100–7131) e os campos do `GeneratorParam` não deram uma regra clara. Até
+  achar, todos ficam na espera em pé.
+- Animação em movimento (laço do Idle no 3D) fica para depois: a pose estática já tira a pose T; animar exige mandar os
+  pesos e os ossos para a página.

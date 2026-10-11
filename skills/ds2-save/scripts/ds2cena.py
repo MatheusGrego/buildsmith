@@ -14,6 +14,8 @@ Formatos (conferidos no Huntsman's Copse, m10_23_00_00, e em Majula, m10_04_00_0
 - MSB (PARTS_PARAM_ST, tipo 0 = peça de mapa): modelo em +0x0C, posição +0x10, rotação em graus +0x1C, escala +0x28.
   Matriz = T · Ry · Rz · Rx · S (gira em X, depois Z, depois Y; o sinal padrão bateu com o navmesh).
 - O chão andável (navmesh, as mesmas malhas do mapa 2D) entra no geo.bin: a página usa para o corte de interior.
+- Inimigos e NPCs saem no quadro 0 da animação de espera (ds2anim: Morpheme 4, rig do .nmb e .nsa), com a malha com
+  pele posta pelos pesos dos ossos; sem animação legível, ficam na pose de referência.
 - O geo.bin fica no cache em gzip (geo.bin.gz, ~3× menor); o servidor manda com Content-Encoding: gzip.
 - Objetos (MSB tipo 1: portas, baús, alavancas, elevadores, estátuas...) e inimigos: modelos em /model/obj/<oXX_XXXX>.bnd
   e /model/chr/<cXXXX>.bnd (texturas do personagem em <cXXXX>.texbnd), binders BND4 (lista de arquivos do DS2 SotFS do
@@ -41,9 +43,10 @@ from pathlib import Path
 import ds2arquivos
 import ds2mapa
 
-CENA_VERSAO = 6  # 2: UV int16, normais por tipo, LOD0, céu/NoLit fora, matriz, chão andável; 3: objetos e inimigos;
+CENA_VERSAO = 7  # 2: UV int16, normais por tipo, LOD0, céu/NoLit fora, matriz, chão andável; 3: objetos e inimigos;
                  # 4: modelo rígido com várias malhas (baú), lápide/ajudantes fora, motivo de quem ficou sem modelo;
-                 # 5: textura de objeto/personagem até 256 (orçamento); 6: ossos também nas peças de mapa
+                 # 5: textura de objeto/personagem até 256 (orçamento); 6: ossos também nas peças de mapa;
+                 # 7: personagens na pose de espera (Idle do Morpheme, ds2anim) em vez da pose T
 TEX_MAX = 512  # lado máximo das texturas (descarta os mipmaps maiores)
 TEX_MAX_ENTIDADE = 256  # objeto e personagem ficam pequenos na tela: orçamento de 30 MB por área (spec)
 FORA_M = 40.0  # peças além desta margem do chão andável (céu, montanhas de fundo) ficam de fora
@@ -205,6 +208,18 @@ def _membro(tipo: int, semantica: int, uv_fator: float):
             return "4h", lambda v: (v[0] / 32767.0, v[1] / 32767.0, v[2] / 32767.0)
         if tipo == 0x2E:
             return "4H", lambda v: ((v[0] - 32767) / 32767.0, (v[1] - 32767) / 32767.0, (v[2] - 32767) / 32767.0)
+    elif semantica == 1:  # pesos dos ossos (malha com pele)
+        if tipo in (0x10, 0x11, 0x13):
+            return "4B", lambda v: (v[0] / 255.0, v[1] / 255.0, v[2] / 255.0, v[3] / 255.0)
+        if tipo == 0x1A:
+            return "4h", lambda v: (v[0] / 32767.0, v[1] / 32767.0, v[2] / 32767.0, v[3] / 32767.0)
+        if tipo == 0x2E:
+            return "4H", lambda v: (v[0] / 65535.0, v[1] / 65535.0, v[2] / 65535.0, v[3] / 65535.0)
+    elif semantica == 2:  # índices dos ossos (na lista de ossos da malha)
+        if tipo in (0x10, 0x11, 0x13, 0x2F):
+            return "4B", lambda v: v
+        if tipo in (0x18, 0x1A):
+            return "4h", lambda v: v
     elif semantica == 5:  # UV
         if tipo == 0x01:
             return "2f", lambda v: v
@@ -218,17 +233,18 @@ def _membro(tipo: int, semantica: int, uv_fator: float):
 
 
 def _ler_vertices(data: bytes, vb: dict, layout: list[dict], uv_fator: float, exigir_pos: bool = True) -> dict:
-    """Posições, normais e UV (a de menor índice) de um vertex buffer, lidas de uma vez por struct."""
+    """Posições, normais, UV (a de menor índice), pesos e índices de osso de um vertex buffer, lidos de uma vez."""
     escolhidos = {}
+    nomes = {0: "pos", 1: "peso", 2: "idx", 3: "nrm", 5: "uv"}
     for m in layout:
         sem = m["semantic"]
         if sem == 5 and "uv" in escolhidos and escolhidos["uv"][0]["idx"] <= m["idx"]:
             continue
-        if sem in (0, 3) and ({0: "pos", 3: "nrm"}[sem]) in escolhidos:
+        if sem in (0, 1, 2, 3) and nomes[sem] in escolhidos:
             continue
         dec = _membro(m["type"], sem, uv_fator)
         if dec:
-            escolhidos[{0: "pos", 3: "nrm", 5: "uv"}[sem]] = (m, dec)
+            escolhidos[nomes[sem]] = (m, dec)
     if exigir_pos and "pos" not in escolhidos:
         raise CenaError("vertex buffer sem posição legível")
     if not escolhidos:
@@ -262,9 +278,42 @@ def _mul4(a: list[float], b: list[float]) -> list[float]:
     return [sum(a[k * 4 + lin] * b[col * 4 + k] for k in range(4)) for col in range(4) for lin in range(4)]
 
 
-def mundo_dos_ossos(ossos: list[dict]) -> list[list[float]]:
-    """Matriz do mundo de cada osso: a do pai · a local (T · Ry · Rz · Rx · S, rotação em radianos)."""
-    locais = [matriz_instancia(o["t"], [math.degrees(a) for a in o["r"]], o["s"]) for o in ossos]
+def matriz_quat(t, q, s=(1.0, 1.0, 1.0)) -> list[float]:
+    """Matriz 4×4 (coluna a coluna) = T · R(quatérnion xyzw) · S."""
+    x, y, z, w = q
+    r = ((1 - 2 * (y * y + z * z), 2 * (x * y - z * w), 2 * (x * z + y * w)),
+         (2 * (x * y + z * w), 1 - 2 * (x * x + z * z), 2 * (y * z - x * w)),
+         (2 * (x * z - y * w), 2 * (y * z + x * w), 1 - 2 * (x * x + y * y)))
+    m = [0.0] * 16
+    for col in range(3):
+        for lin in range(3):
+            m[col * 4 + lin] = r[lin][col] * s[col]
+    m[12], m[13], m[14], m[15] = float(t[0]), float(t[1]), float(t[2]), 1.0
+    return m
+
+
+def _inv4(m: list[float]) -> list[float]:
+    """Inversa de uma matriz afim 4×4 (coluna a coluna)."""
+    a, b, c, d, e, f, g, h, i = m[0], m[4], m[8], m[1], m[5], m[9], m[2], m[6], m[10]
+    det = a * (e * i - f * h) - b * (d * i - f * g) + c * (d * h - e * g)
+    if abs(det) < 1e-12:
+        return list(IDENTIDADE)
+    r = [(e * i - f * h) / det, (c * h - b * i) / det, (b * f - c * e) / det,
+         (f * g - d * i) / det, (a * i - c * g) / det, (c * d - a * f) / det,
+         (d * h - e * g) / det, (b * g - a * h) / det, (a * e - b * d) / det]
+    tx, ty, tz = m[12], m[13], m[14]
+    out = [r[0], r[3], r[6], 0.0, r[1], r[4], r[7], 0.0, r[2], r[5], r[8], 0.0]
+    out += [-(r[0] * tx + r[1] * ty + r[2] * tz), -(r[3] * tx + r[4] * ty + r[5] * tz), -(r[6] * tx + r[7] * ty + r[8] * tz), 1.0]
+    return out
+
+
+def mundo_dos_ossos(ossos: list[dict], pose: dict | None = None) -> list[list[float]]:
+    """Matriz do mundo de cada osso: a do pai · a local (T · Ry · Rz · Rx · S, rotação em radianos).
+
+    pose: índice do osso -> (posição, quatérnion xyzw) local que substitui a de referência (animação)."""
+    pose = pose or {}
+    locais = [matriz_quat(*pose[k], o["s"]) if k in pose else matriz_instancia(o["t"], [math.degrees(a) for a in o["r"]], o["s"])
+              for k, o in enumerate(ossos)]
     mundo: list = [None] * len(ossos)
 
     def de(i, guarda=0):
@@ -292,10 +341,13 @@ def _aplicar_osso(m: list[float], p, n):
     return q, (r[0] / k, r[1] / k, r[2] / k)
 
 
-def ler_flver(data: bytes) -> dict:
+def ler_flver(data: bytes, pose: dict | None = None) -> dict:
     """Modelo FLVER2 do DS2: malhas (LOD0) com posições, normais, UV, índices em lista, difusa e tipo de material.
 
-    As malhas rígidas vão para o lugar pelos ossos (peça de mapa, objeto e personagem); a caixa sai dos vértices."""
+    As malhas rígidas vão para o lugar pelos ossos (peça de mapa, objeto e personagem); a caixa sai dos vértices.
+    pose: nome do osso -> (posição, quatérnion xyzw) local no eixo do FLVER (ds2anim.pose_flver): os ossos vão para essa
+    pose e a malha com pele acompanha (vértice = soma dos pesos × mundo posado × inverso do mundo de referência; malha
+    dinâmica sem pesos segue o osso do 4º byte da normal)."""
     if data[:6] != b"FLVER\0":
         raise CenaError("formato FLVER2 não reconhecido")
     if data[6:8] != b"L\0":
@@ -319,9 +371,18 @@ def ler_flver(data: bytes) -> dict:
     for i in range(n_bone):
         o = off + i * 0x80
         lista_ossos.append({"t": struct.unpack_from("<3f", data, o), "r": struct.unpack_from("<3f", data, o + 0x10),
-                            "pai": struct.unpack_from("<h", data, o + 0x1C)[0], "s": struct.unpack_from("<3f", data, o + 0x20)})
+                            "pai": struct.unpack_from("<h", data, o + 0x1C)[0], "s": struct.unpack_from("<3f", data, o + 0x20),
+                            "nome": _cstr(data, struct.unpack_from("<i", data, o + 0x0C)[0], unicode_flv)})
     off += n_bone * 0x80
     mundo_ossos = mundo_dos_ossos(lista_ossos) if lista_ossos else []
+    pose_idx = {k: pose[o["nome"]] for k, o in enumerate(lista_ossos) if pose and o["nome"] in pose}
+    mundo_pose = mundo_dos_ossos(lista_ossos, pose_idx) if pose_idx else []
+    pele = {}  # osso -> mundo posado · inverso do mundo de referência
+
+    def matriz_pele(b: int) -> list[float]:
+        if b not in pele:
+            pele[b] = _mul4(mundo_pose[b], _inv4(mundo_ossos[b])) if 0 <= b < len(mundo_pose) else IDENTIDADE
+        return pele[b]
 
     meshes = []
     for i in range(n_mesh):
@@ -403,13 +464,34 @@ def ler_flver(data: bytes) -> dict:
         normais = attrs.get("nrm", [])
         osso_vertice = [n[3] for n in normais] if normais and len(normais[0]) > 3 else []
         normais = [n[:3] for n in normais]
+        if mundo_pose and m["dinamica"]:  # malha com pele, no espaço do modelo na pose de referência
+            idx, pesos = attrs.get("idx"), attrs.get("peso")
+            lista = m["ossos"] or list(range(len(lista_ossos)))
+            novos = []
+            for k, p in enumerate(attrs["pos"]):
+                if idx and pesos:
+                    partes = [(lista[i], w) for i, w in zip(idx[k], pesos[k]) if w > 0 and i < len(lista)]
+                elif osso_vertice and osso_vertice[k] < len(lista):
+                    partes = [(lista[osso_vertice[k]], 1.0)]
+                else:
+                    partes = []
+                total = sum(w for _b, w in partes)
+                if not partes or total <= 0:
+                    novos.append((p, normais[k] if k < len(normais) else None))
+                    continue
+                mt = [sum(matriz_pele(b)[c] * w for b, w in partes) / total for c in range(16)]
+                novos.append(_aplicar_osso(mt, p, normais[k] if k < len(normais) else None))
+            attrs["pos"] = [q for q, _ in novos]
+            if normais:
+                normais = [n if n is not None else (0.0, 1.0, 0.0) for _, n in novos]
         if mundo_ossos and not m["dinamica"]:
+            mundo = mundo_pose or mundo_ossos
             tipo_nrm = next((mb["type"] for k in m["vb"] for mb in lays[vbs[k]["lay"]] if mb["semantic"] == 3), None)
             if tipo_nrm in (0x11, 0x2F) and m["ossos"] and osso_vertice:  # cada vértice no espaço do seu osso
-                mats_osso = [mundo_ossos[b] if 0 <= b < len(mundo_ossos) else IDENTIDADE for b in m["ossos"]]
+                mats_osso = [mundo[b] if 0 <= b < len(mundo) else IDENTIDADE for b in m["ossos"]]
                 por_vertice = [mats_osso[w] if w < len(mats_osso) else IDENTIDADE for w in osso_vertice]
-            elif 0 <= m["no"] < len(mundo_ossos):
-                por_vertice = [mundo_ossos[m["no"]]] * len(attrs["pos"])
+            elif 0 <= m["no"] < len(mundo):
+                por_vertice = [mundo[m["no"]]] * len(attrs["pos"])
             else:
                 por_vertice = []
             if por_vertice and any(mt != IDENTIDADE for mt in por_vertice):
@@ -651,9 +733,31 @@ def ds2nomes_fora_da_cena(modelo: str) -> str | None:
     return ds2nomes.fora_da_cena(modelo)
 
 
-def modelo_do_binder(ler, caminho: str, caminho_tex: str | None = None, preferido: str | None = None):
+def pose_padrao(ler, cid: str) -> tuple[dict | None, str | None]:
+    """(pose, nome da animação) do personagem: o quadro 0 da animação de espera (ds2anim). O modelo variante sem
+    animação própria (c2131, c7643) usa a do modelo base (c2130, c7640). (None, motivo) se não der."""
+    import ds2anim
+
+    for alvo in dict.fromkeys((cid, cid[:-1] + "0")):
+        data = ler(f"/morpheme4/chr/{alvo}.anibnd.dcx")
+        if data is None:
+            continue
+        try:
+            arqs = ler_binder(data)
+            nmb = next((v for k, v in arqs.items() if k.lower().endswith(".nmb")), None)
+            nome = ds2anim.escolher_idle(list(arqs))
+            if nmb is None or nome is None:
+                return None, "animação sem rig ou sem espera"
+            return ds2anim.pose_flver(ds2anim.ler_rig(nmb), arqs[nome], 0), nome.rsplit("_untit", 1)[0]
+        except Exception as err:  # animação estranha: o modelo fica na pose de referência
+            return None, f"{type(err).__name__}: {err}"[:120]
+    return None, "sem animação no jogo"
+
+
+def modelo_do_binder(ler, caminho: str, caminho_tex: str | None = None, preferido: str | None = None, pose: dict | None = None):
     """(modelo, {textura: dds}, aviso) de um modelo de objeto ou personagem: o .flv do binder (o de nome igual ao modelo,
-    senão o primeiro) com os ossos aplicados, e as texturas dos .tpf do binder e do binder de texturas.
+    senão o primeiro) com os ossos aplicados (na pose dada, se houver), e as texturas dos .tpf do binder e do binder de
+    texturas.
 
     ler(caminho) -> bytes ou None (Pacotes.ler)."""
     data = ler(caminho)
@@ -665,7 +769,7 @@ def modelo_do_binder(ler, caminho: str, caminho_tex: str | None = None, preferid
         if not flvs:
             return None, {}, "binder sem .flv"
         nome = next((k for k in flvs if preferido and k.lower().rsplit(".", 1)[0] == preferido.lower()), sorted(flvs)[0])
-        modelo = ler_flver(flvs[nome])
+        modelo = ler_flver(flvs[nome], pose=pose)
         tex = {}
         fontes = [arqs]
         extra = ler(caminho_tex) if caminho_tex else None
@@ -833,13 +937,16 @@ def extrair_cena(game_dir=None, area: str = "m10_04_00_00", cache_dir=None, forc
             mantidas.append(inst)
         personagens = {}
         for cid in modelos_inimigos(game_dir, area, cache_base):
-            mod, tex, aviso = modelo_do_binder(pac.ler, f"/model/chr/{cid}.bnd", f"/model/chr/{cid}.texbnd", preferido=cid)
+            pose, anim = pose_padrao(pac.ler, cid)
+            mod, tex, aviso = modelo_do_binder(pac.ler, f"/model/chr/{cid}.bnd", f"/model/chr/{cid}.texbnd", preferido=cid,
+                                               pose=pose)
             aviso = aviso or (motivo_sem_malha(mod) if mod else None)
             if aviso:
                 sem_modelo[cid] = aviso
                 continue
             modelos[cid] = mod
-            personagens[cid] = {"altura": round(mod["bb"][1][1] - mod["bb"][0][1], 2)}
+            personagens[cid] = {"altura": round(mod["bb"][1][1] - mod["bb"][0][1], 2),
+                                **({"pose": anim} if pose else {"sem_pose": anim})}
             for k, v in tex.items():
                 tex_extra.setdefault(k, v)
         if sem_modelo:

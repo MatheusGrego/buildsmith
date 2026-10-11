@@ -89,6 +89,8 @@ def build_flver(malhas: list[dict], version: int = 0x20010, ossos: list[dict] | 
     cab[0x49] = 1
     struct.pack_into("<3i", cab, 0x50, n_fs, n_lay, n_tex)
     for k, o in enumerate(ossos):
+        if o.get("nome"):
+            struct.pack_into("<i", cab, off_osso + k * 0x80 + 0x0C, poe(f"{o['nome']}\0".encode("utf-16-le")))
         struct.pack_into("<3f", cab, off_osso + k * 0x80, *o.get("t", (0, 0, 0)))
         struct.pack_into("<3f", cab, off_osso + k * 0x80 + 0x10, *o.get("r", (0, 0, 0)))
         struct.pack_into("<h", cab, off_osso + k * 0x80 + 0x1C, o.get("pai", -1))
@@ -115,11 +117,19 @@ def build_flver(malhas: list[dict], version: int = 0x20010, ossos: list[dict] | 
         struct.pack_into("<2i", cab, o + 0x10, m.get("no", -1), len(om))
         struct.pack_into("<i", cab, o + 0x1C, poe(struct.pack(f"<{len(om)}i", *om)) if om else 0)
         struct.pack_into("<4i", cab, o + 0x20, len(fs_lista), poe(struct.pack(f"<{len(fs_lista)}i", *fs_lista)), 1, poe(struct.pack("<i", k)))
-        vbytes = b"".join(struct.pack("<3f", *p) + bytes(n) + struct.pack("<2h", *uv) for p, n, uv in m["vertices"])
+        pele = m.get("pele")  # [(índices u8×4 na lista de ossos da malha, pesos u8×4)] por vértice
+        if pele:
+            vbytes = b"".join(struct.pack("<3f", *p) + bytes(n) + bytes(i4) + bytes(w4) + struct.pack("<2h", *uv)
+                              for (p, n, uv), (i4, w4) in zip(m["vertices"], pele))
+            membros = (struct.pack("<5i", 0, 0, 0x02, 0, 0) + struct.pack("<5i", 0, 12, 0x11, 3, 0)
+                       + struct.pack("<5i", 0, 16, 0x11, 2, 0) + struct.pack("<5i", 0, 20, 0x13, 1, 0)
+                       + struct.pack("<5i", 0, 24, 0x15, 5, 0))
+        else:
+            vbytes = b"".join(struct.pack("<3f", *p) + bytes(n) + struct.pack("<2h", *uv) for p, n, uv in m["vertices"])
+            membros = struct.pack("<5i", 0, 0, 0x02, 0, 0) + struct.pack("<5i", 0, 12, 0x11, 3, 0) + struct.pack("<5i", 0, 16, 0x15, 5, 0)
         boff = poe_dados(vbytes)
-        struct.pack_into("<8i", cab, off_vb + k * 0x20, 0, k, 20, len(m["vertices"]), 0, 0, len(vbytes), boff)
-        membros = struct.pack("<5i", 0, 0, 0x02, 0, 0) + struct.pack("<5i", 0, 12, 0x11, 3, 0) + struct.pack("<5i", 0, 16, 0x15, 5, 0)
-        struct.pack_into("<4i", cab, off_lay + k * 0x10, 3, 0, 0, poe(membros))
+        struct.pack_into("<8i", cab, off_vb + k * 0x20, 0, k, 28 if pele else 20, len(m["vertices"]), 0, 0, len(vbytes), boff)
+        struct.pack_into("<4i", cab, off_lay + k * 0x10, len(membros) // 0x14, 0, 0, poe(membros))
     corpo = bytes(cab) + bytes(cauda)
     data_off = (len(corpo) + 15) // 16 * 16
     corpo += bytes(data_off - len(corpo))
@@ -581,3 +591,20 @@ def test_textura_de_objeto_e_personagem_sai_menor_que_a_do_mapa():
     _modelo, tex, _aviso = ds2cena.modelo_do_binder(arquivos.get, "/model/obj/o00_bau.bnd")
     assert struct.unpack_from("<2I", tex["o00_bau_d"], 12) == (ds2cena.TEX_MAX_ENTIDADE, ds2cena.TEX_MAX_ENTIDADE)
     assert ds2cena.TEX_MAX_ENTIDADE == 256 < ds2cena.TEX_MAX
+
+
+def test_malha_com_pele_segue_a_pose_pelos_pesos():
+    """Personagem: malha dinâmica no espaço do modelo, com índices e pesos de osso. O osso "Braco" gira 90° em Y em
+    volta da origem dele (x = 1): o vértice só dele vai junto, o de metade-metade vai a meio caminho, o do "Corpo" fica."""
+    ossos = [{"t": (0, 0, 0), "nome": "Corpo"}, {"t": (1, 0, 0), "pai": 0, "nome": "Braco"}]
+    malha = {**tri_malha(), "dinamica": True, "ossos_malha": [0, 1],
+             "vertices": [((2.0, 0.0, 0.0), CIMA, (0, 0)), ((2.0, 1.0, 0.0), CIMA, (0, 0)), ((0.0, 0.0, 0.0), CIMA, (0, 0))],
+             "pele": [((1, 0, 0, 0), (255, 0, 0, 0)), ((0, 1, 0, 0), (128, 127, 0, 0)), ((0, 0, 0, 0), (255, 0, 0, 0))]}
+    flv = build_flver([malha], ossos=ossos)
+    assert ds2cena.ler_flver(flv)["malhas"][0]["vertices"][0] == pytest.approx((2.0, 0.0, 0.0))  # sem pose: como está
+    s45 = math.sin(math.radians(45))
+    pose = {"Braco": ((1.0, 0.0, 0.0), (0.0, s45, 0.0, s45))}  # +x vira -z
+    v = ds2cena.ler_flver(flv, pose=pose)["malhas"][0]["vertices"]
+    assert v[0] == pytest.approx((1.0, 0.0, -1.0), abs=1e-5)
+    assert v[1] == pytest.approx(((2 * 128 + 1 * 127) / 255, 1.0, -127 / 255), abs=1e-3)
+    assert v[2] == pytest.approx((0.0, 0.0, 0.0))
