@@ -197,6 +197,15 @@
       this.anguloAlvo = ANGULOS_ROTACAO[this.anguloIndex];
     }
 
+    focar(pos) {
+      if (Array.isArray(pos)) {
+        this.centro = { x: pos[0], y: pos[1] ?? this.centro.y, z: pos[2] ?? this.centro.z };
+      } else if (pos && typeof pos.x === 'number') {
+        this.centro = { x: pos.x, y: pos.y ?? this.centro.y, z: pos.z };
+      }
+      this._atualizarCamera();
+    }
+
     setAlturaCorte(y) {
       this.alturaCorte = y;
       if (this.planoCorte) {
