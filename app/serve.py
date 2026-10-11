@@ -32,6 +32,7 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from urllib.parse import parse_qs, unquote, urlsplit
 
+import abrir
 import retrato
 from runner import Busy, Runner
 
@@ -39,6 +40,7 @@ REPO = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(REPO / "skills" / "ds2-save" / "scripts"))
 
 PORT = 8642
+VERSAO = abrir.versao_codigo()  # o abridor compara com a do disco: código novo depois de um pull = reinicia
 SEGMENT = re.compile(r"^[a-z0-9][a-z0-9._-]{0,180}$")
 GAME_OK = re.compile(r"^[a-z0-9]+$")
 COLLECTIONS = {"feitos", "pedidos", "config"}
@@ -361,7 +363,8 @@ class Handler(BaseHTTPRequestHandler):
                 return None
             return self._index()
         if parts == ["api", "ping"]:
-            return self._json({"app": "buildsmith", "ok": True, "rodar": self.runner is not None})
+            return self._json({"app": "buildsmith", "ok": True, "rodar": self.runner is not None, "pid": os.getpid(),
+                               "versao": VERSAO})
         if len(parts) == 3 and parts[0] == "api" and parts[2] == "personagens" and parts[1] == "ds2":
             return self._json(personagens(self.home, parts[1], self.save, self.steam_dirs))
         if parts == ["api", "ds2", "rota"]:
@@ -595,8 +598,11 @@ def main(argv=None) -> int:
     parser = argparse.ArgumentParser(prog="serve")
     parser.add_argument("--home", default=str(default_home()))
     parser.add_argument("--port", type=int, default=PORT)
-    parser.add_argument("--open", action="store_true", help="abre a página mais recente no navegador padrão")
+    parser.add_argument("--open", action="store_true",
+                        help="atualiza (git pull, servidor e páginas: app/abrir.py) e abre a página mais recente")
     sub = parser.add_subparsers(dest="cmd")
+    sub.add_parser("parar", help="desliga o servidor que está rodando (funciona no Windows)")
+    sub.add_parser("reiniciar", help="desliga e sobe de novo em segundo plano, com o código do disco")
     for name in ("estado", "responder", "confirmar"):
         p = sub.add_parser(name)
         p.add_argument("--home", default=str(default_home()))
@@ -608,6 +614,19 @@ def main(argv=None) -> int:
     sub.choices["confirmar"].add_argument("--resultado", choices=("sim", "nao"), required=True)
     args = parser.parse_args(argv)
     home = Path(args.home)
+
+    if args.cmd in ("parar", "reiniciar"):
+        if not abrir.parar(args.port):
+            print(json.dumps({"error": f"não consegui desligar o servidor da porta {args.port}"}, ensure_ascii=False))
+            return 1
+        if args.cmd == "parar":
+            print(json.dumps({"ok": True, "parado": True}, ensure_ascii=False))
+            return 0
+        ok = abrir.subir(home, args.port)
+        print(json.dumps({"ok": ok, "url": latest_page_url(home, args.port)}, ensure_ascii=False))
+        return 0 if ok else 1
+    if args.open and not args.cmd:  # atalho antigo (serve.py --open): passa pelo abridor e já abre atualizado
+        return abrir.main(["--home", str(home), "--port", str(args.port)])
 
     if args.cmd:
         who = slug(args.personagem)

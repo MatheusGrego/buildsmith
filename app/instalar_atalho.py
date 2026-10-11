@@ -2,8 +2,9 @@
 """Cria o atalho "Forja de Build" na área de trabalho (Windows).
 
 Baixa uma imagem de fogueira da wiki do DS2, monta ~/.buildsmith/app/buildsmith.ico e cria o atalho
-apontando para `pythonw.exe app/serve.py --open` (sem janela de console). A imagem do jogo fica só na
-sua máquina; nada disso vai para o repositório.
+apontando para `python.exe app/abrir.py`: uma janelinha mostra o git pull, o servidor reiniciando e as páginas
+sendo refeitas (sem Claude), e fecha sozinha quando o navegador abre. A imagem do jogo fica só na sua máquina;
+nada disso vai para o repositório.
 
 Precisa de Pillow (pip install pillow) só para montar o ícone.
 """
@@ -40,16 +41,19 @@ def montar_icone(destino: Path, imagem: bytes) -> Path:
 
 
 def criar_atalho(icone: Path, nome: str = "Forja de Build") -> Path:
-    pythonw = shutil.which("pythonw") or str(Path(sys.executable).with_name("pythonw.exe"))
+    python = str(Path(sys.executable).with_name("python.exe"))
+    if not Path(python).exists():
+        python = shutil.which("python") or sys.executable
     desktop = Path(subprocess.run(["powershell", "-NoProfile", "-Command", "[Environment]::GetFolderPath('Desktop')"],
                                   capture_output=True, text=True, check=True).stdout.strip())
     lnk = desktop / f"{nome}.lnk"
     script = (
         "$s = (New-Object -ComObject WScript.Shell).CreateShortcut($env:BS_LNK);"
         "$s.TargetPath = $env:BS_PYW; $s.Arguments = $env:BS_ARGS; $s.WorkingDirectory = $env:BS_REPO;"
-        "$s.IconLocation = $env:BS_ICO + ',0'; $s.Description = 'Abre a Forja de Build (buildsmith) no navegador'; $s.Save()"
+        "$s.IconLocation = $env:BS_ICO + ',0'; $s.Description = 'Atualiza e abre a Forja de Build (buildsmith) no navegador';"
+        "$s.Save()"
     )
-    env = {**os.environ, "BS_LNK": str(lnk), "BS_PYW": pythonw, "BS_ARGS": f'"{REPO / "app" / "serve.py"}" --open',
+    env = {**os.environ, "BS_LNK": str(lnk), "BS_PYW": python, "BS_ARGS": f'"{REPO / "app" / "abrir.py"}"',
            "BS_REPO": str(REPO), "BS_ICO": str(icone)}
     subprocess.run(["powershell", "-NoProfile", "-Command", script], env=env, check=True)
     return lnk
