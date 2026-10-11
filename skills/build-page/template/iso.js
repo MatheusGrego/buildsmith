@@ -4,6 +4,10 @@
   // Alt+arrastar gira e inclina, roda faz zoom no cursor, WASD/setas andam, Q/E giram, R/F inclinam, Shift acelera.
   // Interior: corta o que está acima do chão do andar escolhido (altura do navmesh + folga): dá para ver dentro de
   // cavernas e prédios em qualquer ângulo. Foco: o que está longe do centro da vista escurece e perde a cor.
+  // Livre: câmera de espectador em perspectiva (voa pela área e entra nos lugares): WASD anda para onde olha, segurar
+  // o botão do mouse e arrastar olha em volta, E/Espaço sobe, Q/C desce, roda anda para a frente, Shift acelera.
+  // Entidades (setEntidades): inimigos, portas, baús, alavancas, elevadores... como formas simples em metros, na
+  // posição e rotação do jogo, com o mesmo corte de interior e foco do cenário.
   // Coordenadas: tudo que entra e sai daqui está nas do jogo (x, y, z). O jogo é mão esquerda; o mundo é espelhado em z
   // para o three.js, e com giro 0 o norte do mapa 2D (+z) fica para cima, como no 2D.
   if (typeof module === "object" && module.exports) module.exports = fabrica();
@@ -21,6 +25,8 @@
   const COR_SEM_TEXTURA = 0x6b665e;
   const TECLAS = new Set(["KeyW", "KeyA", "KeyS", "KeyD", "KeyQ", "KeyE", "KeyR", "KeyF", "ArrowUp", "ArrowDown",
     "ArrowLeft", "ArrowRight", "ShiftLeft", "ShiftRight", "Equal", "Minus", "NumpadAdd", "NumpadSubtract"]);
+  const TECLAS_LIVRE = new Set([...TECLAS, "Space", "KeyC"]);
+  const FOV_LIVRE = 60, PITCH_MAX = 89 * GRAU, VEL_LIVRE = 9;  // graus; limite de olhar para cima/baixo; m/s
 
   // ---- funções puras (testadas no node) ------------------------------------------------------------
   // Direções no chão (x, z do jogo) para um giro: frente (para onde a câmera olha) e direita da tela.
@@ -40,6 +46,26 @@
     return [alvo[0] - frente[0] * ch, alvo[1] + Math.sin(incl) * dist, alvo[2] - frente[1] * ch];
   }
   const angulo = (a) => { const r = a % (2 * Math.PI); return r < -Math.PI ? r + 2 * Math.PI : r > Math.PI ? r - 2 * Math.PI : r; };
+
+  // Matriz 4×4 (coluna a coluna) de uma entidade em coordenadas do jogo: T(pos) · Ry · Rz · Rx (rotação do MSB, em
+  // graus, a mesma ordem das peças de mapa) · T(0, base·altura, 0) · S(dims), para uma forma de lado 1 centrada na
+  // origem: base 0.5 apoia a forma no chão em pos.
+  function matrizEntidade(pos, rot, dims, base = 0.5) {
+    const [ax, ay, az] = (rot || [0, 0, 0]).map((a) => a * GRAU);
+    const cx = Math.cos(ax), sx = Math.sin(ax), cy = Math.cos(ay), sy = Math.sin(ay), cz = Math.cos(az), sz = Math.sin(az);
+    const Rx = [[1, 0, 0], [0, cx, -sx], [0, sx, cx]], Ry = [[cy, 0, sy], [0, 1, 0], [-sy, 0, cy]], Rz = [[cz, -sz, 0], [sz, cz, 0], [0, 0, 1]];
+    const mul = (a, b) => a.map((_, i) => [0, 1, 2].map((j) => a[i][0] * b[0][j] + a[i][1] * b[1][j] + a[i][2] * b[2][j]));
+    const R = mul(mul(Ry, Rz), Rx);
+    const m = new Array(16).fill(0);
+    for (let col = 0; col < 3; col++) for (let lin = 0; lin < 3; lin++) m[col * 4 + lin] = R[lin][col] * dims[col];
+    const sobe = dims[1] * base;
+    m[12] = pos[0] + R[0][1] * sobe; m[13] = pos[1] + R[1][1] * sobe; m[14] = pos[2] + R[2][1] * sobe; m[15] = 1;
+    return m;
+  }
+  // Direção do olhar da câmera livre (coordenadas do jogo): yaw 0 = norte (+z), como o giro da câmera fixa.
+  function direcaoLivre(yaw, pitch) {
+    return [Math.sin(yaw) * Math.cos(pitch), Math.sin(pitch), Math.cos(yaw) * Math.cos(pitch)];
+  }
 
   // Grade de alturas do chão andável: em cada célula, a maior altura dos triângulos que a cobrem (NaN = sem chão).
   // filtro(yMin, yMax) escolhe os triângulos (por exemplo, só os de um andar).
@@ -242,16 +268,24 @@ float bsAlturaCorte( vec3 g ) {
       this.sujo = true;
       this._token = 0;
       this._ultimo = 0;
+      this.livre = null;     // câmera livre: { pos, yaw, pitch } (null = câmera fixa)
+      this.entidades = [];   // última lista de setEntidades
     }
 
     static suportado() { return typeof document !== "undefined" && webglDisponivel(); }
 
-    get giro() { return this.cur.giro; }
-    get vista() { return this.cur.vista; }
-    get alvo() { return this.cur.alvo.slice(); }
+    get giro() { return this.livre ? this.livre.yaw : this.cur.giro; }
+    // altura da vista em metros (escala dos ícones); na câmera livre, a distância até o que está no centro
+    get vista() { return this.livre ? Math.max(VISTA_MIN, this.livre.dist * 1.2) : this.cur.vista; }
+    get alvo() { return this.livre ? this._alvoDoLivre() : this.cur.alvo.slice(); }
 
-    async iniciar() {
-      if (this.renderer) return;
+    // Uma vez só, mesmo com chamadas ao mesmo tempo (abrir a área e pôr as entidades): dois renderers = tela preta.
+    iniciar() {
+      if (!this._iniciando) this._iniciando = this._iniciar();
+      return this._iniciando;
+    }
+
+    async _iniciar() {
       await carregarThree();
       const r = new THREE.WebGLRenderer({ antialias: true, powerPreference: "high-performance" });
       r.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
@@ -268,9 +302,18 @@ float bsAlturaCorte( vec3 g ) {
       this.cena3.add(new THREE.HemisphereLight(0xeef2f7, 0x4a4238, 4.6));
       this.luz = new THREE.DirectionalLight(0xfff0dc, 2.6);
       this.cena3.add(this.luz, this.luz.target);
+      this.cameraLivre = new THREE.PerspectiveCamera(FOV_LIVRE, 1, 0.1, 6000);
       this.mundo = new THREE.Group();
       this.mundo.scale.set(1, 1, -1);  // jogo (mão esquerda) -> three.js
       this.cena3.add(this.mundo);
+      this.grupoEnt = new THREE.Group();  // fora do mundo: trocar de área não apaga as formas compartilhadas
+      this.grupoEnt.scale.set(1, 1, -1);
+      this.cena3.add(this.grupoEnt);
+      const capsula = new THREE.CapsuleGeometry(0.5, 1, 4, 12);
+      capsula.scale(1, 0.5, 1);  // altura 1, diâmetro 1
+      this.formas = { caixa: new THREE.BoxGeometry(1, 1, 1), capsula, cilindro: new THREE.CylinderGeometry(0.5, 0.5, 1, 18),
+                      losango: new THREE.OctahedronGeometry(0.5) };
+      this.matEnt = new Map();
 
       const vazio = new THREE.DataTexture(new Float32Array([-10000]), 1, 1, THREE.RedFormat, THREE.FloatType);
       vazio.needsUpdate = true;
@@ -367,6 +410,13 @@ float bsAlturaCorte( vec3 g ) {
         m.color.set(0x2c5363);
         Object.assign(m, { transparent: true, opacity: 0.6, depthWrite: false });
       }
+      this._injetar(m);
+      this.materiais.set(chave, { material: m, tex });
+      return m;
+    }
+
+    // Corte de interior, foco e limite da área no shader do material (cenário e entidades).
+    _injetar(m) {
       const uni = this.uni;
       const srgbNoShader = () => !!(m.map && m.map.userData.srgbNoShader);
       m.onBeforeCompile = (sh) => {
@@ -379,8 +429,42 @@ float bsAlturaCorte( vec3 g ) {
           .replace("#include <opaque_fragment>", `${GLSL_FRAG_FIM}\n  #include <opaque_fragment>`);
       };
       m.customProgramCacheKey = () => `bs-iso-${srgbNoShader() ? 1 : 0}`;
-      this.materiais.set(chave, { material: m, tex });
-      return m;
+    }
+
+    // ---- entidades (inimigos, portas, baús...) ---------------------------------------------------------
+    // lista: [{ forma: "caixa"|"capsula"|"cilindro"|"losango", pos, rot?, dims: [larg, alt, prof], base?, cor, transp? }]
+    async setEntidades(lista) {
+      this.entidades = lista || [];
+      await this.iniciar();
+      for (const o of [...this.grupoEnt.children]) { o.dispose && o.dispose(); this.grupoEnt.remove(o); }
+      const grupos = new Map();
+      for (const e of this.entidades) {
+        if (!this.formas[e.forma]) continue;
+        const k = `${e.forma}|${e.transp ? 1 : 0}`;
+        if (!grupos.has(k)) grupos.set(k, []);
+        grupos.get(k).push(e);
+      }
+      const m4 = new THREE.Matrix4(), cor = new THREE.Color();
+      for (const [k, es] of grupos) {
+        const [forma, transp] = k.split("|");
+        if (!this.matEnt.has(k)) {
+          const mat = new THREE.MeshLambertMaterial({ color: 0xffffff });
+          if (transp === "1") Object.assign(mat, { transparent: true, opacity: 0.38, depthWrite: false, side: THREE.DoubleSide });
+          this._injetar(mat);
+          this.matEnt.set(k, mat);
+        }
+        const malha = new THREE.InstancedMesh(this.formas[forma], this.matEnt.get(k), es.length);
+        es.forEach((e, i) => {
+          malha.setMatrixAt(i, m4.fromArray(matrizEntidade(e.pos, e.rot, e.dims, e.base ?? 0.5)));
+          malha.setColorAt(i, cor.set(e.cor ?? 0xcccccc));
+        });
+        malha.instanceMatrix.needsUpdate = true;
+        if (malha.instanceColor) malha.instanceColor.needsUpdate = true;
+        malha.computeBoundingSphere();
+        if (transp === "1") malha.renderOrder = 3;
+        this.grupoEnt.add(malha);
+      }
+      this.sujo = true;
     }
 
     _montar(cena, geo) {
@@ -480,30 +564,90 @@ float bsAlturaCorte( vec3 g ) {
       const alvoY = y ?? this._alturaChao(cx, cz, this.des.alvo[1]) ?? this.des.alvo[1];
       this.des.alvo = [cx, alvoY, cz];
       this.des.vista = Math.min(VISTA_MAX, Math.max(VISTA_MIN, this._tela().h / Math.max(s, 1e-3)));
+      if (this.livre) { this._livreOlhar(this.des.alvo, this.des.vista); return; }
       if (animar) this.sujo = true;
       else this._pular();
     }
     comoVista2D() {
+      if (this.livre) {
+        const a = this._alvoDoLivre();
+        return { cx: a[0], cz: a[2], s: this._tela().h / Math.max(VISTA_MIN, Math.min(VISTA_MAX, this.livre.dist)) };
+      }
       return { cx: this.des.alvo[0], cz: this.des.alvo[2], s: this._tela().h / this.des.vista };
     }
     focar(pos, vista) {
       this.des.alvo = [pos[0], pos[1], pos[2]];
       if (vista) this.des.vista = Math.min(VISTA_MAX, Math.max(VISTA_MIN, vista));
+      if (this.livre) this._livreOlhar(this.des.alvo, this.des.vista);
+      this.sujo = true;
+    }
+
+    // ---- câmera livre (espectador) ------------------------------------------------------------------
+    // Liga/desliga; ao ligar, a câmera sai de onde a vista fixa está olhando; ao desligar, a vista fixa volta para onde
+    // a livre olhava.
+    alternarLivre(on = !this.livre) {
+      if (on && !this.livre) {
+        const d = Math.max(12, Math.min(220, this.cur.vista * 0.55));
+        const p = posicaoCamera(this.cur.alvo, this.cur.giro, this.cur.incl, d);
+        this.livre = { pos: p, yaw: this.cur.giro, pitch: -Math.min(this.cur.incl, 70 * GRAU), dist: d };
+      } else if (!on && this.livre) {
+        const a = this._alvoDoLivre();
+        this.des.alvo = a;
+        this.des.giro = this.livre.yaw;
+        this.des.vista = Math.min(VISTA_MAX, Math.max(VISTA_MIN, this.livre.dist * 1.6));
+        this.livre = null;
+        this._pular();
+      }
+      this.teclas.clear();
+      this.sujo = true;
+      return !!this.livre;
+    }
+    // Ponto do chão para onde a câmera livre olha (ou à frente dela, se olha para o horizonte).
+    _alvoDoLivre() {
+      const L = this.livre, d = direcaoLivre(L.yaw, L.pitch);
+      const yChao = this._alturaChao(L.pos[0], L.pos[2], L.pos[1]) ?? L.pos[1] - 2;
+      const t = d[1] < -0.08 ? Math.min(400, Math.max(2, (L.pos[1] - yChao) / -d[1])) : 25;
+      L.dist = t;
+      return [L.pos[0] + d[0] * t, L.pos[1] + d[1] * t, L.pos[2] + d[2] * t];
+    }
+    // Põe a câmera livre olhando para um ponto, um pouco atrás e acima dele, mantendo o rumo.
+    _livreOlhar(alvo, vista) {
+      const L = this.livre, d = Math.max(8, Math.min(220, (vista || 60) * 0.45)), pitch = -35 * GRAU;
+      const f = direcaoLivre(L.yaw, pitch);
+      L.pos = [alvo[0] - f[0] * d, alvo[1] - f[1] * d, alvo[2] - f[2] * d];
+      L.pitch = pitch;
+      L.dist = d;
       this.sujo = true;
     }
     _pular() {  // sem animação (troca de área, troca de vista)
       this.cur = { alvo: this.des.alvo.slice(), giro: this.des.giro, incl: this.des.incl, vista: this.des.vista };
       this.sujo = true;
     }
-    girar(delta) { this.des.giro += delta; this.sujo = true; }
-    norte() { this.des.giro = Math.round(this.des.giro / (2 * Math.PI)) * 2 * Math.PI; this.sujo = true; }
+    girar(delta) {
+      if (this.livre) this.livre.yaw += delta;
+      else this.des.giro += delta;
+      this.sujo = true;
+    }
+    norte() {
+      if (this.livre) this.livre.yaw = 0;
+      else this.des.giro = Math.round(this.des.giro / (2 * Math.PI)) * 2 * Math.PI;
+      this.sujo = true;
+    }
     alternarTopo() {
+      if (this.livre) { this.livre.pitch = this.livre.pitch < -80 * GRAU ? -30 * GRAU : -PITCH_MAX; this.sujo = true; return this.livre.pitch < -80 * GRAU; }
       this.des.incl = this.des.incl > 80 * GRAU ? INCL_PADRAO : INCL_MAX;
       this.sujo = true;
       return this.des.incl > 80 * GRAU;
     }
-    deCima() { return this.des.incl > 80 * GRAU; }
+    deCima() { return this.livre ? this.livre.pitch < -80 * GRAU : this.des.incl > 80 * GRAU; }
     zoomPor(fator, ox, oy) {
+      if (this.livre) {  // roda na câmera livre: anda para onde o cursor aponta
+        const L = this.livre, passo = Math.log(fator) * Math.max(6, L.dist * 0.6);
+        const d = this._raioDoPixel(ox, oy);
+        for (let k = 0; k < 3; k++) L.pos[k] += d[k] * passo;
+        this.sujo = true;
+        return;
+      }
       const { w, h } = this._tela();
       ox = ox ?? w / 2; oy = oy ?? h / 2;
       const nova = Math.min(VISTA_MAX, Math.max(VISTA_MIN, this.des.vista / fator));
@@ -560,16 +704,28 @@ float bsAlturaCorte( vec3 g ) {
     projetar(x, y, z) {
       if (!this.camera) return [0, 0, false, {}];
       const { w, h } = this._tela();
-      const v = this._v.set(x, y, -z).project(this.camera);
+      const v = this._v.set(x, y, -z).project(this.livre ? this.cameraLivre : this.camera);
       const raio = this._raio();
       const d = Math.hypot(x - this.cur.alvo[0], (y - this.cur.alvo[1]) * 0.55, z - this.cur.alvo[2]);
       return [(v.x + 1) / 2 * w, (1 - v.y) / 2 * h, v.z > -1 && v.z < 1,
-        { cortado: y > this.alturaCorte(x, z) + 0.5, longe: this.focoOn && d > raio * 0.8 }];
+        { cortado: y > this.alturaCorte(x, z) + 0.5, longe: !this.livre && this.focoOn && d > raio * 0.8 }];
+    }
+    // Direção (jogo) do raio da câmera livre que passa pelo pixel (ox, oy); sem pixel, o centro da tela.
+    _raioDoPixel(ox, oy) {
+      const { w, h } = this._tela(), L = this.livre;
+      if (ox == null || oy == null || !this.cameraLivre) return direcaoLivre(L.yaw, L.pitch);
+      const v = this._v.set((ox / w) * 2 - 1, 1 - (oy / h) * 2, 0.5).unproject(this.cameraLivre);
+      const p = this.cameraLivre.position, n = Math.hypot(v.x - p.x, v.y - p.y, v.z - p.z) || 1;
+      return [(v.x - p.x) / n, (v.y - p.y) / n, -(v.z - p.z) / n];
     }
     _raio() { return Math.max(30, this.cur.vista); }
 
     // ---- entrada (o mapa.js repassa os eventos da tela) ---------------------------------------------
     apertar(ev) {
+      if (this.livre) {  // qualquer botão segurado olha em volta
+        this.arrasto = { x: ev.clientX, y: ev.clientY, olhar: true, yaw: this.livre.yaw, pitch: this.livre.pitch };
+        return;
+      }
       const orbitar = ev.button === 2 || ev.button === 1 || ev.altKey || ev.ctrlKey;
       this.arrasto = { x: ev.clientX, y: ev.clientY, orbitar, giro: this.des.giro, incl: this.des.incl };
     }
@@ -577,7 +733,10 @@ float bsAlturaCorte( vec3 g ) {
       const a = this.arrasto;
       if (!a) return;
       const dx = ev.clientX - a.x, dy = ev.clientY - a.y;
-      if (a.orbitar) {
+      if (a.olhar && this.livre) {
+        this.livre.yaw = a.yaw + dx * 0.0042;
+        this.livre.pitch = Math.min(PITCH_MAX, Math.max(-PITCH_MAX, a.pitch - dy * 0.0042));
+      } else if (a.orbitar) {
         this.des.giro = a.giro - dx * 0.006;
         this.des.incl = Math.min(INCL_MAX, Math.max(INCL_MIN, a.incl + dy * 0.005));
       } else {
@@ -590,7 +749,7 @@ float bsAlturaCorte( vec3 g ) {
     soltar() { this.arrasto = null; }
     // true se a tecla é da câmera (o mapa.js não trata mais)
     tecla(ev, baixo) {
-      if (!TECLAS.has(ev.code)) return false;
+      if (!(this.livre ? TECLAS_LIVRE : TECLAS).has(ev.code)) return false;
       if (!baixo) { this.teclas.delete(ev.code); return true; }
       if (ev.ctrlKey || ev.metaKey || ev.altKey) return false;
       this.teclas.add(ev.code);
@@ -614,6 +773,7 @@ float bsAlturaCorte( vec3 g ) {
       const dt = Math.min(0.1, this._ultimo ? (t - this._ultimo) / 1000 : 0.016);
       this._ultimo = t;
       if (!this.ativo || !this.renderer) return;
+      if (this.livre) { this._quadroLivre(dt); return; }
       const T = this.teclas, d = this.des;
       if (T.size) {
         const rapido = T.has("ShiftLeft") || T.has("ShiftRight") ? 2.6 : 1;
@@ -656,7 +816,47 @@ float bsAlturaCorte( vec3 g ) {
       if (this.opcoes.onMudar) this.opcoes.onMudar();
     }
 
+    _quadroLivre(dt) {
+      const T = this.teclas, L = this.livre;
+      let mexeu = false;
+      if (T.size) {
+        const rapido = T.has("ShiftLeft") || T.has("ShiftRight") ? 3.5 : 1;
+        const frente = (T.has("KeyW") || T.has("ArrowUp") ? 1 : 0) - (T.has("KeyS") || T.has("ArrowDown") ? 1 : 0);
+        const lado = (T.has("KeyD") || T.has("ArrowRight") ? 1 : 0) - (T.has("KeyA") || T.has("ArrowLeft") ? 1 : 0);
+        const sobe = (T.has("KeyE") || T.has("Space") ? 1 : 0) - (T.has("KeyQ") || T.has("KeyC") ? 1 : 0);
+        const v = VEL_LIVRE * rapido * dt * Math.max(1, Math.min(6, L.dist / 25));
+        const f = direcaoLivre(L.yaw, L.pitch), r = eixos(L.yaw).direita;
+        const passo = [f[0] * frente + r[0] * lado, f[1] * frente + sobe, f[2] * frente + r[1] * lado];
+        if (passo.some((c) => c)) { for (let k = 0; k < 3; k++) L.pos[k] += passo[k] * v; mexeu = true; }
+        const incl = (T.has("KeyR") ? 1 : 0) - (T.has("KeyF") ? 1 : 0);
+        if (incl) { L.pitch = Math.min(PITCH_MAX, Math.max(-PITCH_MAX, L.pitch + incl * 0.9 * dt)); mexeu = true; }
+      }
+      if (!mexeu && !this.sujo) return;
+      this.sujo = false;
+      this._aplicarCamera();
+      this.renderer.render(this.cena3, this.cameraLivre);
+      if (this.opcoes.onMudar) this.opcoes.onMudar();
+    }
+
     _aplicarCamera() {
+      if (this.livre) {
+        const L = this.livre, cam = this.cameraLivre, { w, h } = this._tela();
+        const d = direcaoLivre(L.yaw, L.pitch);
+        cam.aspect = w / h;
+        cam.near = 0.3; cam.far = 4500;
+        cam.position.set(L.pos[0], L.pos[1], -L.pos[2]);
+        cam.up.set(0, 1, 0);
+        cam.lookAt(L.pos[0] + d[0], L.pos[1] + d[1], -(L.pos[2] + d[2]));
+        cam.updateProjectionMatrix();
+        cam.updateMatrixWorld();
+        const r = eixos(L.yaw).direita;
+        this.luz.position.set(L.pos[0] - r[0] * 220, L.pos[1] + 520, -(L.pos[2] - r[1] * 220));
+        this.luz.target.position.set(L.pos[0] + d[0] * 20, L.pos[1] + d[1] * 20, -(L.pos[2] + d[2] * 20));
+        this.luz.target.updateMatrixWorld();
+        this.uni.uBsFoco.value.set(L.pos[0], L.pos[1], L.pos[2]);
+        this.uni.uBsFocoOn.value = 0;  // na câmera livre o "longe" é o horizonte: nada escurece
+        return;
+      }
       const c = this.cur, cam = this.camera;
       const { w, h } = this._tela();
       const D = 4000;
@@ -689,6 +889,7 @@ float bsAlturaCorte( vec3 g ) {
     }
   }
 
-  MapaIsometrico._teste = { eixos, chaoDoPixel, posicaoCamera, gradeAlturas, dilatar, alturaNaGrade, lerDDS, angulo };
+  MapaIsometrico._teste = { eixos, chaoDoPixel, posicaoCamera, gradeAlturas, dilatar, alturaNaGrade, lerDDS, angulo, matrizEntidade,
+    direcaoLivre };
   return MapaIsometrico;
 });

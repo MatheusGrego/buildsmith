@@ -4,9 +4,11 @@ e rota pelo chão entre dois pontos.
 
 Formatos lidos (conferidos contra a Lost Bastille, m10_16_00_00):
 - MSB: listas a partir de 0x10 (versão, qtd+1, nome, offsets; o último offset é a próxima lista). Em PARTS_PARAM_ST,
-  cada parte tem nome relativo em +0, tipo em +8, posição (3 floats) em +0x10; objeto tem a referência em +0xA0
-  (linha da MapObjectInstanceParam ou lote da ItemLotParam2_Other). A navmesh (tipo 4) está na origem das
-  coordenadas relativas dos params e do NVG2.
+  cada parte tem nome relativo em +0, tipo em +8, modelo (índice em MODEL_PARAM_ST) em +0x0C, posição (3 floats) em
+  +0x10, rotação em graus em +0x1C; objeto tem a referência em +0xA0 (linha da MapObjectInstanceParam ou lote da
+  ItemLotParam2_Other). A navmesh (tipo 4) está na origem das coordenadas relativas dos params e do NVG2.
+- MapObjectInstanceParam (por mapa, definição do Paramdex): param do objeto em +0x00 (fogueira, porta, baú), tipo da
+  instância em +0x14 (MapObjectInstanceTypeParam: baú, porta, alavanca...), lote de item em +0x24.
 - Param por mapa: contagem u16 em 0x0A, linhas de 24 bytes (id, offset, nome) a partir de 0x40; fim = u32 em 0x00.
 - NVG2: malhas em 0x08; em 0x20 vêm malhas+4 offsets (4 seções de ligação e as malhas); malha: vértices em +0x28,
   faces em +0x2C, offsets de vértices/atributos/faces em +0x40; face = 3 índices no começo de 12 bytes.
@@ -27,11 +29,12 @@ from pathlib import Path
 from ds2planta import PLANTA_VERSAO  # noqa: F401 (versão da planta guardada no cache)
 
 AREA = re.compile(r"^m(\d\d)_(\d\d)_(\d\d)_(\d\d)$")
-EXTRACAO_VERSAO = 4  # 2: NPCs e chefes; 3: início do mapa (zonas); 4: tipo de inimigo (HP, almas, drops)
+EXTRACAO_VERSAO = 5  # 2: NPCs e chefes; 3: início do mapa (zonas); 4: tipo de inimigo; 5: objetos (portas, baús...)
 EP_HP, EP_ALMAS, EP_LOTES = 0x28, 0xD0, (0x4C, 0x134)  # EnemyParam
 INICIO_MAPA = "マップ開始地点"  # nome do ponto de início no MSB (texto do próprio jogo)
 JUNTAR_NPC = 15.0  # metros: geradores do mesmo NPC mais perto que isso viram um marcador só
 TIPO_NAVMESH, TIPO_COLISAO, TIPO_OBJETO = 4, 3, 1
+LISTAS_PONTOS = ("fogueiras", "itens", "inimigos", "npcs", "chefes", "objetos")
 
 
 class MapaError(Exception):
@@ -60,13 +63,18 @@ def _listas_msb(data: bytes) -> dict[str, list[int]]:
 
 
 def partes_msb(data: bytes) -> list[dict]:
+    listas = _listas_msb(data)
+    modelos = [_wstr(data, e + struct.unpack_from("<q", data, e)[0]).lower() for e in listas.get("MODEL_PARAM_ST", [])]
     out = []
-    for e in _listas_msb(data).get("PARTS_PARAM_ST", []):
+    for e in listas.get("PARTS_PARAM_ST", []):
         nome = _wstr(data, e + struct.unpack_from("<q", data, e)[0])
         tipo = struct.unpack_from("<H", data, e + 8)[0]
+        m_idx = struct.unpack_from("<h", data, e + 0x0C)[0]
         pos = struct.unpack_from("<3f", data, e + 0x10)
+        rot = struct.unpack_from("<3f", data, e + 0x1C)
         ref = struct.unpack_from("<I", data, e + 0xA0)[0] if tipo == TIPO_OBJETO else 0
-        out.append({"nome": nome, "tipo": tipo, "pos": pos, "ref": ref})
+        out.append({"nome": nome, "tipo": tipo, "pos": pos, "rot": rot, "ref": ref,
+                    "modelo": modelos[m_idx] if 0 <= m_idx < len(modelos) else ""})
     return out
 
 
@@ -86,6 +94,18 @@ def origem(partes: list[dict]) -> tuple[float, float, float]:
             if p["tipo"] == tipo:
                 return tuple(p["pos"])
     return (0.0, 0.0, 0.0)
+
+
+def instancias_objeto(data: bytes) -> dict[int, dict]:
+    """MapObjectInstanceParam: linha -> param do objeto (+0x00), tipo da instância (+0x14) e lote de item (+0x24)."""
+    out = {}
+    for rid, raw in linhas_param(data):
+        if len(raw) < 4:
+            continue
+        out[rid] = {"param": struct.unpack_from("<i", raw)[0],
+                    "tipo": struct.unpack_from("<i", raw, 0x14)[0] if len(raw) >= 0x18 else None,
+                    "lote": struct.unpack_from("<i", raw, 0x24)[0] if len(raw) >= 0x28 else None}
+    return out
 
 
 def linhas_param(data: bytes) -> list[tuple[int, bytes]]:
@@ -146,7 +166,7 @@ def com_planta(area: dict) -> dict:
         return area
     pl = ds2planta.planta(area)
     area["planta"] = pl
-    for lista in ("fogueiras", "itens", "inimigos", "npcs", "chefes"):
+    for lista in LISTAS_PONTOS:
         for p in area.get(lista, []):
             p["andar"] = ds2planta.andar_de(pl, p["pos"][1])
     return area
@@ -221,7 +241,7 @@ def com_zonas(area: dict) -> dict:
                 return tri_zona[min(cand, key=lambda t: _dist(centros[t], pos))]
         return None
 
-    for lista in ("fogueiras", "itens", "inimigos", "npcs", "chefes"):
+    for lista in LISTAS_PONTOS:
         for p in area.get(lista, []):
             p["zona"] = zona_de(p["pos"])
     return area
@@ -265,6 +285,35 @@ def papel_gerador(personagem: int, tipo: int | None, nomes_npc: dict, chefes: li
     if any(personagem // 100000 in c.get("familias", []) for c in chefes):
         return "chefe"
     return None
+
+
+def montar_objetos(partes: list[dict], instancias: dict[int, dict], nomes_itens: dict[int, str], tabelas=None) -> list[dict]:
+    """Objetos do mapa que importam para andar pela área: portas (com a chave, quando o modelo diz), névoas,
+    alavancas, elevadores, pontes, escadas, mecanismos de Pharros, baús e cadáveres com item."""
+    import ds2nomes
+
+    out = []
+    for p in partes:
+        if p["tipo"] != TIPO_OBJETO:
+            continue
+        inst = instancias.get(p["ref"]) or {}
+        o = ds2nomes.objeto(p.get("modelo", ""), inst.get("tipo"), nomes_itens, tabelas)
+        if not o:
+            continue
+        lote = inst.get("lote") if (inst.get("lote") or 0) > 0 else (p["ref"] if o["cat"] in ("bau", "cadaver") else None)
+        out.append({"parte": p["nome"], "modelo": p.get("modelo", ""), "cat": o["cat"], "nome": o["nome"],
+                    "pos": _r(p["pos"]), "rot": _r(p.get("rot", (0, 0, 0))), "chave": o["chave"],
+                    "ref": p["ref"] or None, "lote": lote or None, "inst": inst.get("tipo")})
+    return out
+
+
+def marcar_itens(itens: list[dict], objetos: list[dict], chaves: set) -> None:
+    """Item dentro de baú ou em cadáver ("no") e item que é chave ("chave"), pelo objeto de onde ele sai."""
+    no = {o["ref"]: o["cat"] for o in objetos if o["cat"] in ("bau", "cadaver") and o["ref"]}
+    no.update({o["lote"]: o["cat"] for o in objetos if o["cat"] in ("bau", "cadaver") and o["lote"]})
+    for p in itens:
+        p["no"] = no.get(p["lote"])
+        p["chave"] = any(i["id"] in chaves for i in p["itens"])
 
 
 def _r(v) -> list[float]:
@@ -324,7 +373,8 @@ def extrair_area(game_dir, area: str, cache_dir, names=None) -> dict:
     base = origem(partes)
     malhas = malhas_nvg2(arq.ler(f"/map/{area}/{area}.ngp"), base) if arq.tem(f"/map/{area}/{area}.ngp") else []
     inst_path = f"/param/mapobjectinstanceparam_{area}.param"
-    instancias = {rid: struct.unpack_from("<i", raw)[0] for rid, raw in linhas_param(arq.ler(inst_path)) if len(raw) >= 4} if arq.tem(inst_path) else {}
+    inst_obj = instancias_objeto(arq.ler(inst_path)) if arq.tem(inst_path) else {}
+    instancias = {rid: i["param"] for rid, i in inst_obj.items()}
     ger_path = f"/param/generatorlocation_{area}.param"
     geradores = [(rid, struct.unpack_from("<3f", raw)) for rid, raw in linhas_param(arq.ler(ger_path)) if len(raw) >= 12] if arq.tem(ger_path) else []
     params = ds2regulation.load_params(ds2regulation.find_regulation(game_dir))
@@ -347,6 +397,9 @@ def extrair_area(game_dir, area: str, cache_dir, names=None) -> dict:
         e["papel"] = papel_gerador(e["personagem"], e["tipo"], nomes_npc, out["chefes"])
     out["tipos_inimigo"] = tipos_inimigo(params["EnemyParam"], lotes_itens(params["ItemLotParam2_Chr"]), nomes_itens,
                                          [e["tipo"] for e in out["inimigos"] if e["tipo"] and not e["papel"]])
+    out["objetos"] = montar_objetos(partes, inst_obj, nomes_itens)
+    marcar_itens(out["itens"], out["objetos"], {i for i, (cat, _n) in names.items() if cat == "KeyItems"})
+    out["objetos"] = [o for o in out["objetos"] if o["cat"] != "cadaver"]  # o cadáver já é o ponto do item
     inicio = [q["pos"] for q in pontos_msb(arq.ler(f"/map/{area}/{area}.msb")) if q["nome"] == INICIO_MAPA]
     out["inicio"] = _r(inicio[0]) if inicio else None
     out["versao_extracao"] = EXTRACAO_VERSAO
@@ -566,6 +619,28 @@ def rota(area: dict, de, ate, grafo=None) -> dict | None:
     return {"pontos": pontos, "metros": round(metros, 1)}
 
 
+def relatorio_inimigos(dados_areas: list[dict]) -> dict:
+    """Tipos de inimigo comum de cada área com o nome pelo jogo (ds2nomes) e os que ficam sem nome."""
+    import ds2nomes
+
+    areas_out, sem_nome = [], []
+    for dados in dados_areas:
+        contagem = {}
+        for e in dados.get("inimigos", []):
+            if e.get("tipo") and not e.get("papel"):
+                contagem[str(e["tipo"])] = contagem.get(str(e["tipo"]), 0) + 1
+        tipos = []
+        for t, n in sorted(contagem.items(), key=lambda kv: -kv[1]):
+            nome = ds2nomes.nome_inimigo(t)
+            jogo = dados.get("tipos_inimigo", {}).get(t, {})
+            tipos.append({"tipo": int(t), "n": n, "nome": nome["nome"] if nome else None,
+                          "fonte": nome["fonte"] if nome else None, "hp": jogo.get("hp"), "almas": jogo.get("almas")})
+            if not nome:
+                sem_nome.append({"area": dados["area"], "nome_area": dados["nome"], **tipos[-1]})
+        areas_out.append({"area": dados["area"], "nome": dados["nome"], "tipos": tipos})
+    return {"areas": areas_out, "sem_nome": sem_nome}
+
+
 def _ponto_cli(texto: str) -> tuple[str, int]:
     tipo, _, ref = texto.partition(":")
     if tipo not in TIPOS_PONTO or not ref.isdigit():
@@ -583,7 +658,7 @@ def main(argv=None) -> int:
 
     parser = argparse.ArgumentParser(prog="ds2mapa")
     sub = parser.add_subparsers(dest="cmd", required=True)
-    for nome in ("areas", "extrair", "onde", "rota"):
+    for nome in ("areas", "extrair", "onde", "rota", "inimigos"):
         p = sub.add_parser(nome)
         p.add_argument("--game", help="pasta Game do DS2 (padrão: a instalação da Steam)")
         p.add_argument("--cache", help="pasta do cache (padrão: ~/.buildsmith/cache/ds2)")
@@ -593,6 +668,7 @@ def main(argv=None) -> int:
     sub.choices["rota"].add_argument("--area", required=True)
     sub.choices["rota"].add_argument("--de", required=True, help="fogueira:<id>, item:<lote> ou inimigo:<id>")
     sub.choices["rota"].add_argument("--ate", required=True)
+    sub.choices["inimigos"].add_argument("--area", action="append", help="só estas áreas (pode repetir; padrão: todas)")
     args = parser.parse_args(argv)
     game = Path(args.game) if args.game else ds2arquivos.game_dir_padrao()
     cache = Path(args.cache) if args.cache else _cache_padrao()
@@ -604,13 +680,17 @@ def main(argv=None) -> int:
         elif args.cmd == "extrair":
             dados = extrair_area(game, args.area, cache)
             out = {"area": dados["area"], "nome": dados["nome"], "fogueiras": len(dados["fogueiras"]), "itens": len(dados["itens"]),
-                   "inimigos": len(dados["inimigos"]), "malhas": len(dados["malhas"]), "cache": str(cache / "mapas" / f"{args.area}.json")}
+                   "inimigos": len(dados["inimigos"]), "objetos": len(dados.get("objetos", [])), "malhas": len(dados["malhas"]),
+                   "cache": str(cache / "mapas" / f"{args.area}.json")}
         elif args.cmd == "rota":
             dados = extrair_area(game, args.area, cache)
             de, ate = (ponto_de(dados, *_ponto_cli(x)) for x in (args.de, args.ate))
             out = rota(dados, de, ate)
             if out is None:
                 raise MapaError("sem caminho pelo chão entre os dois pontos")
+        elif args.cmd == "inimigos":
+            lista = args.area or [a["area"] for a in areas(game)]
+            out = relatorio_inimigos([extrair_area(game, a, cache) for a in lista])
         else:
             out = onde(game, cache, args.item, args.area)
     except (MapaError, ds2arquivos.ArquivoError, ValueError, OSError, KeyError) as err:

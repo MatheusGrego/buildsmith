@@ -4,6 +4,8 @@
   // Dados: mapas/indice.json + mapas/<area>.json, gerados por script a partir dos arquivos do jogo.
   // Pelo servidor local (/p/<jogo>/<personagem>/): você no mapa (posição do save), "Rota até aqui" pelo chão e a vista
   // 3D (iso.js) com o cenário do jogo, com os mesmos marcadores, filtros, andares e rota projetados por cima.
+  // Inimigos e objetos (portas, alavancas, elevadores, névoas, baús) têm tamanho em metros: no 2D crescem com o zoom,
+  // no 3D viram formas na escala do cenário (iso.setEntidades). Porta com chave mostra a chave e onde ela está.
   const AREA_OK = /^m\d\d_\d\d_\d\d_\d\d$/;
   const ICONE_OK = /^icons\/[A-Za-z0-9._-]+$/;
   const esc = (v) => String(v ?? "").replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
@@ -15,7 +17,30 @@
   const POLL_MS = 5000;
   const MIN_S = 0.6, MAX_S = 40;  // pixels por metro
   const FILTROS = [["zonas", "Zonas"], ["fogueiras", "Fogueiras"], ["chefes", "Chefes"], ["npcs", "NPCs"],
-                   ["plano", "Itens do plano"], ["outros", "Outros itens"], ["inimigos", "Inimigos"]];
+                   ["plano", "Itens do plano"], ["outros", "Outros itens"], ["chaves", "Chaves"], ["baus", "Baús"],
+                   ["objetos", "Portas e alavancas"], ["inimigos", "Inimigos"]];
+  // Objetos do mapa (ds2mapa/ds2nomes): rótulo, forma 3D e tamanho em metros (largura, altura, profundidade).
+  const OBJ = {
+    porta: { nome: "Porta", forma: "caixa", dims: [2.2, 3.0, 0.3], cor: 0x8a5a33 },
+    nevoa: { nome: "Névoa", forma: "caixa", dims: [3.2, 3.6, 0.08], cor: 0xe8ecf2, transp: true },
+    alavanca: { nome: "Alavanca", forma: "capsula", dims: [0.24, 1.3, 0.24], cor: 0xb4bcc4 },
+    elevador: { nome: "Elevador", forma: "cilindro", dims: [2.6, 0.3, 2.6], cor: 0x6f8fae },
+    ponte: { nome: "Ponte", forma: "losango", dims: [1, 1, 1], base: 2.2, cor: 0x9a8f7e },
+    pharros: { nome: "Mecanismo de Pharros", forma: "losango", dims: [0.9, 0.9, 0.9], base: 2.2, cor: 0xd7c27a },
+    escada: { nome: "Escada", forma: "caixa", dims: [0.9, 3.2, 0.12], cor: 0x9c7a52 },
+    bau: { nome: "Baú", forma: "caixa", dims: [1.1, 0.7, 0.7], cor: 0x7b4f24 },
+  };
+  const OBJ_TEXTO = {
+    porta: "Porta ou portão. A rota pelo chão não sabe se está trancada.",
+    nevoa: "Névoa: passagem para outra área ou para a sala do chefe.",
+    alavanca: "Alavanca ou interruptor: costuma abrir portão, ponte ou chamar elevador por perto.",
+    elevador: "Elevador.",
+    ponte: "Ponte que muda (cai, quebra ou é baixada por alavanca).",
+    pharros: "Mecanismo de Pharros: abre com uma Pharros' Lockstone.",
+    escada: "Escada.",
+    bau: "Baú.",
+  };
+  const COR_CHAVE = 0xd9b04a;
   const Iso = () => (typeof window !== "undefined" && window.MapaIsometrico) || null;
 
   // ---- funções puras (testadas no node) ------------------------------------------------------------
@@ -56,6 +81,21 @@
   const pino = (x, y) => `M${x.toFixed(1)} ${y.toFixed(1)}L${(x - 7.5).toFixed(1)} ${(y - 11.4).toFixed(1)}A10 10 0 1 1 ${(x + 7.5).toFixed(1)} ${(y - 11.4).toFixed(1)}Z`;
   // Áreas liberadas pelo save: alguma fogueira dela acesa ou você está nela. Área sem fogueira (trecho de mapa, memória)
   // acompanha a rota: liberada se vem antes da área liberada mais adiante.
+  // Tamanho da porta pelo nome do modelo: dupla, grande ou pesada é mais larga; portão e grade, um meio-termo.
+  function dimsObjeto(o) {
+    const n = o.nome || "";
+    if (o.cat === "porta" && /large|heavy|king's|double|both|rotunda/i.test(n)) return [4.4, 5.0, 0.4];
+    if (o.cat === "porta" && /gate|bars/i.test(n)) return [3.0, 3.4, 0.2];
+    return (OBJ[o.cat] || OBJ.porta).dims;
+  }
+  // Altura do inimigo em metros (para a forma 3D e o tamanho no 2D): chefe visto como inimigo é grande; o resto
+  // cresce com o HP (Hollow ~1,8 m; Ruin Sentinel, 2330 HP, ~3 m).
+  function alturaInimigo(t) {
+    if (t && t.chefe) return 3.4;
+    return Math.min(3.6, Math.max(1.8, 1.8 + ((t && t.hp) || 0) / 1600 - 0.25));
+  }
+  // Raio do inimigo no 2D: meio metro na escala do mapa, com mínimo e máximo em pixels.
+  const raioInimigo = (s, t) => Math.min(18, Math.max(3.5, 0.28 * alturaInimigo(t) * s));
   function liberadas(indice, acesas, areaJogador) {
     const ok = new Set(indice.filter((a) => (a.fogueiras || []).some((id) => acesas.has(id)) || a.area === areaJogador).map((a) => a.area));
     const ate = Math.max(-1, ...indice.filter((a) => ok.has(a.area) && (a.ordem ?? 100) < 100).map((a) => a.ordem));
@@ -79,7 +119,9 @@
   const st = { raiz: null, plano: null, indice: null, docs: {}, doc: null, andar: "todos", vista: null, rota: null,
                destaque: null, zonaSel: null, pop: null, jogador: null, tipoSel: null, poll: null,
                modo: "2d", iso: null, interior: false, foco: true, acesas: null, fogChave: undefined, escolhida: false,
-               filtros: { zonas: true, fogueiras: true, chefes: true, npcs: true, plano: true, outros: true, inimigos: false } };
+               entChave: null,
+               filtros: { zonas: true, fogueiras: true, chefes: true, npcs: true, plano: true, outros: true, chaves: true,
+                          baus: false, objetos: false, inimigos: false } };
   const em3d = () => st.modo === "iso" && st.iso;
 
   function carregar(url) {
@@ -132,8 +174,10 @@
               <button type="button" class="mp-iso-tg" data-iso="topo" aria-pressed="false" title="Olhar de cima ou de lado (T); segure R/F para inclinar">De cima</button>
               <button type="button" class="mp-iso-tg" data-iso="interior" aria-pressed="false" title="Cortar o que está acima do andar para ver dentro de cavernas e prédios (I); PgUp/PgDn trocam o andar">Interior</button>
               <button type="button" class="mp-iso-tg" data-iso="foco" aria-pressed="true" title="Escurecer o que está longe do centro da vista (O)">Foco</button>
+              <button type="button" class="mp-iso-tg" data-iso="livre" aria-pressed="false" title="Câmera livre: voar pela área e entrar nos lugares (V)">Livre</button>
             </div>
-            <p class="mp-iso-ajuda"><kbd>WASD</kbd> andar · <kbd>Q</kbd><kbd>E</kbd> girar · <kbd>R</kbd><kbd>F</kbd> inclinar · <kbd>Shift</kbd> rápido · botão direito arrasta: girar · roda: zoom</p>
+            <p class="mp-iso-ajuda" data-ajuda="fixa"><kbd>WASD</kbd> andar · <kbd>Q</kbd><kbd>E</kbd> girar · <kbd>R</kbd><kbd>F</kbd> inclinar · <kbd>Shift</kbd> rápido · botão direito arrasta: girar · roda: zoom · <kbd>V</kbd> livre</p>
+            <p class="mp-iso-ajuda" data-ajuda="livre" hidden><kbd>WASD</kbd> voar · segure e arraste: olhar · <kbd>E</kbd>/<kbd>Espaço</kbd> sobe · <kbd>Q</kbd>/<kbd>C</kbd> desce · <kbd>Shift</kbd> rápido · roda: avançar · <kbd>V</kbd> volta à fixa</p>
           </div>
           <p class="mp-iso-status" role="status" hidden></p>
           <div class="mp-regua"><span class="mp-regua-barra"></span><span class="mp-regua-txt"></span></div>
@@ -148,7 +192,7 @@
           <p class="mp-nota"></p>
         </aside>
       </div>
-      <p class="mp-leg"><span class="mp-k mp-k-zonas"></span>zona 1 → última <span class="mp-k mp-k-chefe"></span>chefe <span class="mp-k mp-k-npc"></span>NPC <span class="mp-k mp-k-plano"></span>do plano <span class="mp-k mp-k-outro"></span>item <span class="mp-k mp-k-rota"></span>rota <span class="mp-k mp-k-parada"></span>paradas 1 → última <span class="mp-k mp-k-eu"></span>você <span class="mp-k mp-k-inimigo"></span>inimigo <span class="mp-aviso">rota pelo chão; portas e alavancas não aparecem</span></p>
+      <p class="mp-leg"><span class="mp-k mp-k-zonas"></span>zona 1 → última <span class="mp-k mp-k-chefe"></span>chefe <span class="mp-k mp-k-npc"></span>NPC <span class="mp-k mp-k-plano"></span>do plano <span class="mp-k mp-k-outro"></span>item <span class="mp-k mp-k-rota"></span>rota <span class="mp-k mp-k-parada"></span>paradas 1 → última <span class="mp-k mp-k-eu"></span>você <span class="mp-k mp-k-inimigo"></span>inimigo <span class="mp-k mp-k-porta"></span>porta <span class="mp-k mp-k-chave"></span>chave <span class="mp-k mp-k-bau"></span>baú <span class="mp-aviso">rota pelo chão: não sabe se a porta está trancada</span></p>
     </div>`;
     ligar(raiz);
     return carregar("mapas/indice.json").then((indice) => {
@@ -284,13 +328,23 @@
     const { tipo, i } = st.pop;
     const p = (listaDe(tipo) || [])[i];
     if (!p) return null;
-    const nome = tipo === "item" ? (p.itens[0] ? p.itens[0].nome : "item") : tipo === "inimigo" ? (tipoInimigo(p.tipo).nome || "inimigo") : p.nome;
+    const nome = tipo === "item" ? (p.itens[0] ? p.itens[0].nome : "item") : tipo === "inimigo" ? (tipoInimigo(p.tipo).nome || "inimigo")
+      : tipo === "objeto" ? nomeObjeto(p) : p.nome;
     return { pos: p.pos, andar: p.andar, zona: p.zona, nome };
   }
 
   function listaDe(tipo) {
-    return { npc: st.doc.npcs, chefe: st.doc.chefes, item: st.doc.itens, inimigo: st.doc.inimigos, fogueira: st.doc.fogueiras }[tipo];
+    return { npc: st.doc.npcs, chefe: st.doc.chefes, item: st.doc.itens, inimigo: st.doc.inimigos, fogueira: st.doc.fogueiras,
+             objeto: st.doc.objetos || [] }[tipo];
   }
+  const nomeObjeto = (o) => (o.chave ? `${(OBJ[o.cat] || OBJ.porta).nome} (${o.chave.nome})` : (OBJ[o.cat] || OBJ.porta).nome);
+  // Objeto aparece pelo filtro dele: porta com chave também pelo filtro Chaves; baú pelo Baús.
+  function objetoVisivel(o) {
+    if (o.cat === "bau") return st.filtros.baus;
+    if (o.chave && st.filtros.chaves) return true;
+    return st.filtros.objetos;
+  }
+  const itemVisivel = (p, destaque) => (destaque ? st.filtros.plano : st.filtros.outros) || (p.chave && st.filtros.chaves);
 
   function vazio(texto) {
     const el = st.raiz.querySelector(".mp-vazio");
@@ -310,6 +364,8 @@
     st.tipoSel = null;
     st.pop = null;
     st.interior = false;  // no 3D, cada área abre inteira; o corte é escolha de quem está olhando
+    st.entChave = null;
+    if (st.iso) st.iso.setEntidades([]);  // as formas da área anterior saem já; as desta entram com o cenário
     st.raiz.querySelector(".mp-pop").hidden = true;
     statusRota("");
     const andares = d.planta.andares;
@@ -425,7 +481,33 @@
     if (!cena || !em3d() || st.doc.area !== area) return;
     sincronizarAndarIso();
     st.iso.verComo2D(v.cx, v.cz, v.s);
+    sincronizarEntidades();
     atualizar();
+  }
+
+  // Formas 3D dos inimigos e objetos visíveis pelos filtros (refeitas só quando a lista muda, não a cada quadro).
+  function entidades3d() {
+    const out = [];
+    if (st.filtros.inimigos) st.doc.inimigos.forEach((e) => {
+      const t = tipoInimigo(e.tipo), h = alturaInimigo(t), igual = st.tipoSel && e.tipo === st.tipoSel;
+      out.push({ forma: "capsula", pos: e.pos, dims: [h * 0.36, h, h * 0.36],
+                 cor: igual ? 0xf2c14e : st.tipoSel ? 0x4a2420 : t.chefe ? 0xd1572f : 0xb8352a });
+    });
+    (st.doc.objetos || []).forEach((o) => {
+      const c = OBJ[o.cat];
+      if (!c || !objetoVisivel(o)) return;
+      out.push({ forma: c.forma, pos: o.pos, rot: o.rot, dims: dimsObjeto(o), base: c.base, transp: c.transp,
+                 cor: o.chave ? COR_CHAVE : c.cor });
+    });
+    return out;
+  }
+  function sincronizarEntidades() {
+    if (!st.iso || !st.doc) return;
+    const lista = em3d() ? entidades3d() : [];
+    const chave = `${st.doc.area}|${JSON.stringify(st.filtros)}|${st.tipoSel}|${lista.length}`;
+    if (chave === st.entChave) return;
+    st.entChave = chave;
+    st.iso.setEntidades(lista);
   }
 
   // Leva o enquadramento do 2D (st.vista) para a câmera 3D, mantendo giro e inclinação.
@@ -486,10 +568,11 @@
     const tres = novo === "iso";
     raiz.querySelector(".mp-iso-container").hidden = !tres;
     raiz.querySelector(".mp-iso-ui").hidden = !tres;
-    raiz.querySelector(".mp-iso-sombra").hidden = !tres || !st.foco;
+    raiz.querySelector(".mp-iso-sombra").hidden = !tres || !st.foco || !!(st.iso && st.iso.livre);
     raiz.querySelector(".mp-mundo").style.display = tres ? "none" : "";
     raiz.querySelector(".mp-tela").classList.toggle("mp-3d", tres);
     st.iso && st.iso.setAtivo(tres);
+    sincronizarEntidades();
     statusIso(null);
     desenharChao();
     sincronizarAndarIso();
@@ -541,17 +624,66 @@
         : `<text class="mp-ini" x="${f1(sx)}" y="${f1(sy + 4)}">${esc(titulo.trim().replace(/^the\s+/i, "").charAt(0))}</text>`;
       return `<g class="${classe}" ${dados} tabindex="0"><title>${esc(titulo)}</title><circle class="mp-fundo" cx="${f1(sx)}" cy="${f1(sy)}" r="${f1(r)}"/>${img}<circle class="mp-aro" cx="${f1(sx)}" cy="${f1(sy)}" r="${f1(r)}"/>${rotulo ? `<text class="mp-rotulo" x="${f1(sx)}" y="${f1(sy + r + 12)}">${esc(rotulo)}</text>` : ""}</g>`;
     };
+    // No 3D a forma está no cenário (iso.setEntidades): aqui fica só o alvo do clique, do tamanho dela na tela.
+    const alvo3d = (pos, alt) => {
+      const [ax, ay] = paraTela(pos[0], pos[2], pos[1]), [bx, by] = paraTela(pos[0], pos[2], pos[1] + alt);
+      return [(ax + bx) / 2, (ay + by) / 2, Math.max(7, Math.hypot(ax - bx, ay - by) / 2 + 2), bx, by];
+    };
+    const badgeChave = (x, y, icone) => `<g class="mp-badge-chave"><circle cx="${f1(x)}" cy="${f1(y)}" r="9"/>${icone && ICONE_OK.test(icone)
+      ? `<image href="${esc(icone)}" x="${f1(x - 7)}" y="${f1(y - 7)}" width="14" height="14"/>` : `<path d="M${f1(x - 4)} ${f1(y)}a2.6 2.6 0 1 0 0.1 0M${f1(x - 1.4)} ${f1(y)}h6v2.5M${f1(x + 2.5)} ${f1(y)}v2"/>`}</g>`;
+    const glifoObjeto = (o, sx, sy) => {
+      const d = dimsObjeto(o), rot = `transform="rotate(${f1(o.rot ? o.rot[1] : 0)} ${f1(sx)} ${f1(sy)})"`;
+      if (o.cat === "porta" || o.cat === "nevoa" || o.cat === "escada" || o.cat === "bau") {
+        const L = Math.max(o.cat === "bau" ? 9 : 11, d[0] * s), E = Math.max(o.cat === "bau" ? 7 : 3.5, d[2] * s * (o.cat === "bau" ? 1 : 1.8));
+        return `<rect class="mp-obj-forma" x="${f1(sx - L / 2)}" y="${f1(sy - E / 2)}" width="${f1(L)}" height="${f1(E)}" rx="1.5" ${rot}/>`;
+      }
+      if (o.cat === "elevador") return `<circle class="mp-obj-forma" cx="${f1(sx)}" cy="${f1(sy)}" r="${f1(Math.max(6, d[0] * s / 2))}"/><circle class="mp-obj-miolo" cx="${f1(sx)}" cy="${f1(sy)}" r="2"/>`;
+      if (o.cat === "alavanca") {
+        const r = Math.max(3.5, 0.3 * s);
+        return `<line class="mp-obj-haste" x1="${f1(sx)}" y1="${f1(sy)}" x2="${f1(sx + r * 1.6)}" y2="${f1(sy - r * 2.2)}"/><circle class="mp-obj-forma" cx="${f1(sx)}" cy="${f1(sy)}" r="${f1(r)}"/>`;
+      }
+      return `<rect class="mp-obj-forma" x="${f1(sx - 5)}" y="${f1(sy - 5)}" width="10" height="10" transform="rotate(45 ${f1(sx)} ${f1(sy)})"/>`;
+    };
+    // objetos antes dos itens: o ícone do item fica por cima do baú dele
+    (st.doc.objetos || []).forEach((o, i) => {
+      if (!OBJ[o.cat] || !objetoVisivel(o)) return;
+      const q = ver(o.pos);
+      if (!q) return;
+      const [sx, sy, longe] = q;
+      const estado = estadoAndar(o.andar, andarSel);
+      let corpo;
+      if (tres) {
+        const d = dimsObjeto(o), [cx, cy, r, tx, ty] = alvo3d(o.pos, (OBJ[o.cat].base || 0) + d[1]);
+        corpo = `<circle class="mp-alvo3d" cx="${f1(cx)}" cy="${f1(cy)}" r="${f1(r)}"/>${o.chave ? badgeChave(tx, ty - 10, o.chave.icone) : ""}`;
+      } else {
+        corpo = glifoObjeto(o, sx, sy) + (o.chave ? badgeChave(sx, sy - Math.max(14, dimsObjeto(o)[1] * s * 0.35), o.chave.icone) : "");
+      }
+      const rotulo = o.chave && (nomes || tres) && estado === "cheio" && !longe
+        ? `<text class="mp-rotulo mp-rotulo-chave" x="${f1(sx)}" y="${f1(sy + 16)}">${esc(o.chave.nome)}</text>` : "";
+      partes.push(`<g class="mp-obj mp-obj-${o.cat}${o.chave ? " mp-obj-chave" : ""} ${estado}${longe}" data-tipo="objeto" data-i="${i}" tabindex="0"><title>${esc(nomeObjeto(o) + (o.nome ? ` · ${o.nome}` : ""))}</title>${corpo}${rotulo}</g>`);
+    });
     if (st.filtros.inimigos) st.doc.inimigos.forEach((e, i) => {
       const p = ver(e.pos);
       if (!p) return;
       const [sx, sy, longe] = p;
       const t = tipoInimigo(e.tipo), igual = st.tipoSel && e.tipo === st.tipoSel;
-      const classe = `mp-inimigo ${estadoAndar(e.andar, andarSel)}${longe}${igual ? " mp-inimigo-sel" : st.tipoSel ? " mp-inimigo-fora" : ""}`;
-      partes.push(`<circle class="${classe}" data-tipo="inimigo" data-i="${i}" tabindex="0" cx="${f1(sx)}" cy="${f1(sy)}" r="${igual ? 6 : 4.5}"><title>${esc(t.nome || "Inimigo (nome não confirmado)")}</title></circle>`);
+      const classe = `mp-inimigo ${estadoAndar(e.andar, andarSel)}${longe}${igual ? " mp-inimigo-sel" : st.tipoSel ? " mp-inimigo-fora" : ""}${t.chefe ? " mp-inimigo-chefe" : ""}`;
+      const titulo = `<title>${esc(t.nome || "Inimigo (nome não confirmado)")}</title>`;
+      if (tres) {
+        const [cx, cy, r] = alvo3d(e.pos, alturaInimigo(t));
+        partes.push(`<circle class="mp-alvo3d ${classe}" data-tipo="inimigo" data-i="${i}" tabindex="0" cx="${f1(cx)}" cy="${f1(cy)}" r="${f1(r)}">${titulo}</circle>`);
+        return;
+      }
+      const r = raioInimigo(s, t) * (igual ? 1.25 : 1);
+      if (r >= 11 && t.retrato && ICONE_OK.test(t.retrato)) {
+        partes.push(retrato(`e${i}`, sx, sy, r, t.retrato, `${classe} mp-inimigo-ret`, t.nome || "Inimigo", "", `data-tipo="inimigo" data-i="${i}"`));
+        return;
+      }
+      partes.push(`<circle class="${classe}" data-tipo="inimigo" data-i="${i}" tabindex="0" cx="${f1(sx)}" cy="${f1(sy)}" r="${f1(r)}">${titulo}</circle>`);
     });
     st.doc.itens.forEach((p, i) => {
       const destaque = p.plano || (st.destaque && p.item_id === st.destaque);
-      if (destaque ? !st.filtros.plano : !st.filtros.outros) return;
+      if (!itemVisivel(p, destaque)) return;
       const q = ver(p.pos);
       if (!q) return;
       const [sx, sy, longe] = q;
@@ -559,7 +691,9 @@
       const t = estado === "cheio" ? (destaque ? tam + 4 : tam) : Math.max(12, tam - 8);
       const img = p.icone && ICONE_OK.test(p.icone) ? `<image href="${esc(p.icone)}" x="${f1(sx - t / 2)}" y="${f1(sy - t / 2)}" width="${t}" height="${t}"/>` : `<rect class="mp-losango" x="${f1(sx - t / 4)}" y="${f1(sy - t / 4)}" width="${t / 2}" height="${t / 2}" transform="rotate(45 ${f1(sx)} ${f1(sy)})"/>`;
       const nome = p.itens[0] ? `${p.itens[0].nome}${p.itens[0].qtd > 1 ? ` ×${p.itens[0].qtd}` : ""}${p.itens.length > 1 ? ` +${p.itens.length - 1}` : ""}` : "";
-      partes.push(`<g class="mp-item ${destaque ? "mp-do-plano" : ""} ${estado}${longe}" data-tipo="item" data-i="${i}" tabindex="0"><title>${esc(nome)}</title><rect class="mp-moldura" x="${f1(sx - t / 2 - 2)}" y="${f1(sy - t / 2 - 2)}" width="${t + 4}" height="${t + 4}" rx="3"/>${img}${nomes && estado === "cheio" && !longe ? `<text class="mp-rotulo" x="${f1(sx)}" y="${f1(sy + t / 2 + 12)}">${esc(nome)}</text>` : ""}</g>`);
+      const chave = p.chave && st.filtros.chaves ? badgeChave(sx + t / 2 + 1, sy - t / 2 - 1, null) : "";
+      const ondeEsta = p.no === "bau" ? " (baú)" : p.no === "cadaver" ? " (cadáver)" : "";
+      partes.push(`<g class="mp-item ${destaque ? "mp-do-plano" : ""}${p.chave ? " mp-item-chave" : ""}${p.no === "bau" ? " mp-no-bau" : ""} ${estado}${longe}" data-tipo="item" data-i="${i}" tabindex="0"><title>${esc(nome + ondeEsta)}</title><rect class="mp-moldura" x="${f1(sx - t / 2 - 2)}" y="${f1(sy - t / 2 - 2)}" width="${t + 4}" height="${t + 4}" rx="3"/>${img}${chave}${nomes && estado === "cheio" && !longe ? `<text class="mp-rotulo" x="${f1(sx)}" y="${f1(sy + t / 2 + 12)}">${esc(nome)}</text>` : ""}</g>`);
     });
     if (st.filtros.fogueiras) st.doc.fogueiras.forEach((f, i) => {
       const q = ver(f.pos);
@@ -650,18 +784,38 @@
     } else if (tipo === "inimigo") {
       const t = tipoInimigo(p.tipo), link = linkSeguro(t.wiki);
       const numeros = [t.hp != null ? `HP ${fmt.format(t.hp)}` : "", t.almas ? `${fmt.format(t.almas)} almas` : ""].filter(Boolean).join(" · ");
-      corpo = `<p class="mp-pop-tit">${t.nome ? esc(t.nome) : "Inimigo"}</p>
-        ${t.nome ? "" : '<p class="mp-pop-sub">Nome não confirmado: o jogo não guarda nome de inimigo comum e a wiki não bateu com um só.</p>'}
+      const foto = t.retrato && ICONE_OK.test(t.retrato) ? `<img class="mp-pop-foto" src="${esc(t.retrato)}" alt="" width="40" height="40">` : "";
+      const origem = { jogo: "Nome pela linha do jogo", modelo: "Nome pelo modelo do jogo", wiki: "Nome pela wiki" }[t.fonte] || "Nome";
+      corpo = `<p class="mp-pop-tit">${foto}${t.nome ? esc(t.nome) : "Inimigo"}</p>
+        ${t.nome ? "" : '<p class="mp-pop-sub">Nome não confirmado: nem a linha do jogo, nem o modelo, nem a wiki deram um nome só.</p>'}
+        ${t.chefe ? '<p class="mp-pop-sub">Chefe de outra área, aqui como inimigo comum.</p>' : ""}
         ${numeros ? `<p class="mp-pop-sub">${numeros} <span class="mp-fonte">(jogo)</span></p>` : ""}
         ${t.drops && t.drops.length ? `<p class="mp-pop-sub">Drops (jogo): ${esc(t.drops.join(", "))}</p>` : ""}
-        ${t.prova ? `<p class="mp-prova">Nome pela wiki: ${esc(t.prova)}</p>` : ""}
+        ${t.prova ? `<p class="mp-prova">${origem}: ${esc(t.prova)}</p>` : ""}
         <p><button type="button" class="pesq" data-iguais="${esc(p.tipo)}">${st.tipoSel === p.tipo ? "Parar de destacar" : `Destacar os ${fmt.format(t.n || 1)} iguais`}</button></p>
         ${link ? `<a href="${esc(link)}" target="_blank" rel="noopener noreferrer">página na wiki</a>` : ""}`;
+    } else if (tipo === "objeto") {
+      const c = OBJ[p.cat] || OBJ.porta;
+      let extra = "";
+      if (p.chave) {
+        const k = p.chave, link = linkSeguro(k.wiki);
+        const onde = (k.onde || []).filter((x) => AREA_OK.test(x.area)).map((x) => `<li>${esc(x.nome)} <button type="button" class="pesq" data-ir-lote="${esc(x.area)}|${Number(x.lote)}">ver no mapa</button></li>`).join("");
+        extra = `<p class="mp-pop-chave">${k.icone && ICONE_OK.test(k.icone) ? `<img src="${esc(k.icone)}" alt="" width="24" height="24">` : ""}Abre com <strong>${esc(k.nome)}</strong></p>
+          ${onde ? `<p class="mp-pop-sub">Onde pegar a chave:</p><ul>${onde}</ul>` : '<p class="mp-pop-sub">A chave não está no chão das áreas do mapa (loja, NPC ou drop).</p>'}
+          ${link ? `<a href="${esc(link)}" target="_blank" rel="noopener noreferrer">chave na wiki</a>` : ""}
+          <p class="mp-prova">Chave pelo nome do modelo da porta (Smithbox), conferida na lista de itens do jogo.</p>`;
+      } else if (p.cat === "bau") {
+        const conteudo = ((st.doc.itens.find((x) => x.lote === p.lote) || {}).itens) || [];
+        extra = conteudo.length ? `<ul>${conteudo.map((it) => `<li>${esc(it.nome)}${it.qtd > 1 ? ` <span class="mp-qtd">×${it.qtd}</span>` : ""}</li>`).join("")}</ul>`
+          : '<p class="mp-pop-sub">O jogo não liga item a este baú.</p>';
+      }
+      corpo = `<p class="mp-pop-tit">${esc(c.nome)}</p>${p.nome ? `<p class="mp-pop-sub">${esc(p.nome)} <span class="mp-fonte">(modelo do jogo)</span></p>` : ""}<p class="mp-pop-sub">${esc(OBJ_TEXTO[p.cat] || "")}</p>${extra}`;
     } else if (tipo === "fogueira") {
       const acesa = st.acesas ? (st.acesas.has(p.id) ? " · acesa no save" : " · ainda apagada") : "";
       corpo = `<p class="mp-pop-tit">${esc(p.nome)}</p><p class="mp-pop-sub">Fogueira${p.zona ? ` da zona ${esc(nomeZona(p.zona))}` : ""}${acesa}</p>`;
     } else {
-      corpo = `<ul>${p.itens.map((it) => `<li>${esc(it.nome)}${it.qtd > 1 ? ` <span class="mp-qtd">×${it.qtd}</span>` : ""}</li>`).join("")}</ul>${p.item_id ? `<a class="req-link" href="#item-${esc(p.item_id)}" data-goto-item="${esc(p.item_id)}">ver em Onde pegar</a>` : ""}`;
+      const no = p.no === "bau" ? "Dentro de um baú." : p.no === "cadaver" ? "Num cadáver." : "";
+      corpo = `<ul>${p.itens.map((it) => `<li>${esc(it.nome)}${it.qtd > 1 ? ` <span class="mp-qtd">×${it.qtd}</span>` : ""}</li>`).join("")}</ul>${no ? `<p class="mp-pop-sub">${no}</p>` : ""}${p.chave ? '<p class="mp-pop-sub">É uma chave: abre porta, portão ou cela.</p>' : ""}${p.item_id ? `<a class="req-link" href="#item-${esc(p.item_id)}" data-goto-item="${esc(p.item_id)}">ver em Onde pegar</a>` : ""}`;
     }
     const rota = API ? '<p><button type="button" class="pesq" data-rota-ate>Rota até aqui</button></p>' : "";
     pop.innerHTML = `<button type="button" class="mp-pop-x" aria-label="Fechar">&#10005;</button>${corpo}${rota}${meta}`;
@@ -789,6 +943,7 @@
       if (em3d()) {
         if (st.iso.tecla(ev, true)) { ev.preventDefault(); return; }
         const acoes3d = { KeyI: () => alternarInterior(), KeyO: () => alternarFoco(), KeyT: () => { st.iso.alternarTopo(); atualizar(); },
+                          KeyV: () => alternarLivre(),
                           KeyN: () => st.iso.norte(), PageUp: () => trocarAndar(1), PageDown: () => trocarAndar(-1),
                           Home: () => enquadrarTudo() };
         if (acoes3d[ev.code] && !ev.ctrlKey && !ev.metaKey && !ev.altKey) { ev.preventDefault(); acoes3d[ev.code](); return; }
@@ -812,6 +967,7 @@
         else if (acao === "topo") st.iso.alternarTopo();
         else if (acao === "interior") alternarInterior();
         else if (acao === "foco") alternarFoco();
+        else if (acao === "livre") alternarLivre();
         atualizar();
         return;
       }
@@ -837,6 +993,7 @@
         st.filtros[f.dataset.filtro] = !st.filtros[f.dataset.filtro];
         f.setAttribute("aria-pressed", String(st.filtros[f.dataset.filtro]));
         if (f.dataset.filtro === "zonas") desenharChao();
+        sincronizarEntidades();
         atualizar();
         return;
       }
@@ -847,7 +1004,14 @@
       if (iguais) {
         st.tipoSel = st.tipoSel === iguais.dataset.iguais ? null : iguais.dataset.iguais;
         if (st.pop) mostrarPop(st.pop.tipo, st.pop.i);
+        sincronizarEntidades();
         atualizar();
+        return;
+      }
+      const irLote = ev.target.closest("[data-ir-lote]");
+      if (irLote) {
+        const [area, lote] = irLote.dataset.irLote.split("|");
+        irParaLote(area, Number(lote));
         return;
       }
       if (ev.target.closest(".mp-pop-x")) fecharPop();
@@ -856,11 +1020,40 @@
     if (window.ResizeObserver) new ResizeObserver(() => { if (st.iso) st.iso.redimensionar(); atualizar(); }).observe(tela);
   }
 
+  function alternarLivre() {
+    const on = st.iso.alternarLivre();
+    const ui = st.raiz.querySelector(".mp-iso-ui");
+    ui.querySelector('[data-iso="livre"]').setAttribute("aria-pressed", String(on));
+    ui.querySelector('[data-ajuda="fixa"]').hidden = on;
+    ui.querySelector('[data-ajuda="livre"]').hidden = !on;
+    st.raiz.querySelector(".mp-iso-sombra").hidden = on || !st.foco;
+    atualizar();
+  }
+
+  // "ver no mapa" da chave de uma porta: abre a área do lote e mostra o item.
+  async function irParaLote(area, lote) {
+    if (!AREA_OK.test(area)) return;
+    st.escolhida = true;
+    if (!st.doc || st.doc.area !== area) await abrirArea(area);
+    if (!st.doc || st.doc.area !== area) return;
+    const i = st.doc.itens.findIndex((x) => x.lote === lote);
+    if (i < 0) return;
+    const p = st.doc.itens[i];
+    if (p.andar != null) st.andar = p.andar;
+    const tela = st.raiz.querySelector(".mp-tela");
+    st.vista = ajustar(caixa([[p.pos[0], p.pos[2]]]), tela.clientWidth, tela.clientHeight, 40);
+    desenharChao();
+    sincronizarAndarIso();
+    vistaParaIso(true);
+    atualizar();
+    mostrarPop("item", i);
+  }
+
   function alternarFoco() {
     st.foco = !st.foco;
     if (st.iso) st.iso.setFoco(st.foco);
     st.raiz.querySelector('[data-iso="foco"]').setAttribute("aria-pressed", String(st.foco));
-    st.raiz.querySelector(".mp-iso-sombra").hidden = st.modo !== "iso" || !st.foco;
+    st.raiz.querySelector(".mp-iso-sombra").hidden = st.modo !== "iso" || !st.foco || !!(st.iso && st.iso.livre);
     atualizar();
   }
 
@@ -894,5 +1087,6 @@
     }
   }
 
-  window.buildsmithMapa = { montar, ver, _teste: { caixa, ajustar, regua, tamanhoIcone, estadoAndar, corZona, andarDe, tintaParada, pino, trechosTela, liberadas } };
+  window.buildsmithMapa = { montar, ver, _teste: { caixa, ajustar, regua, tamanhoIcone, estadoAndar, corZona, andarDe, tintaParada, pino, trechosTela, liberadas,
+                                                   dimsObjeto, alturaInimigo, raioInimigo } };
 })();

@@ -418,3 +418,35 @@ console.log(JSON.stringify({
                            "físico: peça 100 · FOR +5 · mágico: 80 + 20 dos atributos"]
     assert r["delta"] == [35, 0, None]
     assert r["req"] == ["INT 18", "—"]
+
+
+@pytest.mark.skipif(shutil.which("node") is None, reason="sem node para rodar o JS da página")
+def test_entity_scale_and_free_camera_helpers(tmp_path):
+    script = tmp_path / "entidades.js"
+    script.write_text(r"""
+global.window = {}; global.CSS = { escape: (s) => s };
+eval(require("fs").readFileSync(process.argv[2], "utf8"));
+const m = window.buildsmithMapa._teste;
+const Iso = require(process.argv[3]);
+const t = Iso._teste;
+const r = (v) => Array.isArray(v) ? v.map(r) : Math.round(v * 1000) / 1000;
+console.log(JSON.stringify({
+  portaGrande: m.dimsObjeto({cat: "porta", nome: "Large Stone Door (Forgotten Key)"}),
+  portao: m.dimsObjeto({cat: "porta", nome: "Iron Bars Gate"}), bau: m.dimsObjeto({cat: "bau", nome: ""}),
+  altura: r([m.alturaInimigo({hp: 200}), m.alturaInimigo({hp: 2330}), m.alturaInimigo({hp: 99999}), m.alturaInimigo({chefe: true})]),
+  raio: r([m.raioInimigo(1, {hp: 200}), m.raioInimigo(10, {hp: 200}), m.raioInimigo(80, {hp: 200})]),
+  matriz: r(t.matrizEntidade([10, 2, 5], [0, 90, 0], [2, 3, 0.3])),
+  semRot: r(t.matrizEntidade([0, 0, 0], null, [1, 1.8, 1])),
+  dir: r([t.direcaoLivre(0, 0), t.direcaoLivre(Math.PI / 2, 0), t.direcaoLivre(0, -Math.PI / 2)]),
+}));
+""", encoding="utf-8")
+    out = subprocess.run(["node", str(script), str(ROOT / "skills/build-page/template/mapa.js"),
+                          str(ROOT / "skills/build-page/template/iso.js")], capture_output=True, text=True, timeout=20, check=True)
+    r = json.loads(out.stdout)
+    assert r["portaGrande"] == [4.4, 5, 0.4] and r["portao"] == [3, 3.4, 0.2] and r["bau"] == [1.1, 0.7, 0.7]
+    assert r["altura"] == [1.8, 3.006, 3.6, 3.4]  # Hollow ~1,8 m; Ruin Sentinel ~3 m; teto 3,6 m; chefe de outra área 3,4 m
+    assert r["raio"] == [3.5, 5.04, 18]  # meio corpo na escala do mapa, com mínimo e máximo em pixels
+    # girada 90° em Y como as peças do mapa (T · Ry · S): a largura (x local) vai para -z do jogo; apoiada no chão
+    assert r["matriz"] == [0, 0, -2, 0, 0, 3, 0, 0, 0.3, 0, 0, 0, 10, 3.5, 5, 1]
+    assert r["semRot"][13] == 0.9  # sem rotação: só sobe meia altura
+    assert r["dir"] == [[0, 0, 1], [1, 0, 0], [0, -1, 0]]  # yaw 0 = norte (+z), 90° = leste; pitch -90° = para baixo

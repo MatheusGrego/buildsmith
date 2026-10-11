@@ -261,9 +261,56 @@ def test_page_enemies_carry_game_data_and_the_player_area_comes_in(tmp_path):
                                carregar_area=lambda a: areas[a], area_jogador="m10_04_00_00")
     doc = json.loads(Path(out["files"]["mapas/m10_16_00_00.json"]).read_text(encoding="utf-8"))
     assert [e["tipo"] for e in doc["inimigos"]] == ["152002"]  # gerador de NPC não vira inimigo
-    assert doc["tipos_inimigo"]["152002"] == {"nome": None, "wiki": None, "prova": None, "n": 1, "hp": 450, "almas": 180,
-                                              "drops": ["Royal Greatsword"]}
+    t = doc["tipos_inimigo"]["152002"]
+    assert t["nome"] == "Royal Swordsman (Greatsword)" and t["base"] == "Royal Swordsman" and t["fonte"] == "jogo"
+    assert "152002" in t["prova"] and t["wiki"] == "https://darksouls2.wiki.fextralife.com/Royal_Swordsman"
+    assert t["retrato"].startswith("icons/") and t["chefe"] is False
+    assert (t["n"], t["hp"], t["almas"], t["drops"]) == (1, 450, 180, ["Royal Greatsword"])
     assert "mapas/m10_04_00_00.json" in out["files"]
+
+
+def test_page_names_bosses_seen_as_enemies_and_asks_the_wiki_only_for_unnamed(tmp_path):
+    prepare_page._ds2mapa()
+    import mapas_pagina
+    area = faixa_area()
+    area["inimigos"] = [{"id": 1, "pos": [1.0, 0, 0.5], "tipo": 318030, "papel": None},
+                        {"id": 2, "pos": [2.0, 0, 0.5], "tipo": 999901, "papel": None}]
+    area["tipos_inimigo"] = {"318030": {"hp": 3000, "almas": 17000, "drops": []}, "999901": {"hp": 10, "almas": 1, "drops": []}}
+    pedidos = []
+
+    def wiki(tipos, nome_area):
+        pedidos.append(sorted(tipos))
+        return {"999901": {"nome": "Bicho Raro", "wiki": "https://darksouls2.wiki.fextralife.com/Bicho", "prova": "almas: 1"}}
+
+    files = mapas_pagina.preparar(example(), tmp_path, lambda a: area, lambda: [], lambda n: None, nomes_inimigos=wiki,
+                                  area_jogador="m10_16_00_00", todas_areas=False)
+    doc = json.loads(Path(files["mapas/m10_16_00_00.json"]).read_text(encoding="utf-8"))
+    assert pedidos == [["999901"]]  # o Pursuer tem nome pelo jogo: a wiki nem é consultada para ele
+    assert doc["tipos_inimigo"]["318030"]["nome"] == "The Pursuer" and doc["tipos_inimigo"]["318030"]["chefe"] is True
+    assert doc["tipos_inimigo"]["999901"]["nome"] == "Bicho Raro" and doc["tipos_inimigo"]["999901"]["fonte"] == "wiki"
+
+
+def test_page_objects_doors_with_key_and_where_to_get_it(tmp_path):
+    prepare_page._ds2mapa()
+    import mapas_pagina
+    area = faixa_area()
+    area["itens"].append({"lote": 10165030, "pos": [3.0, 0, 0.5], "no": "bau", "chave": True,
+                          "itens": [{"id": 50820000, "nome": "Forgotten Key", "qtd": 1}]})
+    area["objetos"] = [{"parte": "o04_0470_0000", "modelo": "o04_0470", "cat": "porta", "nome": "Large Stone Door (Forgotten Key)",
+                        "pos": [1.0, 0, 0.5], "rot": [0, 90, 0], "chave": [50820000, "Forgotten Key"], "ref": None, "lote": None},
+                       {"parte": "o00_0200_0001", "modelo": "o00_0200", "cat": "bau", "nome": "Wooden Treasure Chest",
+                        "pos": [3.0, 0, 0.5], "rot": [0, 0, 0], "chave": None, "ref": 10165030, "lote": 10165030}]
+    files = mapas_pagina.preparar(example(), tmp_path, lambda a: area, lambda: [], lambda n: f"icons/{n[:3]}.png",
+                                  pagina_wiki=lambda n: f"https://darksouls2.wiki.fextralife.com/{n.replace(' ', '_')}",
+                                  area_jogador="m10_16_00_00", todas_areas=False)
+    doc = json.loads(Path(files["mapas/m10_16_00_00.json"]).read_text(encoding="utf-8"))
+    porta, bau = doc["objetos"]
+    assert porta["cat"] == "porta" and porta["rot"] == [0, 90, 0] and porta["andar"] is not None
+    assert porta["chave"]["nome"] == "Forgotten Key" and porta["chave"]["icone"] == "icons/For.png"
+    assert porta["chave"]["onde"] == [{"area": "m10_16_00_00", "nome": "The Lost Bastille", "lote": 10165030}]
+    assert bau["cat"] == "bau" and bau["lote"] == 10165030 and "chave" not in bau
+    item = next(p for p in doc["itens"] if p["lote"] == 10165030)
+    assert item["no"] == "bau" and item["chave"] is True
 
 
 def test_player_area_uses_the_plan_character_name(monkeypatch):

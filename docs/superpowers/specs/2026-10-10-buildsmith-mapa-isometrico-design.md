@@ -127,3 +127,75 @@ Prints do Huntsman's Copse mostraram cenário cinza e lavado, manchas pretas, pe
   `Content-Encoding: gzip`), o GET nunca extrai: a página faz `POST .../extrair` e consulta até ficar pronto (202 enquanto
   extrai). As 28 áreas extraem em até ~14 s; Drangleic Castle (1393 peças) desenha em ~5 ms por quadro.
 - Objetos do MSB (portas, baús, alavancas, tochas) continuam para a etapa 5.
+
+## Entidades em escala, nomes pelo jogo e câmera livre (2026-10-11)
+
+Pedido: inimigos (e portas, alavancas, pontes, baús, chaves) desenhados **na escala do mapa**, ligando e desligando pelos
+filtros; para chegar num item, mostrar **por onde passar e qual chave abre**; descobrir por que o Pursuer perto do McDuff
+(Lost Bastille) aparecia como "não identificado" e identificar todos os inimigos. Anotado em conversa: além da câmera
+fixa, uma **câmera livre de espectador** (WASD, segurar um botão para olhar, entrar nos lugares).
+
+### Por que o Pursuer não tinha nome
+
+O jogo não guarda nome de inimigo comum. O nome vinha só da wiki (`inimigos_wiki.py`): almas e drops do EnemyParam
+contra as páginas da lista "Enemies". O Pursuer da Lost Bastille é a linha `318030` do EnemyParam: um **chefe** de outra
+área (Forest of Fallen Giants) usado como inimigo comum. Ele não é chefe do BossBattleParam da Lost Bastille (então vira
+inimigo), não está na lista de inimigos da wiki (está na de chefes) e não dropa nada: nenhum ponto bate.
+
+### Fatos descobertos
+
+- `GeneratorParam` +0x08 é a linha do `GeneratorRegistParam` (o "personagem" do código), e o 1º int dela é a linha do
+  `EnemyParam` (o `tipo`). Definições no Paramdex (soulsmods), `DS2S/Defs`.
+- **A linha do EnemyParam // 100 é o modelo do personagem** `cXXXX`: 102000 → c1020 Hollow Soldier, 318030 → c3180 The
+  Pursuer; conferido em 624 linhas com nome nas duas tabelas (as 69 diferentes são sinônimos: "Forest Grotesque" usa o
+  modelo "Goblin").
+- O Smithbox (MIT) tem nome para 894 linhas do EnemyParam (vindas do Paramdex), 204 modelos de personagem e 1300 modelos
+  de objeto. Viraram `games/ds2/nomes_smithbox.json` (licença em `games/ds2/LICENSE-SMITHBOX`, commit da fonte no arquivo).
+- `MapObjectInstanceParam` (por mapa): param do objeto em +0x00 (fogueira, porta, baú), **tipo da instância** em +0x14
+  (`MapObjectInstanceTypeParam`, cujas linhas o jogo nomeia em japonês: 120–123 baú, 130 cadáver, 170/180/190 alavanca e
+  interruptor, 195 escada, 200–240 porta, 110 névoa, 540 ponte que quebra) e lote de item em +0x24.
+- MSB, parte de objeto: o modelo (índice em `MODEL_PARAM_ST`, +0x0C) e a rotação (+0x1C) seguem o mesmo layout das peças
+  de mapa. Os nomes dos modelos dizem o que é: `o00_0300` Wooden Door, `o00_0500` Fog Gate, `o00_0600` Vertical Lever,
+  `o16_9005` Elevator, `o00_0200` Wooden Treasure Chest. Alguns dizem a chave: `o04_0470` "Large Stone Door (Forgotten
+  Key)", `o14_0371` "(Den Key)" (Tseldora Den Key), `o21_9075` "(Key to King's Passage)", `o00_0317` House Key, `o00_0318`
+  King's Ring.
+
+### O que mudou
+
+- `ds2nomes.py`: nome do inimigo pela linha do EnemyParam, senão pelo modelo; categoria do objeto pelo nome do modelo
+  (ordem importa: "Lever Door" é porta, "Drawbridge Lever" é alavanca), senão pelo tipo da instância; chave da porta pelo
+  nome do modelo, só se existir com esse nome entre os itens do jogo.
+- `ds2mapa.py` (`EXTRACAO_VERSAO` 5): `objetos` por área (categoria, nome do modelo, posição, rotação, chave, lote), itens
+  marcados com `no` (baú/cadáver) e `chave`; CLI `inimigos` lista os tipos de cada área e os que ficam `sem_nome`.
+- `mapas_pagina.py`: nome do inimigo pelo jogo primeiro (com a prova); a wiki só é consultada para o tipo que o jogo não
+  nomeia (poupa centenas de páginas); retrato e link pela página da wiki do nome base; `chefe` marca chefe de outra área
+  visto como inimigo; objetos com a chave, o ícone dela e onde ela está no chão das áreas da página.
+- Página: filtros **Chaves** (ligado: itens que são chave e portas com chave), **Baús**, **Portas e alavancas** e
+  **Inimigos**. No 2D a forma tem tamanho em metros e cresce com o zoom (porta como barra girada pela rotação do jogo,
+  baú, alavanca, elevador; inimigo com retrato quando bem perto). No 3D viram formas na escala do cenário
+  (`iso.setEntidades`: cápsula com a altura do inimigo, ~1,8 m para Hollow, ~3 m para Ruin Sentinel, 3,4 m para chefe;
+  porta 2,2–4,4 m; névoa translúcida; baú; alavanca; elevador), com o mesmo corte de interior e foco do cenário; o clique
+  abre o popover. Popover da porta com chave: "Abre com", onde pegar a chave ("ver no mapa" abre a área e o item) e a wiki.
+- Câmera **Livre** (botão ou V): perspectiva, WASD voa para onde olha, segurar e arrastar olha em volta, E/Espaço sobe,
+  Q/C desce, roda avança para o cursor, Shift acelera; sair volta a câmera fixa para onde a livre olhava.
+- Bug achado no caminho: duas chamadas de `iniciar()` ao mesmo tempo criavam dois renderers (tela preta); agora é uma só.
+
+### Limites (o que não dá para afirmar daqui)
+
+- Esta sessão não tinha os arquivos do jogo: tudo foi testado com dados sintéticos (pytest, node e Chromium com uma cena
+  feita à mão). Os testes com o jogo instalado (`test_real_lost_bastille_objects_and_the_pursuer`) rodam na sua máquina.
+- As formas 3D são **substitutas** (caixa, cápsula, disco), não os modelos do jogo. O eixo da largura da porta (x local)
+  e o centro do modelo (no meio ou na dobradiça) não foram conferidos: uma porta pode sair girada 90° ou meio vão de lado.
+- Porta genérica (a maioria, como as celas da Lost Bastille) não diz no modelo qual chave abre; isso está nos scripts de
+  evento do jogo (Lua compilado), que não são lidos. A rota pelo chão continua sem saber se a porta está trancada.
+
+### Próximos passos
+
+1. Modelos reais de objetos e inimigos no 3D (FLVER de `model/obj/` e `model/chr/`; o leitor de FLVER2 já existe; falta
+   conferir o caminho e o pacote das texturas no jogo). As substitutas ficam como reserva.
+2. Chave ↔ porta genérica: pelos scripts de evento, ou o plano diz (o nó do fluxo aponta a porta e a chave, com a wiki
+   como fonte) e o mapa desenha a porta na rota.
+3. Estado pelo save: porta aberta, alavanca puxada, baú aberto, chefe morto (flags de evento, como já é feito com as
+   fogueiras).
+4. Detectar sozinho o que mudou no save (como a posição já é relida): item do plano pego (inventário), nível e atributos
+   subindo, e atualizar a página.

@@ -3,9 +3,11 @@
 - Passo/fonte com nós de `ponto`: posição e andar de cada ponto e rota pelo chão entre pontos seguidos (na área do
   primeiro ponto), gravados em `mapa` no plano publicado. Ponto que não existe na área = ValueError.
 - Áreas copiadas: as dos pontos e as MAX_AREAS_POR_NOME com mais itens do plano (pelo nome do item no jogo).
-- `mapas/<area>.json`: nome, planta (andares com polígonos), fogueiras, itens (com ícone local e marca do plano),
-  inimigos comuns (gerador de NPC e de chefe fica de fora) e os tipos deles (HP, almas e drops do jogo; nome só quando
-  a wiki confirma, com a prova) — sem os triângulos do navmesh. `mapas/indice.json`: áreas na ordem do seletor.
+- `mapas/<area>.json`: nome, planta (andares com polígonos), fogueiras, itens (com ícone local, marca do plano, baú ou
+  cadáver e se é chave), inimigos comuns (gerador de NPC e de chefe fica de fora) e os tipos deles (HP, almas e drops
+  do jogo; nome pela linha do EnemyParam ou pelo modelo do jogo, ds2nomes; sem isso, pela wiki quando ela confirma; a
+  prova vai junto), objetos (portas com a chave e onde pegá-la, alavancas, elevadores, névoas, baús...) — sem os
+  triângulos do navmesh. `mapas/indice.json`: áreas na ordem do seletor.
 - Área onde o personagem está (posição do save) entra sempre; depois, todas as outras áreas do jogo (o seletor separa
   liberadas e não liberadas pelas fogueiras acesas no save, que a página lê ao vivo do servidor).
 - `indice.json`: por área, o rótulo (nome repetido ganha a 1ª fogueira, ex. "Majula · Old Akelarre"), os IDs das
@@ -76,23 +78,66 @@ def estado_chefes(plano: dict) -> dict:
             if isinstance(c, dict) and isinstance(c.get("no"), dict) and c["no"].get("nome")}
 
 
-def tipos_para_pagina(dados: dict, nomes: dict) -> dict:
-    """tipo -> HP, almas e drops do jogo, quantos há na área e o nome confirmado pela wiki (ou None)."""
+def _contagem_tipos(dados: dict) -> dict:
     contagem = {}
     for e in dados.get("inimigos", []):
         if e.get("tipo") and not e.get("papel"):
             contagem[str(e["tipo"])] = contagem.get(str(e["tipo"]), 0) + 1
+    return contagem
+
+
+def eh_chefe(base: str | None, chefes: list) -> bool:
+    """O inimigo é um chefe de outra área aparecendo como inimigo comum (o Pursuer na Lost Bastille)."""
+    b = (base or "").casefold().strip()
+    return bool(b) and any(c["nome"].casefold() in (b, b + "s") for c in chefes)
+
+
+def tipos_para_pagina(dados: dict, nomes: dict, pagina_wiki=None, icone_local=None, chefes: list | None = None) -> dict:
+    """tipo -> HP, almas e drops do jogo, quantos há na área e o nome: pela linha/modelo do jogo (ds2nomes) ou pela
+    wiki quando ela confirma (nomes); None sem nenhum dos dois. `fonte` diz de onde veio o nome."""
+    import ds2nomes
+
     out = {}
-    for t, n in contagem.items():
+    for t, n in _contagem_tipos(dados).items():
         jogo = dados.get("tipos_inimigo", {}).get(t, {})
         wiki = nomes.get(t) or {}
-        out[t] = {"nome": wiki.get("nome"), "wiki": wiki.get("wiki"), "prova": wiki.get("prova"), "n": n,
-                  "hp": jogo.get("hp"), "almas": jogo.get("almas"), "drops": jogo.get("drops", [])}
+        doj = ds2nomes.nome_inimigo(t)
+        if doj:
+            base = doj["base"]
+            link = wiki.get("wiki") if wiki.get("nome") == base else (pagina_wiki(base) if pagina_wiki else None)
+            nome, prova, fonte = doj["nome"], doj["prova"], doj["fonte"]
+        else:
+            base, link, nome, prova = wiki.get("nome"), wiki.get("wiki"), wiki.get("nome"), wiki.get("prova")
+            fonte = "wiki" if nome else None
+        out[t] = {"nome": nome, "base": base, "wiki": link, "prova": prova, "fonte": fonte,
+                  "chefe": eh_chefe(base, chefes or []), "retrato": icone_local(base) if (icone_local and base) else None,
+                  "n": n, "hp": jogo.get("hp"), "almas": jogo.get("almas"), "drops": jogo.get("drops", [])}
+    return out
+
+
+def sem_nome_do_jogo(dados: dict) -> dict:
+    """Tipos de inimigo da área que o jogo não nomeia (nem pela linha nem pelo modelo): só esses vão para a wiki."""
+    import ds2nomes
+
+    tipos = dados.get("tipos_inimigo", {})
+    return {t: tipos.get(t, {}) for t in _contagem_tipos(dados) if not ds2nomes.nome_inimigo(t)}
+
+
+def objetos_para_pagina(dados: dict, onde_chave, pagina_wiki=None, icone_local=None) -> list:
+    """Objetos da área para a página; porta com chave leva o nome, o ícone e onde a chave está no chão do jogo."""
+    out = []
+    for o in dados.get("objetos", []):
+        item = {k: o.get(k) for k in ("cat", "nome", "pos", "rot", "andar", "zona", "lote")}
+        if o.get("chave"):
+            cid, cnome = o["chave"]
+            item["chave"] = {"id": cid, "nome": cnome, "icone": icone_local(cnome) if icone_local else None,
+                             "wiki": pagina_wiki(cnome) if pagina_wiki else None, "onde": onde_chave(cid)}
+        out.append(item)
     return out
 
 
 def area_para_pagina(dados: dict, nomes_plano: dict, icone_local, precisa: dict | None = None, chefes: dict | None = None,
-                     pagina_wiki=None, nomes_inimigo: dict | None = None) -> dict:
+                     pagina_wiki=None, nomes_inimigo: dict | None = None, onde_chave=None, chefes_jogo: list | None = None) -> dict:
     def ponto_item(p):
         nomes = [i["nome"] for i in p["itens"]]
         do_plano = [nomes_plano[n.casefold()] for n in nomes if n.casefold() in nomes_plano]
@@ -100,7 +145,7 @@ def area_para_pagina(dados: dict, nomes_plano: dict, icone_local, precisa: dict 
         itens = sorted(p["itens"], key=lambda i: i["nome"].casefold() not in nomes_plano)  # o do plano primeiro
         return {"lote": p["lote"], "pos": p["pos"], "andar": p.get("andar"), "zona": p.get("zona"), "itens": itens,
                 "icone": icone_local(principal) if principal else None, "plano": bool(do_plano),
-                "item_id": do_plano[0] if do_plano else None}
+                "item_id": do_plano[0] if do_plano else None, "no": p.get("no"), "chave": bool(p.get("chave"))}
 
     precisa, chefes = precisa or {}, chefes or {}
     andares = [{k: a[k] for k in ("id", "altura", "min", "max", "poligonos")} for a in dados["planta"]["andares"]]
@@ -110,7 +155,8 @@ def area_para_pagina(dados: dict, nomes_plano: dict, icone_local, precisa: dict 
         "itens": [ponto_item(p) for p in dados["itens"]],
         "inimigos": [{"id": e["id"], "pos": e["pos"], "andar": e.get("andar"), "zona": e.get("zona"), "tipo": str(e["tipo"])}
                      for e in dados.get("inimigos", []) if e.get("tipo") and not e.get("papel")],
-        "tipos_inimigo": tipos_para_pagina(dados, nomes_inimigo or {}),
+        "tipos_inimigo": tipos_para_pagina(dados, nomes_inimigo or {}, pagina_wiki, icone_local, chefes_jogo),
+        "objetos": objetos_para_pagina(dados, onde_chave or (lambda _id: []), pagina_wiki, icone_local),
         "npcs": [{"id": n["id"], "nome": n["nome"], "pos": n["pos"], "andar": n.get("andar"), "zona": n.get("zona"),
                   "retrato": icone_local(n["nome"]), "plano": bool(precisa.get(n["nome"].casefold())),
                   "precisa": precisa.get(n["nome"].casefold(), [])} for n in dados.get("npcs", [])],
@@ -186,23 +232,42 @@ def preparar(plano: dict, out_dir: Path, carregar_area, listar_areas, icone_loca
                 except Exception:
                     pass
 
-    if prebuscar:  # ícones de itens, NPCs e chefes das áreas, de uma vez (em paralelo, com cache)
+    import ds2nomes
+
+    bases_inimigo = {n["base"] for a in ordem for t in _contagem_tipos(area_de(a)) if (n := ds2nomes.nome_inimigo(t))}
+    chaves_portas = {o["chave"][1] for a in ordem for o in area_de(a).get("objetos", []) if o.get("chave")}
+    if prebuscar:  # ícones de itens, NPCs, chefes, inimigos e chaves das áreas, de uma vez (em paralelo, com cache)
         prebuscar(sorted({i["nome"] for a in ordem for p in area_de(a)["itens"] for i in p["itens"][:1]}
                          | {i["nome"] for a in ordem for p in area_de(a)["itens"] for i in p["itens"]
                             if i["nome"].casefold() in nomes_plano}
-                         | {x["nome"] for a in ordem for x in area_de(a).get("npcs", []) + area_de(a).get("chefes", [])}))
+                         | {x["nome"] for a in ordem for x in area_de(a).get("npcs", []) + area_de(a).get("chefes", [])}
+                         | bases_inimigo | chaves_portas))
+
+    def onde_chave(item_id: int) -> list:
+        """Onde a chave está no chão (ou em baú/cadáver) nas áreas da página."""
+        return [{"area": a, "nome": area_de(a)["nome"], "lote": p["lote"]} for a in ordem for p in area_de(a)["itens"]
+                if any(i["id"] == item_id for i in p["itens"])]
+
+    try:
+        import ds2save
+
+        chefes_jogo = json.loads((ds2save.GAME_DIR / "bosses.json").read_text(encoding="utf-8"))["chefes"]
+    except (ImportError, OSError, ValueError, KeyError):
+        chefes_jogo = []
     files, indice = {}, []
     nomes_rotulo = rotulos([area_de(a) for a in ordem])
     rota = json.loads(ROTA.read_text(encoding="utf-8"))
     for area_id in ordem:
         dados = area_de(area_id)
         nomes = {}
-        if nomes_inimigos:
+        faltam = sem_nome_do_jogo(dados)
+        if nomes_inimigos and faltam:  # a wiki só para o que o jogo não nomeia (poupa centenas de páginas)
             try:
-                nomes = nomes_inimigos(dados.get("tipos_inimigo", {}), dados["nome"])
+                nomes = nomes_inimigos(faltam, dados["nome"])
             except Exception:  # wiki fora do ar: inimigos ficam sem nome confirmado
                 nomes = {}
-        doc = area_para_pagina(dados, nomes_plano, icone_local, precisa_de_npc(plano), estado_chefes(plano), pagina_wiki, nomes)
+        doc = area_para_pagina(dados, nomes_plano, icone_local, precisa_de_npc(plano), estado_chefes(plano), pagina_wiki, nomes,
+                               onde_chave, chefes_jogo)
         destino = Path(out_dir) / "mapas" / f"{area_id}.json"
         destino.parent.mkdir(parents=True, exist_ok=True)
         destino.write_text(json.dumps(doc, ensure_ascii=False, separators=(",", ":")), encoding="utf-8")

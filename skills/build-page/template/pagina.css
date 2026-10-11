@@ -454,6 +454,32 @@ a.agora2-t:hover { text-decoration: underline; }
 .mp-inimigo:hover, .mp-inimigo:focus-visible { stroke: var(--head); stroke-width: 2; outline: none; }
 .mp-inimigo.mp-inimigo-sel { fill: var(--pos); stroke: #0c0c0d; }
 .mp-inimigo.mp-inimigo-fora { opacity: 0.25; }
+.mp-inimigo.mp-inimigo-chefe { stroke: var(--ember); stroke-width: 2.5; }
+.mp-inimigo-ret .mp-aro { stroke: var(--neg); stroke-width: 2; }
+.mp-inimigo-ret.mp-inimigo-sel .mp-aro { stroke: var(--pos); }
+.mp-alvo3d, .mp-alvo3d.mp-inimigo, .mp-alvo3d.mp-inimigo.mp-inimigo-chefe, .mp-alvo3d.mp-inimigo.mp-inimigo-sel { fill: transparent; stroke: transparent; pointer-events: all; cursor: pointer; }
+.mp-alvo3d:hover, .mp-alvo3d.mp-inimigo:hover, .mp-alvo3d:focus-visible, .mp-obj:hover .mp-alvo3d, .mp-obj:focus-visible .mp-alvo3d { stroke: var(--head); stroke-width: 1.5; outline: none; }
+/* objetos do mapa: forma na escala do mapa (cresce com o zoom), cor por tipo; porta com chave em ouro */
+.mp-obj { cursor: pointer; }
+.mp-obj-forma { stroke: #0c0c0d; stroke-width: 1; }
+.mp-obj-porta .mp-obj-forma { fill: #8a5a33; }
+.mp-obj-nevoa .mp-obj-forma { fill: rgba(232, 236, 242, 0.55); stroke: #e8ecf2; stroke-dasharray: 3 2; }
+.mp-obj-alavanca .mp-obj-forma { fill: #b4bcc4; }
+.mp-obj-haste { stroke: #b4bcc4; stroke-width: 2; stroke-linecap: round; }
+.mp-obj-elevador .mp-obj-forma { fill: rgba(111, 143, 174, 0.35); stroke: #6f8fae; stroke-width: 2; }
+.mp-obj-miolo { fill: #6f8fae; }
+.mp-obj-escada .mp-obj-forma { fill: #9c7a52; }
+.mp-obj-bau .mp-obj-forma { fill: #7b4f24; stroke: #d9b04a; }
+.mp-obj-pharros .mp-obj-forma { fill: #d7c27a; }
+.mp-obj-ponte .mp-obj-forma { fill: #9a8f7e; }
+.mp-obj-chave .mp-obj-forma { fill: #d9b04a; stroke: #3a2a08; }
+.mp-obj:hover .mp-obj-forma, .mp-obj:focus-visible .mp-obj-forma { stroke: var(--head); stroke-width: 2; }
+.mp-obj:focus-visible { outline: none; }
+.mp-badge-chave circle { fill: #1a1408; stroke: #d9b04a; stroke-width: 1.5; }
+.mp-badge-chave path { fill: none; stroke: #d9b04a; stroke-width: 1.6; stroke-linecap: round; }
+.mp-item-chave .mp-moldura { stroke: #d9b04a; stroke-width: 1.6; }
+.mp-no-bau .mp-moldura { fill: rgba(60, 36, 14, 0.9); }
+.mp-rotulo-chave { fill: #e8c66a; }
 .mp-fog { cursor: pointer; }
 .mp-eu-ponto { fill: var(--jogador); stroke: #fff; stroke-width: 2; }
 .mp-eu-pulso { fill: none; stroke: var(--jogador); stroke-width: 2; transform-box: fill-box; transform-origin: center; animation: mp-pulso 1.8s ease-out infinite; }
@@ -487,6 +513,9 @@ a.agora2-t:hover { text-decoration: underline; }
 .mp-pop .pesq { margin: 2px 0; padding: 2px 10px; font-size: 12px; }
 .mp-fonte { color: var(--dim); }
 .mp-prova { font-size: 11px; color: var(--dim); font-style: italic; }
+.mp-pop-foto { width: 40px; height: 40px; object-fit: cover; border-radius: 50%; border: 1.5px solid var(--neg); vertical-align: middle; margin-right: 8px; background: #1a1917; }
+.mp-pop-chave { display: flex; align-items: center; gap: 6px; color: #e8c66a; }
+.mp-pop-chave img { width: 24px; height: 24px; }
 .mp-qtd { color: var(--pos); }
 .mp-vazio { position: absolute; inset: 0; display: grid; place-items: center; padding: 16px; text-align: center; color: var(--text); font-style: italic; }
 .mp-vazio[hidden] { display: none; }
@@ -520,6 +549,9 @@ a.agora2-t:hover { text-decoration: underline; }
 .mp-k-parada { width: 28px; height: 10px; border-radius: 5px; background: linear-gradient(90deg, hsl(46 62% 62%), hsl(8 72% 38%)); }
 .mp-k-eu { background: var(--jogador); border: 1.5px solid #fff; border-radius: 50%; }
 .mp-k-inimigo { width: 8px; height: 8px; background: var(--neg); border-radius: 50%; }
+.mp-k-porta { width: 14px; height: 4px; background: #8a5a33; border: 1px solid #0c0c0d; }
+.mp-k-chave { width: 10px; height: 10px; background: #1a1408; border: 1.5px solid #d9b04a; border-radius: 50%; }
+.mp-k-bau { width: 11px; height: 8px; background: #7b4f24; border: 1px solid #d9b04a; }
 .mp-aviso { margin-left: auto; color: var(--dim); font-style: italic; }
 @media (max-width: 760px) {
   .mp-corpo { grid-template-columns: minmax(0, 1fr); }

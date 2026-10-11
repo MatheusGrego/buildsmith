@@ -10,29 +10,40 @@ def utf16z(text: str) -> bytes:
     return text.encode("utf-16-le") + bytes(2)
 
 
-def build_msb(parts: list[dict]) -> bytes:
-    """MSB mínimo: cabeçalho de 0x10 bytes e uma lista PARTS_PARAM_ST com as partes dadas."""
+def build_msb(parts: list[dict], modelos: list[str] | None = None) -> bytes:
+    """MSB mínimo: cabeçalho de 0x10 bytes, MODEL_PARAM_ST (se houver modelos) e PARTS_PARAM_ST com as partes dadas."""
     data = bytearray(b"MSB " + struct.pack("<ii", 1, 0x10) + bytes(4))
-    head = len(data)
-    count = len(parts) + 1
-    data += bytes(16 + 8 * count)
-    nome_lista = len(data)
-    data += utf16z("PARTS_PARAM_ST")
-    offsets = []
-    for p in parts:
+    listas = ([("MODEL_PARAM_ST", modelos)] if modelos is not None else []) + [("PARTS_PARAM_ST", parts)]
+    anterior = None
+    for nome, itens in listas:
         while len(data) % 8:
             data += b"\0"
-        e = len(data)
-        offsets.append(e)
-        entry = bytearray(0xB0)
-        struct.pack_into("<q", entry, 0, 0xB0)
-        struct.pack_into("<HHH", entry, 8, p["tipo"], 0, 0)
-        struct.pack_into("<3f", entry, 0x10, *p["pos"])
-        struct.pack_into("<I", entry, 0xA0, p.get("ref", 0))
-        data += entry + utf16z(p["nome"])
-    struct.pack_into("<ii", data, head, 5, count)
-    struct.pack_into("<q", data, head + 8, nome_lista)
-    struct.pack_into(f"<{count}q", data, head + 16, *offsets, 0)
+        head = len(data)
+        if anterior is not None:  # o último offset da lista anterior aponta para esta
+            struct.pack_into("<q", data, anterior, head)
+        count = len(itens) + 1
+        data += bytes(16 + 8 * count)
+        nome_lista = len(data)
+        data += utf16z(nome)
+        offsets = []
+        for p in itens:
+            while len(data) % 8:
+                data += b"\0"
+            offsets.append(len(data))
+            if nome == "MODEL_PARAM_ST":
+                data += struct.pack("<q", 0x20) + bytes(0x18) + utf16z(p)
+                continue
+            entry = bytearray(0xB0)
+            struct.pack_into("<q", entry, 0, 0xB0)
+            struct.pack_into("<HHh", entry, 8, p["tipo"], 0, p.get("modelo", -1))
+            struct.pack_into("<3f", entry, 0x10, *p["pos"])
+            struct.pack_into("<3f", entry, 0x1C, *p.get("rot", (0.0, 0.0, 0.0)))
+            struct.pack_into("<I", entry, 0xA0, p.get("ref", 0))
+            data += entry + utf16z(p["nome"])
+        struct.pack_into("<ii", data, head, 5, count)
+        struct.pack_into("<q", data, head + 8, nome_lista)
+        struct.pack_into(f"<{count}q", data, head + 16, *offsets, 0)
+        anterior = head + 16 + 8 * (count - 1)
     return bytes(data)
 
 
@@ -96,6 +107,54 @@ def test_msb_parts_with_position_and_reference():
     assert [(p["nome"], p["tipo"]) for p in partes] == [("n01_0100_0000", 4), ("o00_0100_0000", 1)]
     assert partes[1]["pos"] == pytest.approx((-128.0, 27.5, 604.0)) and partes[1]["ref"] == 10160653
     assert ds2mapa.origem(partes) == pytest.approx((-78.0, 4.0, 562.0))
+
+
+def test_msb_parts_carry_model_and_rotation():
+    msb = build_msb([{"nome": "o00_0300_0001", "tipo": 1, "pos": (1.0, 2.0, 3.0), "rot": (0.0, 90.0, 0.0), "modelo": 1,
+                      "ref": 10161200},
+                     {"nome": "n01_0100_0000", "tipo": 4, "pos": (0.0, 0.0, 0.0)}],
+                    modelos=["m10_16_00_00_0001", "O00_0300"])
+    porta, chao = ds2mapa.partes_msb(msb)
+    assert porta["modelo"] == "o00_0300" and porta["rot"] == pytest.approx((0.0, 90.0, 0.0)) and porta["ref"] == 10161200
+    assert chao["modelo"] == ""  # índice -1: sem modelo
+
+
+def test_object_instance_param_fields():
+    linha = bytearray(0x28)
+    struct.pack_into("<i", linha, 0, 1000)
+    struct.pack_into("<i", linha, 0x14, 210)
+    struct.pack_into("<i", linha, 0x24, 10165000)
+    inst = ds2mapa.instancias_objeto(build_param([(10161200, bytes(linha)), (10160653, struct.pack("<i", 16650))]))
+    assert inst[10161200] == {"param": 1000, "tipo": 210, "lote": 10165000}
+    assert inst[10160653] == {"param": 16650, "tipo": None, "lote": None}  # linha curta: só o param
+
+
+TABELAS = {"inimigos": {}, "personagens": {},
+           "objetos": {"o04_0470": "Large Stone Door (Forgotten Key)", "o00_0600": "Vertical Lever", "o00_0100": "Bonfire",
+                       "o00_0240": "Treasure Corpse (Hollow)", "o00_1001": "Barrel"}}
+
+
+def test_objects_doors_levers_chests_and_items_inside():
+    partes = [{"nome": "porta", "tipo": 1, "pos": (1.0, 0.0, 2.0), "rot": (0.0, 90.0, 0.0), "ref": 0, "modelo": "o04_0470"},
+              {"nome": "alavanca", "tipo": 1, "pos": (3.0, 0.0, 2.0), "rot": (0.0, 0.0, 0.0), "ref": 0, "modelo": "o00_0600"},
+              {"nome": "bau", "tipo": 1, "pos": (5.0, 0.0, 2.0), "rot": (0.0, 0.0, 0.0), "ref": 10165000, "modelo": "o99_0001"},
+              {"nome": "cadaver", "tipo": 1, "pos": (6.0, 0.0, 2.0), "rot": (0.0, 0.0, 0.0), "ref": 10166000, "modelo": "o00_0240"},
+              {"nome": "fogueira", "tipo": 1, "pos": (7.0, 0.0, 2.0), "rot": (0.0, 0.0, 0.0), "ref": 10160653, "modelo": "o00_0100"},
+              {"nome": "barril", "tipo": 1, "pos": (8.0, 0.0, 2.0), "rot": (0.0, 0.0, 0.0), "ref": 0, "modelo": "o00_1001"},
+              {"nome": "chao", "tipo": 0, "pos": (0.0, 0.0, 0.0), "rot": (0.0, 0.0, 0.0), "ref": 0, "modelo": "o04_0470"}]
+    inst = {10165000: {"param": 1, "tipo": 121, "lote": 10165000}, 10160653: {"param": 16650, "tipo": 100, "lote": 0}}
+    itens = {50820000: "Forgotten Key"}
+    objs = ds2mapa.montar_objetos(partes, inst, itens, TABELAS)
+    assert [(o["parte"], o["cat"]) for o in objs] == [("porta", "porta"), ("alavanca", "alavanca"), ("bau", "bau"),
+                                                      ("cadaver", "cadaver")]
+    porta = objs[0]
+    assert porta["chave"] == [50820000, "Forgotten Key"] and porta["rot"] == [0.0, 90.0, 0.0] and porta["pos"] == [1.0, 0.0, 2.0]
+    assert objs[2]["lote"] == 10165000 and objs[2]["inst"] == 121 and objs[3]["lote"] == 10166000
+    pontos = [{"lote": 10165000, "itens": [{"id": 50820000, "nome": "Forgotten Key", "qtd": 1}]},
+              {"lote": 10166000, "itens": [{"id": 60140000, "nome": "Firebomb", "qtd": 3}]},
+              {"lote": 10167000, "itens": [{"id": 60140000, "nome": "Firebomb", "qtd": 1}]}]
+    ds2mapa.marcar_itens(pontos, objs, {50820000})
+    assert [(p["no"], p["chave"]) for p in pontos] == [("bau", True), ("cadaver", False), (None, False)]
 
 
 def test_param_rows():
@@ -390,3 +449,25 @@ def test_real_lost_bastille_enemy_types(tmp_path):
     assert "Royal Greatsword" in tipos["152002"]["drops"]
     papeis = {e["tipo"]: e["papel"] for e in area["inimigos"] if e["tipo"]}
     assert papeis[768000] == "npc" and papeis[325000] == "chefe" and papeis[152002] is None
+
+
+@pytest.mark.skipif(not (GAME / "GameDataEbl.bhd").exists(), reason="DS2 SotFS não instalado")
+def test_real_lost_bastille_objects_and_the_pursuer(tmp_path):
+    import ds2nomes
+    area = ds2mapa.extrair_area(GAME, "m10_16_00_00", tmp_path)
+    cats = {o["cat"] for o in area["objetos"]}
+    assert {"porta", "elevador"} <= cats, cats
+    assert any(p["no"] == "bau" for p in area["itens"])
+    assert all("andar" in o and "zona" in o for o in area["objetos"])
+    perseguidor = [t for t in area["tipos_inimigo"] if int(t) // 100 == 3180]  # o Pursuer perto do McDuff
+    assert perseguidor and all(ds2nomes.nome_inimigo(t)["base"] == "The Pursuer" for t in perseguidor)
+
+
+def test_enemy_report_lists_names_and_the_unnamed():
+    dados = {"area": "m10_16_00_00", "nome": "The Lost Bastille",
+             "inimigos": [{"tipo": 318030, "papel": None}, {"tipo": 999901, "papel": None}, {"tipo": 999901, "papel": None},
+                          {"tipo": 768000, "papel": "npc"}],
+             "tipos_inimigo": {"318030": {"hp": 3000, "almas": 17000}, "999901": {"hp": 10, "almas": 1}}}
+    r = ds2mapa.relatorio_inimigos([dados])
+    assert [(t["tipo"], t["n"], t["nome"]) for t in r["areas"][0]["tipos"]] == [(999901, 2, None), (318030, 1, "The Pursuer")]
+    assert [(x["area"], x["tipo"]) for x in r["sem_nome"]] == [("m10_16_00_00", 999901)]
