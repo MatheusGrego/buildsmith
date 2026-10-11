@@ -142,7 +142,7 @@
   }
 
   function secaoPassos(p) {
-    if (!p.passos.length) return '<section><h2>Próximos passos</h2><p class="empty">Nenhum passo pendente. Marque itens no Catálogo: comprar, trocar, pegar, upar e equipar aparecem aqui.</p></section>';
+    if (!p.passos.length) return '<section><h2>Próximos passos</h2><p class="empty">Nenhum passo pendente.</p></section>';
     const ordenados = [...p.passos].sort((a, b) => ORDEM_GRUPOS.indexOf(a.tipo) - ORDEM_GRUPOS.indexOf(b.tipo));
     const numero = Object.fromEntries(ordenados.map((s, i) => [s.id, i + 1]));
     return `<section><h2>Próximos passos<small id="passos-feitos"></small></h2>${mestreDetalhe("passo", ordenados,
@@ -158,7 +158,7 @@
   }
 
   function secaoOnde(p) {
-    if (!p.itens.length) return '<section><h2>Onde pegar</h2><p class="empty">Nenhum item ainda. Marque o que você quer no Catálogo: as fontes saem do jogo e do save.</p></section>';
+    if (!p.itens.length) return '<section><h2>Onde pegar</h2><p class="empty">Nenhum item. Marque no Catálogo.</p></section>';
     return `<section><h2>Onde pegar<small>mais cedo e mais rentável a partir de onde você está</small></h2>${mestreDetalhe("item", p.itens,
       (it) => {
         const m = maisCedo(it);
@@ -316,7 +316,7 @@
   function secaoCatalogo() {
     const C = window.buildsmithCatalogo;
     const filtros = C ? C.CATEGORIAS.map(([id, nome]) => `<button class="pesq" type="button" data-cat="${id}" aria-pressed="false">${esc(nome)}</button>`).join("") : "";
-    return `<section class="catalogo"><h2>Catálogo<small>marque o que você quer: onde pegar e os passos saem do jogo e do save, sem IA</small></h2>
+    return `<section class="catalogo"><h2>Catálogo<small id="cat-total"></small></h2>
       <div class="cat-ctrl"><input type="search" id="cat-busca" placeholder="Buscar item pelo nome" aria-label="Buscar item" autocomplete="off">
         <label class="cat-so"><input type="checkbox" id="cat-so"> só marcados</label></div>
       <div class="cat-filtros" role="group" aria-label="Categoria">${filtros}</div>
@@ -326,7 +326,7 @@
 
   function semCatalogo() {
     const lista = document.getElementById("cat-lista");
-    if (lista) lista.innerHTML = '<p class="empty">O catálogo precisa do servidor local (Buildsmith.exe): na página publicada ele não abre, e Onde pegar mostra o que foi publicado.</p>';
+    if (lista) lista.innerHTML = '<p class="empty">O catálogo só abre pelo Buildsmith.exe.</p>';
   }
 
   async function carregarCatalogo(tentativa = 0) {
@@ -334,7 +334,7 @@
     try {
       const r = await fetch("/api/ds2/catalogo", { cache: "no-store" });
       if (r.status === 202) {
-        if (lista && !state.catalogo) lista.innerHTML = '<p class="empty">Montando o catálogo a partir dos arquivos do jogo (só na primeira vez)…</p>';
+        if (lista && !state.catalogo) lista.innerHTML = '<p class="empty">Montando o catálogo (só na primeira vez)…</p>';
         if (tentativa < 400) setTimeout(() => carregarCatalogo(tentativa + 1), 1500);
         return;
       }
@@ -355,11 +355,13 @@
       const id = String(it.id), m = marc.has(id);
       const sub = [C.NOME_CAT[it.cat] || it.cat, C.reqTexto(it.req), C.resumoFontes(it.fontes)].filter(Boolean).join(" · ");
       return `<li class="cat-i${m ? " marcado" : ""}">
-        <button class="estrela" type="button" data-quero="${esc(id)}" aria-pressed="${m}" aria-label="${m ? "Desmarcar" : "Marcar"} ${esc(it.nome)}" title="${m ? "Desmarcar" : "Marcar: onde pegar e passos sem IA"}"${state.db ? "" : " disabled"}>★</button>
+        <button class="estrela" type="button" data-quero="${esc(id)}" aria-pressed="${m}" aria-label="${m ? "Desmarcar" : "Marcar"} ${esc(it.nome)}" title="${m ? "Desmarcar" : "Marcar"}"${state.db ? "" : " disabled"}>★</button>
         ${icon(it.icone, it.nome)}<span class="cat-txt"><span class="cat-nm">${esc(it.nome)}</span><span class="cat-sub">${esc(sub)}</span></span>
         ${m ? `<a class="req-link" href="#item-${esc(C.idNoPlano(state.plano, it))}" data-goto-item="${esc(C.idNoPlano(state.plano, it))}">onde pegar</a>` : ""}
       </li>`;
     }).join("");
+    const total = document.getElementById("cat-total");
+    if (total) total.textContent = `${fmt.format(state.catalogo.length)} itens`;
     const resto = achados.length > C.LIMITE ? `<p class="muted">Mostrando ${C.LIMITE} de ${fmt.format(achados.length)}: refine a busca.</p>` : "";
     lista.innerHTML = achados.length ? `<ul class="cat-lista">${linhas}</ul>${resto}` : '<p class="empty">Nenhum item com esse filtro.</p>';
     fallbackIcons(lista);
@@ -1000,6 +1002,13 @@
     });
     const atr = app.querySelector('[data-pane="atributos"]');
     if (atr && v.stats) atr.innerHTML = stats({ ...p, personagem: { ...c, stats: v.stats } });
+    const prog = app.querySelector('[data-pane="progresso"]');
+    if (prog && (v.progresso_chefes || p.progresso)) {
+      const pr = V.progressoAoVivo(p.progresso, v);
+      prog.innerHTML = progress({ ...p, progresso: pr });
+      fallbackIcons(prog);
+      contar("progresso", pr.chefes.filter((ch) => ch.estado === "derrotado").length);
+    }
     const ficha = app.querySelector('[data-pane="ficha"]');
     if (ficha) {
       ficha.innerHTML = sheet({ ...p, personagem: { ...c, level: v.nivel, souls: v.almas, soul_memory: v.soul_memory } }) + changes(p);

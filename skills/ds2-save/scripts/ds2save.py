@@ -457,7 +457,8 @@ def mundos(path) -> dict[str, bytes]:
 
 def ao_vivo(path, names=None) -> dict[str, dict]:
     """slug -> o que a página mostra ao vivo: nível, almas, atributos, inventário (nome, quantidade, reforço,
-    categoria), equipado e chefes derrotados (flags do bosses.json no bloco de mundo). Uma leitura do save para todos."""
+    categoria), equipado e chefes derrotados (flags do bosses.json no bloco de mundo), e todos os chefes com o estado
+    (a aba Progresso segue o save, não o plano). Uma leitura do save para todos."""
     names = names if names is not None else load_item_names()
     entries = _read_entries(path)
     ocupados = list(_occupied(entries))
@@ -478,6 +479,8 @@ def ao_vivo(path, names=None) -> dict[str, dict]:
                       for i in info["inventory"] if i["category"] != "?"],
             "equipado": equipado,
             "chefes": [c["nome"] for c in chefes if ok_flag(c["flag"])],
+            "progresso_chefes": [{"nome": c["nome"], "area": c.get("area"), "derrotado": ok_flag(c["flag"]),
+                                  "wiki": c.get("wiki")} for c in chefes],
         }
     return out
 

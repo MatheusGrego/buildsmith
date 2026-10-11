@@ -466,7 +466,7 @@
       const acesa = st.acesas ? st.acesas.has(z.fogueira) : null;
       return `<li><button type="button" class="mp-zona-i${acesa === false ? " mp-zona-apagada" : ""}" data-zona="${z.ordem}" aria-pressed="${st.zonaSel === z.ordem}">
         <span class="mp-zn" style="background:${corDe(z.ordem)}">${z.ordem}</span>
-        <span class="mp-zt">${esc(z.nome)}${acesa === null ? "" : `<span class="mp-zfog${acesa ? "" : " apagada"}">${acesa ? "fogueira acesa" : "fogueira apagada"}</span>`}${resumo ? `<span class="mp-zr">${esc(resumo)}</span>` : ""}${chefes.map((c) => `<span class="mp-zchefe${c.estado === "derrotado" ? " derrotado" : ""}">Chefe: ${esc(c.nome)}</span>`).join("")}</span>
+        <span class="mp-zt">${esc(z.nome)}${acesa === null ? "" : `<span class="mp-zfog${acesa ? "" : " apagada"}">${acesa ? "fogueira acesa" : "fogueira apagada"}</span>`}${resumo ? `<span class="mp-zr">${esc(resumo)}</span>` : ""}${chefes.map((c) => `<span class="mp-zchefe${estadoChefe(c) === "derrotado" ? " derrotado" : ""}">Chefe: ${esc(c.nome)}</span>`).join("")}</span>
       </button></li>`;
     }).join("") || '<li class="mp-sem">Área sem fogueira.</li>';
     const por = d.zonas ? d.zonas.ordem_por : "nenhuma";
@@ -814,7 +814,7 @@
       const [sx, sy, longe] = q;
       const estado = estadoAndar(c.andar, andarSel);
       const r = (estado === "cheio" ? tam + 12 : Math.max(14, tam - 4)) / 2;
-      partes.push(retrato(`c${i}`, sx, sy, r, c.retrato, `mp-chefe ${c.estado === "derrotado" ? "derrotado" : ""} ${estado}${longe}`, c.nome,
+      partes.push(retrato(`c${i}`, sx, sy, r, c.retrato, `mp-chefe ${estadoChefe(c) === "derrotado" ? "derrotado" : ""} ${estado}${longe}`, c.nome,
         estado === "cheio" && !longe ? c.nome : "", `data-tipo="chefe" data-i="${i}"`));
     });
     // rota no 3D: a linha é projetada aqui (no 2D ela fica no mundo, em desenharChao)
@@ -876,7 +876,8 @@
         ? `<p class="mp-pop-sub">O plano precisa:</p><ul>${p.precisa.map((x) => `<li>${esc(x)}</li>`).join("")}</ul>` : '<p class="mp-pop-sub">Nada do plano.</p>'}`;
     } else if (tipo === "chefe") {
       const link = linkSeguro(p.wiki);
-      corpo = `<p class="mp-pop-tit">${esc(p.nome)}</p><p><span class="estado${p.estado === "derrotado" ? " feito" : ""}">${p.estado === "derrotado" ? "Derrotado" : p.estado === "vivo" ? "Vivo" : "—"}</span></p>${link ? `<a href="${esc(link)}" target="_blank" rel="noopener noreferrer">página na wiki</a>` : ""}`;
+      const est = estadoChefe(p);
+      corpo = `<p class="mp-pop-tit">${esc(p.nome)}</p><p><span class="estado${est === "derrotado" ? " feito" : ""}">${est === "derrotado" ? "Derrotado" : est === "vivo" ? "Vivo" : "—"}</span></p>${link ? `<a href="${esc(link)}" target="_blank" rel="noopener noreferrer">página na wiki</a>` : ""}`;
     } else if (tipo === "inimigo") {
       const t = tipoInimigo(p.tipo), link = linkSeguro(t.wiki);
       const numeros = [t.hp != null ? `HP ${fmt.format(t.hp)}` : "", t.almas ? `${fmt.format(t.almas)} almas` : ""].filter(Boolean).join(" · ");
@@ -1153,6 +1154,8 @@
     const V = typeof window !== "undefined" && window.buildsmithVivo;
     return Boolean(st.vivo && V && p.itens.some((it) => V.itemNoSave(it.nome, st.vivo)));
   }
+  // Chefe derrotado ou vivo: pelo save ao vivo quando há, senão pelo plano.
+  const estadoChefe = (c) => (window.buildsmithVivo ? window.buildsmithVivo.estadoChefe(c.nome, c.estado, st.vivo) : c.estado);
   function setVivo(v) {
     const V = window.buildsmithVivo;
     st.vivo = v && V ? V.indice(v) : null;

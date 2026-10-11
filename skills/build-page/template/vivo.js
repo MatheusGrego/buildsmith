@@ -82,5 +82,26 @@
     return { feito: passo.tipo === "compra" || passo.tipo === "troca", texto };
   }
 
-  return { indice, itemNoSave, estadoPasso, _teste: { indice, itemNoSave, estadoPasso, alvoNumero, statDe } };
+  // Progresso pelo save: todos os chefes com o estado do save (o nó do plano, com ícone, quando o plano tem o chefe);
+  // compras e eventos ficam os do plano. Servidor sem a lista completa: o estado do plano, corrigido pelos derrotados.
+  function progressoAoVivo(pr, vivo) {
+    const base = pr || { chefes: [], compras: [], eventos: [] };
+    const doPlano = new Map((base.chefes || []).map((c) => [chave(c.no && c.no.nome), c]));
+    const lista = vivo && Array.isArray(vivo.progresso_chefes) ? vivo.progresso_chefes : null;
+    const derrotados = new Set(((vivo && vivo.chefes) || []).map(chave));
+    const chefes = lista
+      ? lista.map((c) => {
+        const p = doPlano.get(chave(c.nome));
+        const no = p ? p.no : { tipo: "chefe", nome: c.nome, sub: c.area || "", ...(c.wiki ? { link: c.wiki } : {}) };
+        return { no, estado: c.derrotado ? "derrotado" : "vivo" };
+      })
+      : (base.chefes || []).map((c) => (derrotados.has(chave(c.no && c.no.nome)) ? { ...c, estado: "derrotado" } : c));
+    return { ...base, chefes, compras: base.compras || [], eventos: base.eventos || [] };
+  }
+
+  // Estado do chefe no mapa: o do save quando há save ao vivo, senão o do plano.
+  const estadoChefe = (nome, estadoPlano, ix) => (ix ? (ix.chefes.has(chave(nome)) ? "derrotado" : "vivo") : estadoPlano);
+
+  return { indice, itemNoSave, estadoPasso, progressoAoVivo, estadoChefe,
+           _teste: { indice, itemNoSave, estadoPasso, alvoNumero, statDe } };
 });

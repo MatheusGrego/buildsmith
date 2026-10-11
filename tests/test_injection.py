@@ -549,3 +549,36 @@ console.log(JSON.stringify({out, out2, item: V.itemNoSave("LARGE TITANITE SHARD"
     assert o["Libertar o Straid"] is None and o["Ring of Knowledge"] is None
     assert r["item"]["qtd"] == 3 and r["item"]["up"] is None and r["nada"] is None  # soma as entradas do mesmo item
     assert r["alvo"] == [3, 3, None] and r["stat"] == "INT"
+
+
+
+@pytest.mark.skipif(shutil.which("node") is None, reason="sem node para rodar o JS da página")
+def test_progress_and_map_bosses_follow_the_live_save(tmp_path):
+    script = tmp_path / "progresso.js"
+    script.write_text(r"""
+const V = require(process.argv[2]);
+const vivo = {chefes: ["Covetous Demon", "The Pursuer"], progresso_chefes: [
+  {nome: "The Pursuer", area: "Forest of Fallen Giants", derrotado: true, wiki: "https://darksouls2.wiki.fextralife.com/The+Pursuer"},
+  {nome: "Covetous Demon", area: "Huntsman's Copse", derrotado: true, wiki: "https://darksouls2.wiki.fextralife.com/Covetous+Demon"},
+  {nome: "Mytha, the Baneful Queen", area: "Earthen Peak", derrotado: false, wiki: "https://darksouls2.wiki.fextralife.com/Mytha"}]};
+const plano = {chefes: [{no: {tipo: "chefe", nome: "Covetous Demon", icone: "icons/cov.png", sub: "Huntsman's Copse"}, estado: "vivo"}],
+               compras: [{loja: {nome: "McDuff"}, item: {nome: "Uchigatana"}, qtd: 1}], eventos: []};
+const ix = V.indice(vivo);
+console.log(JSON.stringify({com: V.progressoAoVivo(plano, vivo), sem: V.progressoAoVivo(undefined, vivo),
+  velho: V.progressoAoVivo(plano, {chefes: []}),
+  mapa: [V.estadoChefe("Covetous Demon", "vivo", ix), V.estadoChefe("Mytha, the Baneful Queen", "derrotado", ix),
+         V.estadoChefe("Covetous Demon", "vivo", null)]}));
+""", encoding="utf-8")
+    out = subprocess.run(["node", str(script), str(ROOT / "skills/build-page/template/vivo.js")], capture_output=True,
+                         encoding="utf-8", timeout=20, check=True)
+    r = json.loads(out.stdout)
+    com = r["com"]
+    assert [(c["no"]["nome"], c["estado"]) for c in com["chefes"]] == [
+        ("The Pursuer", "derrotado"), ("Covetous Demon", "derrotado"), ("Mytha, the Baneful Queen", "vivo")]
+    assert com["chefes"][1]["no"]["icone"] == "icons/cov.png"  # o nó do plano (com ícone) fica
+    assert com["chefes"][0]["no"] == {"tipo": "chefe", "nome": "The Pursuer", "sub": "Forest of Fallen Giants",
+                                      "link": "https://darksouls2.wiki.fextralife.com/The+Pursuer"}
+    assert com["compras"] == [{"loja": {"nome": "McDuff"}, "item": {"nome": "Uchigatana"}, "qtd": 1}]
+    assert [c["estado"] for c in r["sem"]["chefes"]] == ["derrotado", "derrotado", "vivo"] and r["sem"]["compras"] == []
+    assert r["velho"]["chefes"][0]["estado"] == "vivo"  # servidor antigo, sem a lista: fica o plano
+    assert r["mapa"] == ["derrotado", "vivo", "vivo"]

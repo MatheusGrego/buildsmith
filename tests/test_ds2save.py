@@ -249,6 +249,17 @@ def test_live_state_has_defeated_bosses(world_save, names):  # o save_file e o w
     assert set(w["chefes"]) == {"The Pursuer", "The Last Giant"}  # flags 100968 e 100971 ligadas
 
 
+def test_live_state_lists_every_boss_with_its_state(world_save, names):
+    """A aba Progresso da página (com plano ou sem) segue o save: todos os chefes, derrotado ou não."""
+    todos = ds2save.ao_vivo(world_save, names)["personagem-um"]["progresso_chefes"]
+    chefes = ds2save._game_json("bosses.json")["chefes"]
+    assert [c["nome"] for c in todos] == [c["nome"] for c in chefes]
+    por_nome = {c["nome"]: c for c in todos}
+    assert por_nome["The Pursuer"] == {"nome": "The Pursuer", "area": "Forest of Fallen Giants", "derrotado": True,
+                                       "wiki": "https://darksouls2.wiki.fextralife.com/The+Pursuer"}
+    assert por_nome["Ruin Sentinels"]["derrotado"] is False
+
+
 def _mundo(onde=0x2EF2C) -> bytes:
     bastille = registro_eventos(0x0A100000, [(10160432, 30), (10160440, 10), (10162020, 33), (10165010, 80), (10165020, 20)],
                          [(10166180, 0x1100001), (10166190, 0x100401), (10166201, 0x100401)])
