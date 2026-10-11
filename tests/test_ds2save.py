@@ -247,3 +247,58 @@ def test_live_state_has_inventory_and_equipment(save_file, names):
 def test_live_state_has_defeated_bosses(world_save, names):  # o save_file e o world_save são o mesmo arquivo
     w = ds2save.ao_vivo(world_save, names)["personagem-um"]
     assert set(w["chefes"]) == {"The Pursuer", "The Last Giant"}  # flags 100968 e 100971 ligadas
+
+
+def _registro(mapa: int, pares=(), lotes=()) -> bytes:
+    """Registro de 0xC08 da tabela de eventos do bloco de mundo: mapa, n, 192 pares, 192 lotes e o estado de cada lote."""
+    reg = bytearray(0xC08)
+    struct.pack_into("<II", reg, 0, mapa, len(pares))
+    for i, (ev, est) in enumerate(pares):
+        struct.pack_into("<II", reg, 8 + 8 * i, ev, est)
+    for i, (lote, est) in enumerate(lotes):
+        struct.pack_into("<I", reg, 0x608 + 4 * i, lote)
+        struct.pack_into("<I", reg, 0x908 + 4 * i, est)
+    return bytes(reg)
+
+
+def _mundo(onde=0x2EF2C) -> bytes:
+    bastille = _registro(0x0A100000, [(10160432, 30), (10160440, 10), (10162020, 33), (10165010, 80), (10165020, 20)],
+                         [(10166180, 0x1100001), (10166190, 0x100401), (10166201, 0x100401)])
+    harvest = _registro(0x0A110000, [(10172100, 20), (10173200, 10)], [(10176160, 0x1100003), (0, 0)])
+    majula = _registro(0x0A040000, [(10040450, 50)], [])
+    w = bytearray(0x50000)
+    w[0x100:0x104] = struct.pack("<I", 0x0A040000)  # cabeçalho de outra tabela: não confunde a busca
+    w[onde:onde + 3 * 0xC08] = bastille + harvest + majula
+    return bytes(w)
+
+
+def test_world_state_follows_the_rule_found_in_the_save():
+    refs = ["porta:10160432", "porta:10160440", "porta:10040450", "alavanca:10172100", "alavanca:10173200",
+            "bau:10165010", "bau:10165020", "lote:10166180", "lote:10166190", "lote:10176160", "lote:10166200",
+            "lote:10169999", "porta:10169999", "elevador:10162020", "porta:99"]
+    for onde in (0x2EF2C, 0x3AF3C):  # a tabela muda de lugar entre gravações
+        estado = ds2save.estado_mundo(_mundo(onde), refs)
+        assert estado == {
+            "porta:10160432": True, "porta:10160440": False, "porta:10040450": None,  # 50: estado sem regra
+            "alavanca:10172100": True, "alavanca:10173200": False,
+            "bau:10165010": True, "bau:10165020": False,
+            "lote:10166180": True, "lote:10166190": False, "lote:10176160": True,
+            "lote:10166200": False,  # Bonfire Ascetic: o save tem o lote do NG+ (…01) para o …00 do mapa
+            "lote:10169999": None, "porta:10169999": None, "elevador:10162020": None, "porta:99": None,
+        }
+
+
+def test_world_without_the_table_has_no_state():
+    assert ds2save.estado_mundo(bytes(0x1000), ["porta:10160432", "lote:10166180"]) == {
+        "porta:10160432": None, "lote:10166180": None}
+
+
+@pytest.mark.skipif(_real_save() is None, reason="sem save real do DS2 nesta máquina")
+def test_real_save_world_table_and_the_spike_door():
+    path = _real_save()
+    entradas = ds2save.blocos(path)
+    for s in ds2save.list_slots(path):
+        tabela = ds2save.tabela_eventos(entradas[f"USER_DATA{10 + s['slot']:03d}"])
+        assert len(tabela) >= 20 and 1004 in tabela  # Majula sempre está lá
+        if s["name"] == "Personagem Um":  # o personagem do spike: cela da Bastille aberta com a Bastille Key
+            assert ds2save.estado_mundo(entradas[f"USER_DATA{10 + s['slot']:03d}"], ["porta:10160432"]) == {"porta:10160432": True}

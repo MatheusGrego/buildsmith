@@ -53,6 +53,14 @@ FLAG_MIN, FLAG_MAX = 100000, 110000
 # ≠ 0 = acesa. Conferido em 11 backups de um save: cada fogueira nova aparece quando o personagem passa por ela.
 OFF_FOGUEIRAS = 0x282CC
 FOGUEIRAS_MAX = 256
+# Tabela de eventos por área no bloco de mundo (spec, "Estado do mundo no save"): registros de 0xC08 seguidos, um por
+# mapa: u32 mapa, u32 n, 192 pares (evento, estado), 192 lotes em +0x608 e o estado de cada lote em +0x908. A posição
+# muda entre gravações: acha-se pelos cabeçalhos. Evento = ref da parte do MSB (baú: o próprio lote).
+EVT_REGISTRO, EVT_MAX, EVT_LOTES, EVT_LOTES_ESTADO = 0xC08, 192, 0x608, 0x908
+LOTE_PEGO = 0x1000000
+# só estados vistos mudando com a ação certa nas cópias do save; o resto fica sem estado (None)
+ESTADO_OBJETO = {"porta": {10: False, 20: True, 30: True}, "alavanca": {10: False, 20: True, 30: True},
+                 "bau": {10: False, 20: False, 21: False, 24: False, 80: True, 84: True, 100: True}}
 LEARNED_DEFAULT = Path.home() / ".buildsmith" / "flags" / "ds2.json"
 GAME_DIRS = [
     Path(r"C:\Program Files (x86)\Steam\steamapps\common\Dark Souls II Scholar of the First Sin\Game"),
@@ -303,6 +311,59 @@ def diff_blocos(antes: dict[str, bytes], depois: dict[str, bytes]) -> list[dict]
             x = a[off] ^ b[off]
             bit = 7 - x.bit_length() + 1 if x & (x - 1) == 0 else None
             out.append({"bloco": nome, "offset": off, "bit": bit, "antes": a[off], "depois": b[off]})
+    return out
+
+
+def _mapa_do_registro(v: int) -> int | None:
+    """Prefixo dos eventos do mapa (1016 para m10_16) se v é o cabeçalho de um registro (0x0A100000), senão None."""
+    a, b = v >> 24, (v >> 16) & 0xFF
+    return a * 100 + b if v & 0xFFFF == 0 and a in (10, 20, 40, 50) and b < 60 else None
+
+
+def tabela_eventos(world: bytes) -> dict[int, dict]:
+    """Prefixo do mapa -> {"eventos": {evento: estado}, "lotes": {lote: estado do lote}} (vazio sem a tabela)."""
+    off = 0
+    while off + 3 * EVT_REGISTRO <= len(world):
+        v, n = struct.unpack_from("<II", world, off)
+        pre = _mapa_do_registro(v)
+        if (pre and 0 < n <= EVT_MAX and struct.unpack_from("<I", world, off + 8)[0] // 10000 == pre
+                and all(_mapa_do_registro(struct.unpack_from("<I", world, off + k * EVT_REGISTRO)[0]) for k in (1, 2))):
+            break
+        off += 4
+    else:
+        return {}
+    out = {}
+    while off + EVT_REGISTRO <= len(world):
+        v, n = struct.unpack_from("<II", world, off)
+        pre = _mapa_do_registro(v)
+        if not pre or n > EVT_MAX:
+            break
+        pares = struct.unpack_from(f"<{2 * n}I", world, off + 8)
+        lotes = struct.unpack_from(f"<{EVT_MAX}I", world, off + EVT_LOTES)
+        estados = struct.unpack_from(f"<{EVT_MAX}I", world, off + EVT_LOTES_ESTADO)
+        out[pre] = {"eventos": dict(zip(pares[::2], pares[1::2])),
+                    "lotes": {lote: e for lote, e in zip(lotes, estados) if lote}}
+        off += EVT_REGISTRO
+    return out
+
+
+def estado_mundo(world: bytes, refs: list[str]) -> dict[str, bool | None]:
+    """Estado de cada ref ("porta:<evento>", "alavanca:<evento>", "bau:<evento>", "lote:<lote>"): True aberta/puxada/
+    aberto/pego, False não, None sem estado (área ainda não carregada, estado sem regra conferida, tipo sem regra)."""
+    tabela = tabela_eventos(world)
+    out = {}
+    for ref in refs:
+        tipo, _, num = ref.partition(":")
+        num = int(num) if num.isdigit() else 0
+        reg = tabela.get(num // 10000) if num >= 10_000_000 else None
+        if reg is None:
+            out[ref] = None
+        elif tipo == "lote":
+            base = num - num % 10  # a Bonfire Ascetic troca o lote pelo do NG+ (…20 -> …21)
+            achados = [e for lote, e in reg["lotes"].items() if lote - lote % 10 == base]
+            out[ref] = bool(achados[0] & LOTE_PEGO) if achados else None
+        else:
+            out[ref] = ESTADO_OBJETO.get(tipo, {}).get(reg["eventos"].get(num))
     return out
 
 

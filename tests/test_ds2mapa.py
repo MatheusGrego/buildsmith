@@ -196,7 +196,8 @@ def test_build_area_classifies_bonfires_items_and_enemies():
         geradores=[(145, (-49.3, 23.7, 39.1))], assinatura="x")
     assert area["fogueiras"] == [{"id": 16650, "nome": "Straid's Cell", "pos": [-128.1, 27.7, 604.2]}]
     assert area["itens"] == [{"lote": 10165290, "pos": [-118.0, 27.7, 601.8],
-                              "itens": [{"id": 19010000, "nome": "Petrified Dragon Bone", "qtd": 1}, {"id": 60140000, "nome": "Firebomb", "qtd": 3}]}]
+                              "itens": [{"id": 19010000, "nome": "Petrified Dragon Bone", "qtd": 1}, {"id": 60140000, "nome": "Firebomb", "qtd": 3}],
+                              "estado_ref": "lote:10165290"}]
     assert area["inimigos"] == [{"id": 145, "pos": [-127.3, 27.7, 601.1]}]
     assert area["malhas"] == [{"v": [0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 1.0], "f": [0, 1, 2]}]
     assert area["origem"] == [-78.0, 4.0, 562.0] and area["nome"] == "The Lost Bastille"
@@ -481,3 +482,18 @@ def test_npc_gets_its_own_model_from_the_nearest_generator():
     ds2mapa.modelos_npcs(npcs, gens)
     assert npcs[0]["modelo"] == "c7680" and npcs[0]["rot"] == [0, 45, 0]
     assert "modelo" not in npcs[1]  # sem gerador: fica só o retrato
+
+
+def test_objects_and_items_carry_the_save_state_ref():
+    partes = [{"nome": "porta", "tipo": 1, "pos": (1.0, 0.0, 2.0), "rot": (0.0, 0.0, 0.0), "ref": 10160432, "modelo": "o04_0470"},
+              {"nome": "alavanca", "tipo": 1, "pos": (3.0, 0.0, 2.0), "rot": (0.0, 0.0, 0.0), "ref": 10161015, "modelo": "o00_0600"},
+              {"nome": "alavanca0", "tipo": 1, "pos": (3.0, 0.0, 2.0), "rot": (0.0, 0.0, 0.0), "ref": 0, "modelo": "o00_0600"},
+              {"nome": "bau", "tipo": 1, "pos": (5.0, 0.0, 2.0), "rot": (0.0, 0.0, 0.0), "ref": 10165000, "modelo": "o99_0001"},
+              {"nome": "cadaver", "tipo": 1, "pos": (6.0, 0.0, 2.0), "rot": (0.0, 0.0, 0.0), "ref": 10166000, "modelo": "o00_0240"}]
+    inst = {10165000: {"param": 1, "tipo": 121, "lote": 10165000}}
+    objs = ds2mapa.montar_objetos(partes, inst, {50820000: "Forgotten Key"}, TABELAS)
+    assert [o.get("estado_ref") for o in objs] == ["porta:10160432", "alavanca:10161015", None, "bau:10165000", None]
+    area = ds2mapa.montar_area("m10_16_00_00", "x", [{"nome": "o", "tipo": 1, "pos": (0.0, 0.0, 0.0), "ref": 10165290}],
+                               instancias={}, nomes_fogueira={}, lotes={10165290: [(60140000, 1)]},
+                               nomes_itens={60140000: "Firebomb"}, malhas=[], geradores=[], assinatura="x")
+    assert area["itens"][0]["estado_ref"] == "lote:10165290"

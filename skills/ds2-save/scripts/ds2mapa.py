@@ -29,8 +29,9 @@ from pathlib import Path
 from ds2planta import PLANTA_VERSAO  # noqa: F401 (versão da planta guardada no cache)
 
 AREA = re.compile(r"^m(\d\d)_(\d\d)_(\d\d)_(\d\d)$")
-EXTRACAO_VERSAO = 7  # 2: NPCs e chefes; 3: início do mapa (zonas); 4: tipo de inimigo; 5: objetos; 6: rotação do inimigo;
-                     # 7: modelo do NPC
+EXTRACAO_VERSAO = 8  # 2: NPCs e chefes; 3: início do mapa (zonas); 4: tipo de inimigo; 5: objetos; 6: rotação do inimigo;
+                     # 7: modelo do NPC; 8: estado_ref (estado pelo save)
+ESTADO_CATS = ("porta", "alavanca", "bau")  # objetos com regra de estado no save (ds2save.estado_mundo)
 EP_HP, EP_ALMAS, EP_LOTES = 0x28, 0xD0, (0x4C, 0x134)  # EnemyParam
 INICIO_MAPA = "マップ開始地点"  # nome do ponto de início no MSB (texto do próprio jogo)
 JUNTAR_NPC = 15.0  # metros: geradores do mesmo NPC mais perto que isso viram um marcador só
@@ -313,7 +314,8 @@ def montar_objetos(partes: list[dict], instancias: dict[int, dict], nomes_itens:
         lote = inst.get("lote") if (inst.get("lote") or 0) > 0 else (p["ref"] if o["cat"] in ("bau", "cadaver") else None)
         out.append({"parte": p["nome"], "modelo": p.get("modelo", ""), "cat": o["cat"], "nome": o["nome"],
                     "pos": _r(p["pos"]), "rot": _r(p.get("rot", (0, 0, 0))), "chave": o["chave"],
-                    "ref": p["ref"] or None, "lote": lote or None, "inst": inst.get("tipo")})
+                    "ref": p["ref"] or None, "lote": lote or None, "inst": inst.get("tipo"),
+                    "estado_ref": f"{o['cat']}:{p['ref']}" if p["ref"] and o["cat"] in ESTADO_CATS else None})
     return out
 
 
@@ -344,7 +346,8 @@ def montar_area(area: str, nome: str, partes: list[dict], instancias: dict, nome
             fogueiras.append({"id": fog, "nome": nomes_fogueira[fog], "pos": _r(p["pos"])})
         elif lotes.get(p["ref"]):
             itens.append({"lote": p["ref"], "pos": _r(p["pos"]),
-                          "itens": [{"id": i, "nome": nomes_itens.get(i, f"#{i}"), "qtd": q} for i, q in lotes[p["ref"]]]})
+                          "itens": [{"id": i, "nome": nomes_itens.get(i, f"#{i}"), "qtd": q} for i, q in lotes[p["ref"]]],
+                          "estado_ref": f"lote:{p['ref']}"})
     inimigos = [{"id": gid, "pos": _r(c + base[k] for k, c in enumerate(rel))} for gid, rel in geradores]
     return {
         "area": area, "nome": nome, "assinatura": assinatura, "origem": _r(base),
