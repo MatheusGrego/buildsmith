@@ -287,6 +287,6 @@ def test_real_save_world_table_and_the_spike_door():
     entradas = ds2save.blocos(path)
     for s in ds2save.list_slots(path):
         tabela = ds2save.tabela_eventos(entradas[f"USER_DATA{10 + s['slot']:03d}"])
-        assert len(tabela) >= 20 and 1004 in tabela  # Majula sempre está lá
+        assert 1004 in tabela and len(tabela) >= 10  # Majula sempre está lá; personagem novo ainda tem só ~13 áreas
         if s["name"] == "Personagem Um":  # o personagem do spike: cela da Bastille aberta com a Bastille Key
             assert ds2save.estado_mundo(entradas[f"USER_DATA{10 + s['slot']:03d}"], ["porta:10160432"]) == {"porta:10160432": True}
