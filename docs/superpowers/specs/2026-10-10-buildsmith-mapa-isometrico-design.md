@@ -291,3 +291,25 @@ vem de outro programa; o que está abaixo foi conferido nessas cópias.
 - **Não achado**: porta que só abre por evento sem mudar o estado (alguns 10 continuam 10 depois de abertos? nenhum caso
   visto), elevador (32/33 = andar em que está; não é "aberto"), Pharros (10→20 nove vezes, sem confirmação de qual
   pedra foi usada): ficam **sem estado**.
+
+## Peças de mapa montadas com ossos (2026-10-11, Iron Keep)
+
+Print do jogo × página na fogueira Threshold Bridge: no jogo, um patamar de pedra com balaustrada, uma escada subindo à
+direita e uma ponte em arco por cima; na página, a fogueira "flutuava" na lava, sem piso, sem degraus (só o corrimão),
+com lajes escuras soltas no ar. A correção anterior (`a90a082`, nomes atrás da parede) só tratou os rótulos; o cenário
+estava mesmo errado.
+
+- **Causa**: peça de mapa do DS2 também pode ter ossos. O artista monta a peça com cópias de partes menores, e cada cópia
+  é um osso: em `m0002`, 62 ossos com nomes como `階段_1` (escada), `鉄柵_002` (grade de ferro) e `Floor`. A malha é rígida
+  e fica no espaço do osso (o 4º byte da normal escolhe o osso na lista da malha), igual aos objetos e personagens. O
+  extrator só aplicava os ossos em objetos e personagens ("as peças de mapa já vêm no lugar"), e as cópias ficavam todas
+  na origem do modelo.
+- **Prova** (sem depender de olhar a tela): a caixa do cabeçalho do FLVER. Com os ossos, os vértices de cada modelo caem
+  dentro dela; sem eles, m0001, m0002, m0003 e m0005–m0008 da Iron Keep passavam de 14 m a 89 m da caixa. Nas 28 áreas:
+  24 modelos de mapa mudam com os ossos, 23 passam a caber na caixa e nenhum fica pior (o outro já cabia dos dois jeitos;
+  em Shrine of Amana a caixa calculada com os ossos é igual à do cabeçalho nos 7 modelos com ossos). Áreas afetadas além
+  da Iron Keep: Majula, Forest of Fallen Giants, Huntsman's Copse, The Gutter, Shrine of Amana e Undead Crypt.
+- **Correção**: `ler_flver` aplica os ossos sempre (peça de mapa, objeto e personagem) e a caixa sai dos vértices;
+  `CENA_VERSAO` 6 refaz a cena de toda área já extraída na próxima abertura. Embaixo da Threshold Bridge, antes só havia
+  lava (y 165,11); agora há o piso `floor_05_d` em y 165,64, na altura da fogueira (165,6). Teste com o jogo instalado:
+  `test_iron_keep_pecas_de_mapa_no_lugar_e_chao_na_threshold_bridge`.

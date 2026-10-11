@@ -18,9 +18,14 @@ Formatos (conferidos no Huntsman's Copse, m10_23_00_00, e em Majula, m10_04_00_0
 - Objetos (MSB tipo 1: portas, baús, alavancas, elevadores, estátuas...) e inimigos: modelos em /model/obj/<oXX_XXXX>.bnd
   e /model/chr/<cXXXX>.bnd (texturas do personagem em <cXXXX>.texbnd), binders BND4 (lista de arquivos do DS2 SotFS do
   Smithbox). Os pacotes são vários (*Ebl.bhd na pasta Game); o arquivo é procurado em todos. O modelo do inimigo é a
-  linha do EnemyParam // 100. Malha rígida (sem pesos de osso) fica no espaço do osso: posição pelo osso de cada
-  vértice (4º byte da normal UByte4/Byte4E, índice na lista de ossos da malha) ou pelo osso da malha, como o Smithbox
-  faz; o osso local é T · Ry · Rz · Rx · S (rotação em radianos) e o do mundo compõe com os pais.
+  linha do EnemyParam // 100.
+- Malha rígida (sem pesos de osso) fica no espaço do osso, em objeto, personagem **e peça de mapa**: posição pelo osso de
+  cada vértice (4º byte da normal UByte4/Byte4E, índice na lista de ossos da malha) ou pelo osso da malha, como o
+  Smithbox faz; o osso local é T · Ry · Rz · Rx · S (rotação em radianos) e o do mundo compõe com os pais. Peça de mapa
+  com ossos é a que o artista montou com cópias de uma peça (escada 階段, grade 鉄柵, piso Floor): na Iron Keep, m0001,
+  m0002 e m0005-m0008 (a estrutura do castelo em volta da Threshold Bridge) só cabem na caixa do próprio FLVER com os
+  ossos; sem eles passavam até 89 m da caixa e escadas, pontes e grades ficavam amontoadas na origem do modelo. Nas 28
+  áreas, 24 modelos de mapa mudam com os ossos, 23 passam a caber na caixa e nenhum fica pior.
 """
 import gzip
 import json
@@ -36,9 +41,9 @@ from pathlib import Path
 import ds2arquivos
 import ds2mapa
 
-CENA_VERSAO = 5  # 2: UV int16, normais por tipo, LOD0, céu/NoLit fora, matriz, chão andável; 3: objetos e inimigos;
+CENA_VERSAO = 6  # 2: UV int16, normais por tipo, LOD0, céu/NoLit fora, matriz, chão andável; 3: objetos e inimigos;
                  # 4: modelo rígido com várias malhas (baú), lápide/ajudantes fora, motivo de quem ficou sem modelo;
-                 # 5: textura de objeto/personagem até 256 (orçamento)
+                 # 5: textura de objeto/personagem até 256 (orçamento); 6: ossos também nas peças de mapa
 TEX_MAX = 512  # lado máximo das texturas (descarta os mipmaps maiores)
 TEX_MAX_ENTIDADE = 256  # objeto e personagem ficam pequenos na tela: orçamento de 30 MB por área (spec)
 FORA_M = 40.0  # peças além desta margem do chão andável (céu, montanhas de fundo) ficam de fora
@@ -287,10 +292,10 @@ def _aplicar_osso(m: list[float], p, n):
     return q, (r[0] / k, r[1] / k, r[2] / k)
 
 
-def ler_flver(data: bytes, ossos: bool = False) -> dict:
+def ler_flver(data: bytes) -> dict:
     """Modelo FLVER2 do DS2: malhas (LOD0) com posições, normais, UV, índices em lista, difusa e tipo de material.
 
-    ossos=True põe as malhas rígidas no lugar pelos ossos (objetos e personagens; as peças de mapa já vêm no lugar)."""
+    As malhas rígidas vão para o lugar pelos ossos (peça de mapa, objeto e personagem); a caixa sai dos vértices."""
     if data[:6] != b"FLVER\0":
         raise CenaError("formato FLVER2 não reconhecido")
     if data[6:8] != b"L\0":
@@ -316,7 +321,7 @@ def ler_flver(data: bytes, ossos: bool = False) -> dict:
         lista_ossos.append({"t": struct.unpack_from("<3f", data, o), "r": struct.unpack_from("<3f", data, o + 0x10),
                             "pai": struct.unpack_from("<h", data, o + 0x1C)[0], "s": struct.unpack_from("<3f", data, o + 0x20)})
     off += n_bone * 0x80
-    mundo_ossos = mundo_dos_ossos(lista_ossos) if ossos and lista_ossos else []
+    mundo_ossos = mundo_dos_ossos(lista_ossos) if lista_ossos else []
 
     meshes = []
     for i in range(n_mesh):
@@ -431,7 +436,7 @@ def ler_flver(data: bytes, ossos: bool = False) -> dict:
             "textura_difusa": tex_difusa,
         })
 
-    if ossos and malhas_saida:  # a caixa do cabeçalho é a do modelo sem os ossos: refaz pelos vértices postos no lugar
+    if malhas_saida:  # a caixa do cabeçalho não é a dos ossos nos objetos (e inclui o céu): refaz pelos vértices
         pts = [v for ms in malhas_saida if ms["tipo"] != "ignorar" for v in ms["vertices"]] or [v for ms in malhas_saida for v in ms["vertices"]]
         bb_min = tuple(min(p[k] for p in pts) for k in range(3))
         bb_max = tuple(max(p[k] for p in pts) for k in range(3))
@@ -660,7 +665,7 @@ def modelo_do_binder(ler, caminho: str, caminho_tex: str | None = None, preferid
         if not flvs:
             return None, {}, "binder sem .flv"
         nome = next((k for k in flvs if preferido and k.lower().rsplit(".", 1)[0] == preferido.lower()), sorted(flvs)[0])
-        modelo = ler_flver(flvs[nome], ossos=True)
+        modelo = ler_flver(flvs[nome])
         tex = {}
         fontes = [arqs]
         extra = ler(caminho_tex) if caminho_tex else None
@@ -944,7 +949,7 @@ def diagnostico_modelo(game_dir, modelo: str) -> dict:
         info = {"bytes": len(conteudo), "inicio": conteudo[:8].hex()}
         if nome.lower().endswith((".flv", ".flver")):
             try:
-                flv = ler_flver(conteudo, ossos=True)
+                flv = ler_flver(conteudo)
                 info.update({"versao": flv["version"], "caixa": flv["bb"], "puladas": flv.get("puladas", []),
                              "malhas": [{"mtd": m["mtd"], "tipo": m["tipo"], "vertices": len(m["vertices"]),
                                          "triangulos": len(m["indices"]) // 3, "textura": m["textura_difusa"]} for m in flv["malhas"]],

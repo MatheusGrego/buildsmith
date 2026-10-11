@@ -421,6 +421,7 @@ def test_ossos_compoem_com_o_pai():
 
 
 def test_flver_malha_rigida_vai_para_o_osso_e_dinamica_fica():
+    """Vale para objeto, personagem e peça de mapa (a escada da Iron Keep é uma malha copiada por vários ossos)."""
     tri = lambda **k: {**tri_malha(), **k}  # noqa: E731
     ossos = [{"t": (0, 0, 0)}, {"t": (10, 0, 0)}, {"t": (0, 3, 0)}]
     rigida_no = tri(no=1)  # normal UByte4 mas sem lista de ossos: vai pelo osso da malha
@@ -429,13 +430,65 @@ def test_flver_malha_rigida_vai_para_o_osso_e_dinamica_fica():
                                                      ((1.0, 0.0, 1.0), [127, 254, 127, 1], (0, 0))])
     dinamica = tri(dinamica=True, no=1)
     flv = build_flver([rigida_no, por_vertice, dinamica], ossos=ossos)
-    a, b, c = ds2cena.ler_flver(flv, ossos=True)["malhas"]
+    a, b, c = ds2cena.ler_flver(flv)["malhas"]
     assert a["vertices"][1] == pytest.approx((11.0, 0.0, 0.0))
     assert [tuple(v) for v in b["vertices"]] == [pytest.approx((0, 3, 0)), pytest.approx((1, 0, 0)), pytest.approx((1, 3, 1))]
     assert c["vertices"][1] == pytest.approx((1.0, 0.0, 0.0))  # com pesos de osso: já no espaço do modelo
     assert len(a["normais"][0]) == 3  # o 4º byte da normal (osso) não vai para a geometria
-    sem = ds2cena.ler_flver(flv)["malhas"][0]  # peça de mapa: sem ossos, como sempre
-    assert sem["vertices"][1] == pytest.approx((1.0, 0.0, 0.0))
+
+
+def test_peca_de_mapa_girada_pelo_osso_e_caixa_pelos_vertices():
+    """Peça de mapa com degraus copiados por ossos girados: cada cópia no seu lugar e a caixa cobre todas."""
+    ossos = [{"t": (5, 0, 0), "r": (0, math.pi / 2, 0)}, {"t": (0, 2, 0)}]
+    degrau = {**tri_malha(), "ossos_malha": [0, 1],
+              "vertices": [((1.0, 0.0, 0.0), [127, 254, 127, 0], (0, 0)), ((1.0, 0.0, 0.0), [127, 254, 127, 1], (0, 0)),
+                           ((0.0, 0.0, 1.0), [127, 254, 127, 1], (0, 0))]}
+    res = ds2cena.ler_flver(build_flver([degrau], ossos=ossos))
+    v = res["malhas"][0]["vertices"]
+    assert v[0] == pytest.approx((5, 0, -1), abs=1e-5)  # +x girou 90° em Y (vira -z) e andou 5 em x
+    assert v[1] == pytest.approx((1, 2, 0)) and v[2] == pytest.approx((0, 2, 1))
+    assert res["bb"][0] == pytest.approx((0, 0, -1), abs=1e-5) and res["bb"][1] == pytest.approx((5, 2, 1), abs=1e-5)
+
+
+@pytest.mark.skipif(not (GAME / "GameDataEbl.bhd").exists(), reason="DS2 SotFS não instalado")
+def test_iron_keep_pecas_de_mapa_no_lugar_e_chao_na_threshold_bridge():
+    """Print do jogo x página (2026-10-11): a fogueira Threshold Bridge flutuava na lava, sem escada, ponte nem piso. As
+    peças m0001-m0008 são montadas com ossos; com eles cada modelo cabe na caixa do próprio FLVER e há piso de pedra
+    na altura da fogueira."""
+    import ds2arquivos
+
+    arq = ds2arquivos.Arquivo(GAME, "GameData")
+    area = "m10_19_00_00"
+    insts, usados = ds2cena.msb_instancias(arq.ler(f"/map/{area}/{area}.msb"))
+    flvs = ds2cena.ler_bhf4(arq.ler(f"/model/map/{area}.mapbhd"), arq.ler(f"/model/map/{area}.mapbdt"), ".flv")
+    modelos = {}
+    for nome, data in flvs.items():
+        stem = nome.rsplit(".", 1)[0].lower()
+        if stem not in usados:
+            continue
+        cab = (struct.unpack_from("<3f", data, 0x28), struct.unpack_from("<3f", data, 0x34))
+        modelos[stem] = mod = ds2cena.ler_flver(data)
+        pts = [p for m in mod["malhas"] for p in m["vertices"]]
+        if pts:
+            fora = max(max(cab[0][k] - p[k], p[k] - cab[1][k]) for p in pts for k in range(3))
+            assert fora < 0.05, f"{stem} passa {fora:.2f} m da caixa do FLVER"
+    fx, fy, fz = -581.9, 165.6, 593.0  # fogueira Threshold Bridge
+    alturas = []
+    for inst in insts:
+        for m in modelos.get(inst["modelo"], {}).get("malhas", []):
+            if m["tipo"] != "opaco" or "magma" in m["mtd"].lower():
+                continue
+            v = [ds2cena.aplicar_matriz(inst["matriz"], p) for p in m["vertices"]]
+            for t in range(0, len(m["indices"]), 3):
+                a, b, c = (v[i] for i in m["indices"][t:t + 3])
+                d = (b[2] - c[2]) * (a[0] - c[0]) + (c[0] - b[0]) * (a[2] - c[2])
+                if abs(d) < 1e-9:
+                    continue
+                l1 = ((b[2] - c[2]) * (fx - c[0]) + (c[0] - b[0]) * (fz - c[2])) / d
+                l2 = ((c[2] - a[2]) * (fx - c[0]) + (a[0] - c[0]) * (fz - c[2])) / d
+                if min(l1, l2, 1 - l1 - l2) >= 0:
+                    alturas.append(l1 * a[1] + l2 * b[1] + (1 - l1 - l2) * c[1])
+    assert any(abs(y - fy) < 0.3 for y in alturas), sorted(alturas)
 
 
 def test_modelo_do_binder_pega_o_flv_do_modelo_e_as_texturas():
@@ -496,7 +549,7 @@ def test_flver_rigido_com_varias_malhas_mantem_os_materiais():
               "vertices": [((0.0, 0.0, 0.0), [127, 254, 127, 1], (0, 0)), ((1.0, 0.0, 0.0), [127, 254, 127, 1], (0, 0)),
                            ((1.0, 0.0, 1.0), [127, 254, 127, 0], (0, 0))]}
     flv = build_flver([rigida, tri_malha(mtd="Caixa.mtd"), tri_malha(mtd="Caixa.mtd")], ossos=ossos)
-    malhas = ds2cena.ler_flver(flv, ossos=True)["malhas"]
+    malhas = ds2cena.ler_flver(flv)["malhas"]
     assert [m["mtd"] for m in malhas] == ["Tampa.mtd", "Caixa.mtd", "Caixa.mtd"]
     assert malhas[0]["vertices"][0] == pytest.approx((0, 1, 0))
 
