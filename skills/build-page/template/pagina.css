@@ -370,6 +370,16 @@ a.agora2-t:hover { text-decoration: underline; }
 .mp-campo { display: inline-flex; align-items: center; gap: 8px; font: 13px var(--display); color: var(--text); letter-spacing: 0.04em; }
 .mp-area { background: var(--th); color: var(--head); border: 1px solid var(--line); padding: 5px 8px; font: 14px var(--body); }
 .mp-area:focus-visible { outline: 2px solid var(--link); outline-offset: 1px; }
+.mp-modo-toggle { display: inline-flex; border: 1px solid var(--line); border-radius: 4px; overflow: hidden; background: var(--th); }
+.mp-modo { font: 12px var(--display); letter-spacing: 0.04em; padding: 3px 12px; border: 0; background: transparent; color: var(--dim); cursor: pointer; transition: color 0.15s ease, background 0.15s ease; }
+.mp-modo:hover { color: var(--head); }
+.mp-modo.mp-modo-ativo, .mp-modo[aria-pressed="true"] { color: var(--head); background: linear-gradient(90deg, var(--acao-tint), var(--th) 85%); font-weight: 600; }
+.mp-modo:focus-visible { outline: 2px solid var(--link); }
+.mp-rotacao { display: inline-flex; gap: 4px; }
+.mp-rotacao[hidden] { display: none; }
+.mp-btn-rot { font: 12px var(--display); letter-spacing: 0.04em; padding: 3px 10px; border: 1px solid var(--line); background: var(--th); color: var(--head); cursor: pointer; border-radius: 4px; transition: border-color 0.15s ease, color 0.15s ease; }
+.mp-btn-rot:hover { border-color: var(--link); color: var(--pos); }
+.mp-btn-rot:focus-visible { outline: 2px solid var(--link); outline-offset: 1px; }
 .mp-filtros { display: flex; flex-wrap: wrap; gap: 6px; }
 .mp-filtro { font: 12px var(--display); letter-spacing: 0.04em; padding: 3px 10px; border: 1px solid var(--line); background: var(--th); color: var(--dim); cursor: pointer; }
 .mp-filtro[aria-pressed="true"] { color: var(--head); border-color: var(--link); background: linear-gradient(90deg, var(--acao-tint), var(--th) 85%); }
@@ -378,7 +388,11 @@ a.agora2-t:hover { text-decoration: underline; }
 .mp-tela { position: relative; height: max(440px, calc(100vh - 260px)); background: #0c0c0d; border: 1px solid var(--line); overflow: hidden; touch-action: none; cursor: grab; }
 .mp-tela:active { cursor: grabbing; }
 .mp-tela:focus-visible { outline: 2px solid var(--link); outline-offset: -2px; }
-.mp-svg { position: absolute; inset: 0; width: 100%; height: 100%; display: block; }
+.mp-iso-container { position: absolute; inset: 0; width: 100%; height: 100%; z-index: 0; overflow: hidden; }
+.mp-iso-container[hidden] { display: none; }
+.mapa-iso-canvas { width: 100%; height: 100%; display: block; }
+.mp-svg { position: absolute; inset: 0; width: 100%; height: 100%; display: block; z-index: 1; pointer-events: none; }
+.mp-pontos > * { pointer-events: auto; }
 .mp-g10 { stroke: #1b1b1d; stroke-width: 1; }
 .mp-g50 { stroke: #2a2a2d; stroke-width: 1; }
 .mp-longe .mp-g10 { display: none; }
