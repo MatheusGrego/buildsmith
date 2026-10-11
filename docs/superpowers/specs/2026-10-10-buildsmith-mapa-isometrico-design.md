@@ -329,3 +329,20 @@ estava mesmo errado.
   X" (só quando a chave é conhecida). **Fechada não é trancada**: o save só diz que a porta ainda não abriu.
 - Fica para depois: o desenho da porta no 2D continua centrado na posição (sem a cena na hora de montar a página, o
   vão real não é conhecido); a chave das portas comuns é a Parte B do plano.
+
+## Chave das portas comuns pelo script de evento (2026-10-11, Task 5 do plano)
+
+- **Onde**: `/ezstate/event_<área>.esd` (EzState "fsSL", 64 bits; leitor em `ds2esd.py`, formato pelo SoulsFormats como
+  referência). Cada máquina de estado é um evento; a porta com chave chama a máquina comum (banco 6, `0x7FFFFFFA`) com
+  `(mensagem, mensagem, ID da chave, flag)`, e o ID da chave aparece como constante int32 (`0x82` + int32).
+- **Evento → porta**: o ID da máquina é a linha do `eventparam_<área>.param` (16 bytes: evento, **ref da parte do MSB**,
+  `0x02000000`, 1). Ex.: Lost Bastille, evento 18010 → ref 10160432 (`o00_0316_0002`).
+- **Conferido**: nas 28 áreas, 29 portas ganham chave pelo evento (e a Rotunda Switch de Majula, que fica de fora por
+  ser alavanca). As 4 portas cujo nome do modelo cita a chave (Large Stone Door da Forgotten Key em Majula e duas no
+  Gutter, Large Door da Key to King's Passage) dão a mesma chave pelo evento. Na wiki: Bastille Key abre a cela ao lado
+  da do Straid (o evento 18010 aponta essa) e outras celas da Lost Bastille/Sinners' Rise (7 pelo evento); Brightstone
+  Key abre uma sala em Tseldora (2 portas, os dois lados); Antiquated Key abre a porta de madeira do primeiro pátio da
+  Lost Bastille (`o00_0301_0000`).
+- **Na extração** (`EXTRACAO_VERSAO` 9): `objetos[].chave` vem do nome do modelo e, se ele não diz, do evento;
+  `chave_fonte` = `modelo` ou `evento`. A página mostra "Abre com" e onde pegar a chave para essas portas, e o popover
+  diz de onde veio a chave. Evento com mais de uma chave, sem linha no `eventparam` ou ESD que não abre: sem chave.

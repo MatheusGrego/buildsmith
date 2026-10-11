@@ -899,7 +899,8 @@
         extra = `<p class="mp-pop-chave">${k.icone && ICONE_OK.test(k.icone) ? `<img src="${esc(k.icone)}" alt="" width="24" height="24">` : ""}Abre com <strong>${esc(k.nome)}</strong></p>
           ${onde ? `<p class="mp-pop-sub">Onde pegar a chave:</p><ul>${onde}</ul>` : '<p class="mp-pop-sub">A chave não está no chão das áreas do mapa (loja, NPC ou drop).</p>'}
           ${link ? `<a href="${esc(link)}" target="_blank" rel="noopener noreferrer">chave na wiki</a>` : ""}
-          <p class="mp-prova">Chave pelo nome do modelo da porta (Smithbox), conferida na lista de itens do jogo.</p>`;
+          <p class="mp-prova">${k.fonte === "evento" ? "Chave pelo script de evento da porta (o jogo testa este item ao abrir)."
+            : "Chave pelo nome do modelo da porta (Smithbox), conferida na lista de itens do jogo."}</p>`;
       } else if (p.cat === "bau") {
         const conteudo = ((st.doc.itens.find((x) => x.lote === p.lote) || {}).itens) || [];
         extra = conteudo.length ? `<ul>${conteudo.map((it) => `<li>${esc(it.nome)}${it.qtd > 1 ? ` <span class="mp-qtd">×${it.qtd}</span>` : ""}</li>`).join("")}</ul>`

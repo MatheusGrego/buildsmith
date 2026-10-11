@@ -156,6 +156,23 @@ def test_objects_doors_levers_chests_and_items_inside():
               {"lote": 10167000, "itens": [{"id": 60140000, "nome": "Firebomb", "qtd": 1}]}]
     ds2mapa.marcar_itens(pontos, objs, {50820000})
     assert [(p["no"], p["chave"]) for p in pontos] == [("bau", True), ("cadaver", False), (None, False)]
+    assert porta["chave_fonte"] == "modelo" and objs[1]["chave_fonte"] is None
+
+
+def test_porta_comum_ganha_a_chave_do_evento_e_o_modelo_vale_primeiro():
+    """Prison Door não diz a chave no nome; o evento dela pede a Bastille Key (ds2esd). A porta cujo modelo já cita a
+    chave fica com a do modelo; alavanca não ganha chave; chave que não é item do jogo não entra."""
+    partes = [{"nome": "cela", "tipo": 1, "pos": (1.0, 0.0, 2.0), "rot": (0.0, 0.0, 0.0), "ref": 10160432, "modelo": "o00_0316"},
+              {"nome": "pedra", "tipo": 1, "pos": (2.0, 0.0, 2.0), "rot": (0.0, 0.0, 0.0), "ref": 10040420, "modelo": "o04_0470"},
+              {"nome": "alavanca", "tipo": 1, "pos": (3.0, 0.0, 2.0), "rot": (0.0, 0.0, 0.0), "ref": 10160600, "modelo": "o00_0600"},
+              {"nome": "outra", "tipo": 1, "pos": (4.0, 0.0, 2.0), "rot": (0.0, 0.0, 0.0), "ref": 10160440, "modelo": "o00_0316"}]
+    tabelas = {**TABELAS, "objetos": {**TABELAS["objetos"], "o00_0316": "Prison Door - The Lost Bastille"}}
+    itens = {50800000: "Bastille Key", 50820000: "Forgotten Key"}
+    eventos = {10160432: 50800000, 10040420: 50800000, 10160600: 50800000, 10160440: 99999999}
+    objs = {o["parte"]: o for o in ds2mapa.montar_objetos(partes, {}, itens, tabelas, chaves_evento=eventos)}
+    assert (objs["cela"]["chave"], objs["cela"]["chave_fonte"]) == ([50800000, "Bastille Key"], "evento")
+    assert (objs["pedra"]["chave"], objs["pedra"]["chave_fonte"]) == ([50820000, "Forgotten Key"], "modelo")
+    assert objs["alavanca"]["chave"] is None and objs["outra"]["chave"] is None
 
 
 def test_param_rows():

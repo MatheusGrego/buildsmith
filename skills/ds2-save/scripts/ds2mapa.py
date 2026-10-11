@@ -30,8 +30,8 @@ from pathlib import Path
 from ds2planta import PLANTA_VERSAO  # noqa: F401 (versão da planta guardada no cache)
 
 AREA = re.compile(r"^m(\d\d)_(\d\d)_(\d\d)_(\d\d)$")
-EXTRACAO_VERSAO = 8  # 2: NPCs e chefes; 3: início do mapa (zonas); 4: tipo de inimigo; 5: objetos; 6: rotação do inimigo;
-                     # 7: modelo do NPC; 8: estado_ref (estado pelo save)
+EXTRACAO_VERSAO = 9  # 2: NPCs e chefes; 3: início do mapa (zonas); 4: tipo de inimigo; 5: objetos; 6: rotação do inimigo;
+                     # 7: modelo do NPC; 8: estado_ref (estado pelo save); 9: chave da porta pelo evento (ds2esd)
 ESTADO_CATS = ("porta", "alavanca", "bau")  # objetos com regra de estado no save (ds2save.estado_mundo)
 EP_HP, EP_ALMAS, EP_LOTES = 0x28, 0xD0, (0x4C, 0x134)  # EnemyParam
 INICIO_MAPA = "マップ開始地点"  # nome do ponto de início no MSB (texto do próprio jogo)
@@ -299,10 +299,14 @@ def modelos_npcs(npcs: list[dict], geradores: list[dict]) -> None:
             n["modelo"], n["rot"] = f"c{int(g['tipo']) // 100:04d}", g.get("rot")
 
 
-def montar_objetos(partes: list[dict], instancias: dict[int, dict], nomes_itens: dict[int, str], tabelas=None) -> list[dict]:
-    """Objetos do mapa que importam para andar pela área: portas (com a chave, quando o modelo diz), névoas,
-    alavancas, elevadores, pontes, escadas, mecanismos de Pharros, baús e cadáveres com item."""
+def montar_objetos(partes: list[dict], instancias: dict[int, dict], nomes_itens: dict[int, str], tabelas=None,
+                   chaves_evento: dict[int, int] | None = None) -> list[dict]:
+    """Objetos do mapa que importam para andar pela área: portas (com a chave, quando o modelo diz ou o evento da porta
+    pede: chaves_evento = ref -> ID da chave, do ds2esd), névoas, alavancas, elevadores, pontes, escadas, mecanismos de
+    Pharros, baús e cadáveres com item."""
     import ds2nomes
+
+    chaves_evento = chaves_evento or {}
 
     out = []
     for p in partes:
@@ -313,8 +317,12 @@ def montar_objetos(partes: list[dict], instancias: dict[int, dict], nomes_itens:
         if not o:
             continue
         lote = inst.get("lote") if (inst.get("lote") or 0) > 0 else (p["ref"] if o["cat"] in ("bau", "cadaver") else None)
+        chave, fonte = o["chave"], "modelo" if o["chave"] else None
+        if not chave and o["cat"] == "porta" and chaves_evento.get(p["ref"]) in nomes_itens:
+            k = chaves_evento[p["ref"]]
+            chave, fonte = [k, nomes_itens[k]], "evento"
         out.append({"parte": p["nome"], "modelo": p.get("modelo", ""), "cat": o["cat"], "nome": o["nome"],
-                    "pos": _r(p["pos"]), "rot": _r(p.get("rot", (0, 0, 0))), "chave": o["chave"],
+                    "pos": _r(p["pos"]), "rot": _r(p.get("rot", (0, 0, 0))), "chave": chave, "chave_fonte": fonte,
                     "ref": p["ref"] or None, "lote": lote or None, "inst": inst.get("tipo"),
                     "estado_ref": f"{o['cat']}:{p['ref']}" if p["ref"] and o["cat"] in ESTADO_CATS else None})
     return out
@@ -415,13 +423,27 @@ def extrair_area(game_dir, area: str, cache_dir, names=None) -> dict:
     modelos_npcs(out["npcs"], out["inimigos"])
     out["tipos_inimigo"] = tipos_inimigo(params["EnemyParam"], lotes_itens(params["ItemLotParam2_Chr"]), nomes_itens,
                                          [e["tipo"] for e in out["inimigos"] if e["tipo"] and not e["papel"]])
-    out["objetos"] = montar_objetos(partes, inst_obj, nomes_itens)
-    marcar_itens(out["itens"], out["objetos"], {i for i, (cat, _n) in names.items() if cat == "KeyItems"})
+    chaves = {i for i, (cat, _n) in names.items() if cat == "KeyItems"}
+    out["objetos"] = montar_objetos(partes, inst_obj, nomes_itens, chaves_evento=_chaves_evento(arq, area, chaves))
+    marcar_itens(out["itens"], out["objetos"], chaves)
     out["objetos"] = [o for o in out["objetos"] if o["cat"] != "cadaver"]  # o cadáver já é o ponto do item
     inicio = [q["pos"] for q in pontos_msb(arq.ler(f"/map/{area}/{area}.msb")) if q["nome"] == INICIO_MAPA]
     out["inicio"] = _r(inicio[0]) if inicio else None
     out["versao_extracao"] = EXTRACAO_VERSAO
     return _gravar(destino, com_zonas(out))
+
+
+def _chaves_evento(arq, area: str, chaves: set) -> dict[int, int]:
+    """ref do objeto -> chave que o evento dele pede (ds2esd); {} se a área não tem script ou ele não abre."""
+    import ds2esd
+
+    esd, ev = f"/ezstate/event_{area}.esd", f"/param/eventparam_{area}.param"
+    if not (arq.tem(esd) and arq.tem(ev)):
+        return {}
+    try:
+        return ds2esd.chaves_por_objeto(arq.ler(esd), linhas_param(arq.ler(ev)), {i: "" for i in chaves})
+    except (ds2esd.EsdError, struct.error, ValueError):  # script estranho: a porta fica só com a chave do modelo
+        return {}
 
 
 def _gravar(destino: Path, dados: dict) -> dict:

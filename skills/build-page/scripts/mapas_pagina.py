@@ -131,7 +131,8 @@ def objetos_para_pagina(dados: dict, onde_chave, pagina_wiki=None, icone_local=N
         if o.get("chave"):
             cid, cnome = o["chave"]
             item["chave"] = {"id": cid, "nome": cnome, "icone": icone_local(cnome) if icone_local else None,
-                             "wiki": pagina_wiki(cnome) if pagina_wiki else None, "onde": onde_chave(cid)}
+                             "wiki": pagina_wiki(cnome) if pagina_wiki else None, "onde": onde_chave(cid),
+                             "fonte": o.get("chave_fonte") or "modelo"}
         out.append(item)
     return out
 
