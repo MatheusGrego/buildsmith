@@ -1,8 +1,14 @@
+import json
+import math
 import struct
 import zlib
+from pathlib import Path
+
 import pytest
 
 import ds2cena
+
+GAME = Path(r"C:/Program Files (x86)/Steam/steamapps/common/Dark Souls II Scholar of the First Sin/Game")
 
 
 def build_dcx(data: bytes) -> bytes:
@@ -42,6 +48,85 @@ def build_bhf4(files: dict[str, bytes]) -> tuple[bytes, bytes]:
     return bytes(bhd + names_data), bytes(bdt)
 
 
+def build_flver(malhas: list[dict], version: int = 0x20010) -> bytes:
+    """FLVER2 "L" mínimo. Cada malha: mtd, texturas [(caminho, tipo)], vertices [(pos, normal_bytes4, uv_int16)],
+    facesets [(flags, strip, indices)]. Layout: posição Float3, normal Byte4B, UV tipo 0x15 (int16)."""
+    n_mat = n_mesh = n_vb = n_lay = len(malhas)
+    n_fs = sum(len(m["facesets"]) for m in malhas)
+    n_tex = sum(len(m["texturas"]) for m in malhas)
+    off_mat = 0x80
+    off_mesh = off_mat + n_mat * 0x20
+    off_fs = off_mesh + n_mesh * 0x30
+    off_vb = off_fs + n_fs * 0x20
+    off_lay = off_vb + n_vb * 0x20
+    off_tex = off_lay + n_lay * 0x10
+    cauda = bytearray()  # listas de índices, membros de layout e textos, depois do cabeçalho
+    base_cauda = off_tex + n_tex * 0x20
+
+    def poe(b: bytes) -> int:
+        while len(cauda) % 4:
+            cauda.append(0)
+        o = base_cauda + len(cauda)
+        cauda.extend(b)
+        return o
+
+    dados = bytearray()  # índices e vértices (relativos a data_off)
+
+    def poe_dados(b: bytes) -> int:
+        while len(dados) % 4:
+            dados.append(0)
+        o = len(dados)
+        dados.extend(b)
+        return o
+
+    cab = bytearray(base_cauda)
+    cab[:6] = b"FLVER\x00"
+    cab[6:8] = b"L\x00"
+    cab[0x48] = 16
+    cab[0x49] = 1
+    struct.pack_into("<3i", cab, 0x50, n_fs, n_lay, n_tex)
+    fs_i = tex_i = 0
+    for k, m in enumerate(malhas):
+        nome_o = poe("Material\0".encode("utf-16-le"))
+        mtd_o = poe(f"N:\\mtd\\{m['mtd']}\0".encode("utf-16-le"))
+        struct.pack_into("<4i", cab, off_mat + k * 0x20, nome_o, mtd_o, len(m["texturas"]), tex_i)
+        for caminho, tipo in m["texturas"]:
+            struct.pack_into("<2i", cab, off_tex + tex_i * 0x20, poe(f"{caminho}\0".encode("utf-16-le")), poe(f"{tipo}\0".encode("utf-16-le")))
+            tex_i += 1
+        fs_lista = list(range(fs_i, fs_i + len(m["facesets"])))
+        for flags, strip, indices in m["facesets"]:
+            ioff = poe_dados(struct.pack(f"<{len(indices)}H", *indices))
+            o = off_fs + fs_i * 0x20
+            struct.pack_into("<I??", cab, o, flags, strip, False)
+            struct.pack_into("<5i", cab, o + 8, len(indices), ioff, len(indices) * 2, 0, 16)
+            fs_i += 1
+        o = off_mesh + k * 0x30
+        struct.pack_into("<i", cab, o + 4, k)
+        struct.pack_into("<4i", cab, o + 0x20, len(fs_lista), poe(struct.pack(f"<{len(fs_lista)}i", *fs_lista)), 1, poe(struct.pack("<i", k)))
+        vbytes = b"".join(struct.pack("<3f", *p) + bytes(n) + struct.pack("<2h", *uv) for p, n, uv in m["vertices"])
+        boff = poe_dados(vbytes)
+        struct.pack_into("<8i", cab, off_vb + k * 0x20, 0, k, 20, len(m["vertices"]), 0, 0, len(vbytes), boff)
+        membros = struct.pack("<5i", 0, 0, 0x02, 0, 0) + struct.pack("<5i", 0, 12, 0x11, 3, 0) + struct.pack("<5i", 0, 16, 0x15, 5, 0)
+        struct.pack_into("<4i", cab, off_lay + k * 0x10, 3, 0, 0, poe(membros))
+    corpo = bytes(cab) + bytes(cauda)
+    data_off = (len(corpo) + 15) // 16 * 16
+    corpo += bytes(data_off - len(corpo))
+    final = bytearray(corpo) + dados
+    struct.pack_into("<8i", final, 0x08, version, data_off, len(dados), 0, n_mat, 0, n_mesh, n_vb)
+    struct.pack_into("<3f", final, 0x28, -1.0, 0.0, -1.0)
+    struct.pack_into("<3f", final, 0x34, 1.0, 2.0, 1.0)
+    return bytes(final)
+
+
+CIMA = [127, 254, 127, 0]  # normal Byte4B (0, 1, 0)
+
+
+def tri_malha(mtd="GI_M[DB].mtd", facesets=None, uv=((0, 0), (2048, 0), (2048, 2048))):
+    return {"mtd": mtd, "texturas": [("N:\\tex\\pedra_n.tga", "g_BumpmapTexture"), ("N:\\tex\\Pedra_D.tga", "g_DiffuseTexture")],
+            "vertices": [((0.0, 0.0, 0.0), CIMA, uv[0]), ((1.0, 0.0, 0.0), CIMA, uv[1]), ((1.0, 0.0, 1.0), CIMA, uv[2])],
+            "facesets": facesets or [(0, False, [0, 1, 2])]}
+
+
 def test_ler_bhf4():
     raw_flv = b"FLVER\x00fake_model"
     files = {
@@ -58,81 +143,57 @@ def test_ler_bhf4():
     assert "m0000.mte" not in lidos
 
 
-def test_ler_flver_minimo():
-    """Valida decodificação de um FLVER2 com 1 malha, 3 vértices e 1 triângulo."""
-    data_off = 0x400
-    n_dummy, n_mat, n_bone, n_mesh, n_vb, n_fs, n_lay, n_tex = 0, 1, 0, 1, 1, 1, 1, 1
-
-    header = bytearray(data_off)
-    header[:6] = b"FLVER\x00"
-    header[6:8] = b"L\x00"
-    struct.pack_into("<8i", header, 0x08, 0x20010, data_off, 0, n_dummy, n_mat, n_bone, n_mesh, n_vb)
-    header[0x48] = 16  # idx_size
-    header[0x49] = 1   # unicode = True
-    struct.pack_into("<3i", header, 0x50, n_fs, n_lay, n_tex)
-
-    # Strings em 0x200+
-    str_off = 0x200
-    header[str_off:str_off + 12] = "Pedra\0".encode("utf-16-le")
-    tex_path_off = 0x220
-    header[tex_path_off:tex_path_off + 24] = "pedra_d.tga\0".encode("utf-16-le")
-    tex_type_off = 0x260
-    header[tex_type_off:tex_type_off + 34] = "g_DiffuseTexture\0".encode("utf-16-le")
-
-    off = 0x80
-    struct.pack_into("<4i", header, off, str_off, str_off, 1, 0) # Mat 0
-    off += n_mat * 0x20
-
-    # Mesh 0: mat=0, fs_count=1, vb_count=1
-    fs_idx_off = 0x180
-    vb_idx_off = 0x184
-    struct.pack_into("<i", header, off + 4, 0)
-    struct.pack_into("<4i", header, off + 0x20, 1, fs_idx_off, 1, vb_idx_off)
-    struct.pack_into("<i", header, fs_idx_off, 0)
-    struct.pack_into("<i", header, vb_idx_off, 0)
-    off += n_mesh * 0x30
-
-    # Faceset 0
-    ioff = 0
-    icount = 3
-    struct.pack_into("<I??", header, off, 0, False, True)
-    struct.pack_into("<5i", header, off + 8, icount, ioff, 6, 0, 16)
-    off += n_fs * 0x20
-
-    # VB 0: lay=0, vsize=24, vcount=3, boff=8
-    boff = 8
-    struct.pack_into("<8i", header, off, 0, 0, 24, 3, 0, 0, 72, boff)
-    off += n_vb * 0x20
-
-    # Layout 0
-    moff = 0x140
-    struct.pack_into("<4i", header, off, 3, 0, 0, moff)
-    off += n_lay * 0x10
-
-    # Texture 0
-    struct.pack_into("<2i", header, off, tex_path_off, tex_type_off)
-
-    # Layout 0 members at moff (3 membros de 20 bytes = 60 bytes, 0x140..0x17C)
-    struct.pack_into("<5i", header, moff, 0, 0, 2, 0, 0)          # Pos
-    struct.pack_into("<5i", header, moff + 0x14, 0, 12, 17, 3, 0)    # Normal
-    struct.pack_into("<5i", header, moff + 0x28, 0, 16, 21, 5, 0)    # UV
-
-    # Dados (data_off): 6 bytes índices + 2 bytes alinhamento (boff = 8), depois 3 vértices
-    body = bytearray()
-    body += struct.pack("<3H", 0, 1, 2) + bytes(2)
-    v0 = struct.pack("<3f", 1.0, 2.0, 3.0) + bytes([127, 254, 127, 0]) + struct.pack("<2e", 0.0, 1.0) + bytes(4)
-    v1 = struct.pack("<3f", 4.0, 5.0, 6.0) + bytes([127, 254, 127, 0]) + struct.pack("<2e", 0.5, 0.5) + bytes(4)
-    v2 = struct.pack("<3f", 7.0, 8.0, 9.0) + bytes([127, 254, 127, 0]) + struct.pack("<2e", 1.0, 0.0) + bytes(4)
-    body += v0 + v1 + v2
-
-    res = ds2cena.ler_flver(bytes(header + body))
+def test_ler_flver_uv_int16_normal_e_difusa():
+    """UV do DS2 é int16 ÷ 2048 (versão 0x20010), normal Byte4B; a difusa vem pelo tipo, não pela ordem."""
+    res = ds2cena.ler_flver(build_flver([tri_malha()]))
     assert len(res["malhas"]) == 1
     m = res["malhas"][0]
     assert m["indices"] == [0, 1, 2]
-    assert len(m["vertices"]) == 3
-    assert m["vertices"][0] == (1.0, 2.0, 3.0)
-    assert m["uvs"][0] == pytest.approx((0.0, 1.0), abs=1e-3)
+    assert m["vertices"][2] == (1.0, 0.0, 1.0)
+    assert m["uvs"] == [pytest.approx((0.0, 0.0)), pytest.approx((1.0, 0.0)), pytest.approx((1.0, 1.0))]
+    assert m["normais"][0] == pytest.approx((0.0, 1.0, 0.0))
     assert m["textura_difusa"] == "pedra_d"
+    assert m["tipo"] == "opaco" and m["mtd"] == "GI_M[DB].mtd"
+
+
+def test_ler_flver_ignora_caixa_dummy():
+    m = tri_malha()
+    m["texturas"] = [("N:\\tex\\dummy128.tga", "g_DiffuseTexture")]
+    assert ds2cena.ler_flver(build_flver([m]))["malhas"][0]["tipo"] == "ignorar"
+
+
+def test_ler_flver_uv_antigo_usa_1024():
+    res = ds2cena.ler_flver(build_flver([tri_malha(uv=((0, 0), (1024, 0), (1024, 1024)))], version=0x2000C))
+    assert res["malhas"][0]["uvs"][2] == pytest.approx((1.0, 1.0))
+
+
+def test_ler_flver_pula_lod_e_desfaz_strip():
+    # 1º faceset é LOD (flag 0x01000000); o 2º é o LOD0 em triangle strip, com um degenerado no fim
+    m = tri_malha(facesets=[(0x01000000, False, [0, 1, 2]), (0, True, [1, 2, 0, 0])])
+    res = ds2cena.ler_flver(build_flver([m]))
+    assert res["malhas"][0]["indices"] == [1, 2, 0]
+
+
+def test_triangulos_de_strip():
+    assert ds2cena.triangulos_de_strip([0, 1, 2, 3]) == [0, 1, 2, 3, 2, 1]
+    assert ds2cena.triangulos_de_strip([0, 1, 2, 0xFFFF, 3, 4, 5]) == [0, 1, 2, 3, 4, 5]
+    assert ds2cena.triangulos_de_strip([0, 0, 1, 2]) == [2, 1, 0]
+
+
+def test_classe_material():
+    assert ds2cena.classe_material("N:\\FRPG2\\mtd\\SkyDome.mtd") == "ignorar"
+    assert ds2cena.classe_material("NoLit[D]_Alp.mtd") == "ignorar"  # cartões pretos de neblina na entrada das cavernas
+    assert ds2cena.classe_material("GI_M[D]_Alp_1bit.mtd") == "recorte"
+    assert ds2cena.classe_material("Grass[D]_Alp_1bit.mtd") == "recorte"
+    assert ds2cena.classe_material("GI_M[DB][decal]_Alp.mtd") == "decal"
+    assert ds2cena.classe_material("Water[DSB][M]_Alp.mtd") == "agua"
+    assert ds2cena.classe_material("GI_M[DB][M_mask].mtd") == "opaco"
+
+
+def test_textura_difusa():
+    assert ds2cena.textura_difusa([("a\\x_n.tga", "g_BumpmapTexture"), ("a\\X_D.tga", "g_DiffuseTexture")]) == "x_d"
+    assert ds2cena.textura_difusa([("a\\x_n.tga", ""), ("a\\y_d.tga", "")]) == "y_d"
+    assert ds2cena.textura_difusa([("a\\x_n.tga", "g_BumpmapTexture")]) is None
 
 
 def test_limitar_dds():
@@ -167,7 +228,7 @@ def test_extrair_dds_tpf():
     b = bytearray()
     b += b"TPF\0"
     b += struct.pack("<3I", len(dds), 1, 0x02)
-    name_bytes = "rocha_d.dds".encode("latin-1") + b"\0"
+    name_bytes = "Rocha_d.dds".encode("latin-1") + b"\0"
     name_off = 0x10 + 0x14
     data_off = name_off + len(name_bytes)
     b += struct.pack("<5I", data_off, len(dds), 0, name_off, 0)
@@ -175,40 +236,38 @@ def test_extrair_dds_tpf():
     b += dds
 
     out = ds2cena.extrair_dds_tpf(bytes(b))
-    assert "rocha_d" in out
-    assert out["rocha_d"] == dds
+    assert out == {"rocha_d": dds}
 
 
 def test_empacotar_geometria():
-    modelos = {
-        "m0000": {
-            "bb": ((-10.0, 0.0, -10.0), (10.0, 5.0, 10.0)),
-            "malhas": [
-                {
-                    "material_idx": 0,
-                    "textura_difusa": "pedra_d",
-                    "vertices": [(0.0, 1.0, 2.0), (3.0, 4.0, 5.0), (6.0, 7.0, 8.0)],
-                    "normais": [(0.0, 1.0, 0.0), (0.0, 1.0, 0.0), (0.0, 1.0, 0.0)],
-                    "uvs": [(0.0, 0.0), (1.0, 0.0), (1.0, 1.0)],
-                    "indices": [0, 1, 2],
-                }
-            ],
-        }
-    }
-    geo_bin, cat = ds2cena.empacotar_geometria(modelos)
-    assert "m0000" in cat["modelos"]
-    m = cat["modelos"]["m0000"]["malhas"][0]
-    assert m["v_count"] == 3
-    assert m["i_count"] == 3
-    assert m["idx_size"] == 2
-    # Valida bytes de vértices
-    v0_floats = struct.unpack_from("<8f", geo_bin, m["v_off"])
-    assert v0_floats[:3] == (0.0, 1.0, 2.0)
-    assert v0_floats[3:6] == (0.0, 1.0, 0.0)
-    assert v0_floats[6:8] == (0.0, 0.0)
-    # Valida índices
-    inds = struct.unpack_from("<3H", geo_bin, m["i_off"])
-    assert inds == (0, 1, 2)
+    modelos = {"m0000": ds2cena.ler_flver(build_flver([tri_malha(), tri_malha(mtd="SkyDome.mtd")]))}
+    geo, cat = ds2cena.empacotar_geometria(modelos)
+    malhas = cat["modelos"]["m0000"]["malhas"]
+    assert len(malhas) == 1  # a do céu fica de fora
+    m = malhas[0]
+    assert (m["v_count"], m["i_count"], m["idx_size"], m["tipo"], m["tex"]) == (3, 3, 2, "opaco", "pedra_d")
+    assert all(m[k] % 4 == 0 for k in ("pos", "nrm", "uv", "i_off"))
+    assert struct.unpack_from("<3f", geo, m["pos"] + 24) == (1.0, 0.0, 1.0)
+    assert struct.unpack_from("<4b", geo, m["nrm"]) == (0, 127, 0, 0)
+    assert struct.unpack_from("<2f", geo, m["uv"] + 16) == (1.0, 1.0)
+    assert struct.unpack_from("<3H", geo, m["i_off"]) == (0, 1, 2)
+    assert m["i_off"] + 6 <= len(geo)
+
+
+def test_matriz_instancia_gira_x_depois_z_depois_y():
+    m = ds2cena.matriz_instancia((10, 20, 30), (0, 90, 0), (1, 1, 1))
+    assert ds2cena.aplicar_matriz(m, (1, 0, 0)) == pytest.approx((10, 20, 29))  # +x vira -z com 90° em Y
+    m = ds2cena.matriz_instancia((0, 0, 0), (90, 0, 90), (1, 1, 1))
+    assert ds2cena.aplicar_matriz(m, (0, 1, 0)) == pytest.approx((0, 0, 1), abs=1e-6)  # X primeiro: (0,1,0) -> (0,0,1)
+    m = ds2cena.matriz_instancia((0, 0, 0), (0, 0, 0), (2, 3, 4))
+    assert ds2cena.aplicar_matriz(m, (1, 1, 1)) == pytest.approx((2, 3, 4))
+    assert len(m) == 16 and m[15] == 1.0
+
+
+def test_caixa_mundo():
+    m = ds2cena.matriz_instancia((100, 0, 0), (0, 90, 0), (1, 1, 1))
+    lo, hi = ds2cena.caixa_mundo(m, ((0, 0, 0), (2, 1, 4)))
+    assert lo == pytest.approx([100, 0, -2]) and hi == pytest.approx([104, 1, 0])
 
 
 def test_msb_instancias():
@@ -225,7 +284,7 @@ def test_msb_instancias():
     while len(data) % 8:
         data += b"\0"
     m_entry = len(data)
-    data += struct.pack("<q", 0x20) + bytes(0x18) + utf16z("m0000")
+    data += struct.pack("<q", 0x20) + bytes(0x18) + utf16z("M0000")
 
     # Lista 2: PARTS_PARAM_ST
     while len(data) % 8:
@@ -256,23 +315,41 @@ def test_msb_instancias():
 
     insts, mods = ds2cena.msb_instancias(bytes(data))
     assert len(insts) == 1
-    assert "m0000" in mods
+    assert mods == {"m0000"}
     assert insts[0]["modelo"] == "m0000"
     assert insts[0]["pos"] == [10.0, 20.0, 30.0]
     assert insts[0]["rot"] == [0.0, 45.0, 0.0]
+    assert insts[0]["matriz"][12:15] == [10.0, 20.0, 30.0]
 
 
-def test_extrair_cena_majula():
-    from pathlib import Path
-    import json
-    p = Path.home() / ".buildsmith" / "cache" / "ds2" / "cena" / "m10_04_00_00" / "cena.json"
-    if not p.exists():
-        pytest.skip("Cache de Majula não gerado ainda")
-    cena = json.loads(p.read_text("utf-8"))
-    assert cena["versao"] == 1
-    assert cena["area"] == "m10_04_00_00"
-    assert len(cena["instancias"]) > 0
-    assert len(cena["modelos"]) > 0
-    assert len(cena["alturas"]) > 0
+def test_cena_pronta_confere_versao_e_assinatura(tmp_path):
+    (tmp_path / "geo.bin.gz").write_bytes(b"\0")
+    (tmp_path / "cena.json").write_text(json.dumps({"versao": ds2cena.CENA_VERSAO, "assinatura": "a"}), encoding="utf-8")
+    assert ds2cena.cena_pronta(tmp_path, "a")["assinatura"] == "a"
+    assert ds2cena.cena_pronta(tmp_path, "b") is None  # jogo atualizado: extrai de novo
+    (tmp_path / "cena.json").write_text(json.dumps({"versao": 1, "assinatura": "a"}), encoding="utf-8")
+    assert ds2cena.cena_pronta(tmp_path) is None  # versão antiga (UV errada): extrai de novo
 
 
+def test_extrair_cena_recusa_area_invalida(tmp_path):
+    with pytest.raises(Exception):
+        ds2cena.extrair_cena(tmp_path, "../../etc", tmp_path)
+
+
+@pytest.mark.skipif(not (GAME / "GameDataEbl.bhd").exists(), reason="DS2 SotFS não instalado")
+def test_extrair_cena_majula_com_o_jogo(tmp_path):
+    cena = ds2cena.extrair_cena(GAME, "m10_04_00_00", tmp_path)
+    pasta = tmp_path / "cena" / "m10_04_00_00"
+    assert cena["versao"] == ds2cena.CENA_VERSAO and cena["area"] == "m10_04_00_00"
+    assert len(cena["instancias"]) >= 100 and len(cena["texturas"]) >= 50
+    assert cena["chao"] and cena["chao"]["i_count"] > 300  # o navmesh do mapa 2D, para o corte de interior
+    assert cena["segundos"] < 60 and cena["mb"] <= 30  # orçamento da spec
+    geo = len(__import__("gzip").decompress((pasta / "geo.bin.gz").read_bytes()))
+    for mod in cena["modelos"].values():
+        for m in mod["malhas"]:
+            assert m["i_off"] + m["i_count"] * m["idx_size"] <= geo
+            assert m["tipo"] in ds2cena.TIPOS_MATERIAL
+            assert m["tex"] is None or (pasta / "tex" / f"{m['tex']}.dds").is_file()
+    assert all(len(i["matriz"]) == 16 and i["modelo"] in cena["modelos"] for i in cena["instancias"])
+    assert not list((tmp_path / "cena").glob(".*.tmp-*"))  # gravação atômica não deixa resto
+    assert ds2cena.extrair_cena(GAME, "m10_04_00_00", tmp_path)["segundos"] == cena["segundos"]  # cache

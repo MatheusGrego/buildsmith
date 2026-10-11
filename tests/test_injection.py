@@ -326,6 +326,66 @@ console.log(JSON.stringify({
     assert r["andarDe"] == [2, 0, None]  # dentro do andar; fora de todos vai para a altura mais perto
 
 
+@pytest.mark.skipif(shutil.which("node") is None, reason="sem node para rodar o JS da página")
+def test_map_route_stops_helpers(tmp_path):
+    script = tmp_path / "mapa_rota.js"
+    script.write_text(r"""
+global.window = {}; global.CSS = { escape: (s) => s };
+eval(require("fs").readFileSync(process.argv[2], "utf8"));
+const t = window.buildsmithMapa._teste;
+const proj = (p) => [p[0] * 10, p[2] * 10, true, { cortado: p[1] > 5 }];
+console.log(JSON.stringify({
+  tinta: [t.tintaParada(1, 3), t.tintaParada(3, 3), t.tintaParada(1, 1)],
+  pino: t.pino(10, 20),
+  trechos: t.trechosTela([[0, 0, 0], [1, 0, 0], [2, 9, 0], [3, 0, 0], [4, 0, 0], [5, 0, 1]], proj),
+}));
+""", encoding="utf-8")
+    out = subprocess.run(["node", str(script), str(ROOT / "skills/build-page/template/mapa.js")],
+                         capture_output=True, text=True, timeout=20, check=True)
+    r = json.loads(out.stdout)
+    assert r["tinta"] == ["#1a1206", "#fff4e6", "#1a1206"]  # número escuro na parada clara, claro na escura
+    assert r["pino"].startswith("M10.0 20.0L2.5 8.6A10 10 0 1 1 17.5 8.6Z")  # ponta no ponto, bolha acima
+    assert r["trechos"] == [[[0, 0], [10, 0]], [[30, 0], [40, 0], [50, 10]]]  # o ponto acima do corte quebra a linha
+
+
+@pytest.mark.skipif(shutil.which("node") is None, reason="sem node para rodar o JS da página")
+def test_iso_camera_and_floor_helpers(tmp_path):
+    script = tmp_path / "iso_teste.js"
+    script.write_text(r"""
+const Iso = require(process.argv[2]);
+const t = Iso._teste;
+const r = (v) => Array.isArray(v) ? v.map(r) : Math.round(v * 1000) / 1000;
+const verts = [0,5,0, 10,5,0, 10,5,10, 0,5,10, 0,20,0, 5,20,0, 5,20,10];  // chão 10x10 em y=5 e uma laje em y=20
+const tris = [0,1,2, 0,2,3, 4,5,6];
+const g = t.gradeAlturas(verts, tris, null, 1);
+const so5 = t.gradeAlturas(verts, tris, (a, b) => b < 10, 1);
+const buf = new ArrayBuffer(128 + 32 + 8), dv = new DataView(buf);  // DDS DXT1 8x8 com 2 mipmaps
+dv.setUint32(0, 0x20534444, true); dv.setUint32(8, 0x20000, true); dv.setUint32(12, 8, true); dv.setUint32(16, 8, true);
+dv.setUint32(28, 2, true); [68, 88, 84, 49].forEach((c, i) => dv.setUint8(84 + i, c));
+const dds = t.lerDDS(buf);
+console.log(JSON.stringify({
+  eixos0: r([t.eixos(0).frente, t.eixos(0).direita]), eixos90: r([t.eixos(Math.PI / 2).frente, t.eixos(Math.PI / 2).direita]),
+  pixel: r(t.chaoDoPixel(0, Math.PI / 2, 0.5, 10, -20)), pixelIncl: r(t.chaoDoPixel(0, Math.PI / 6, 1, 0, -10)),
+  cam: r(t.posicaoCamera([0, 0, 0], 0, Math.PI / 4, Math.SQRT2)),
+  topo: [t.alturaNaGrade(g, 4, 5), t.alturaNaGrade(g, 8, 5), t.alturaNaGrade(g, 50, 50)], andar: t.alturaNaGrade(so5, 4, 5),
+  dds: dds && [dds.formato, dds.largura, dds.niveis.length, dds.niveis[1].data.byteLength], ruim: t.lerDDS(new ArrayBuffer(10)),
+  angulo: r([t.angulo(3 * Math.PI / 2), t.angulo(-3 * Math.PI / 2)]),
+}));
+""", encoding="utf-8")
+    out = subprocess.run(["node", str(script), str(ROOT / "skills/build-page/template/iso.js")],
+                         capture_output=True, text=True, timeout=20, check=True)
+    r = json.loads(out.stdout)
+    assert r["eixos0"] == [[0, 1], [1, 0]]  # giro 0: frente = norte (+z) e direita = leste (+x), como no mapa 2D
+    assert r["eixos90"] == [[1, 0], [0, -1]]
+    assert r["pixel"] == [5, 10]  # de cima, meio metro por pixel: 10 px à direita = 5 m; 20 px acima = 10 m ao norte
+    assert r["pixelIncl"] == [0, 20]  # inclinada a 30°, o chão encurta na tela: 10 px = 20 m
+    assert r["cam"] == [0, 1, -1]  # câmera atrás (sul) e acima do alvo
+    assert r["topo"][0] == pytest.approx(20) and r["topo"][1] == pytest.approx(5) and r["topo"][2] is None
+    assert r["andar"] == pytest.approx(5)  # com o filtro do andar, a laje de cima não conta
+    assert r["dds"] == ["DXT1", 8, 2, 8] and r["ruim"] is None
+    assert r["angulo"] == [-1.571, 1.571]
+
+
 def test_equipment_view_helpers(tmp_path):
     script = tmp_path / "equip.js"
     script.write_text(r'''

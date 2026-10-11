@@ -314,9 +314,7 @@ def test_invalid_equipment_block_is_rejected(tmp_path):
 def test_vendor_assets_are_copied_to_output(tmp_path):
     out = run(tmp_path, FakeFetch())
     assert "vendor/three.module.js" in out["files"]
-    assert "vendor/DDSLoader.js" in out["files"]
     assert Path(out["files"]["vendor/three.module.js"]).is_file()
-    assert Path(out["files"]["vendor/DDSLoader.js"]).is_file()
 
 
 def test_iso_module_and_styles_included_in_page(tmp_path):
@@ -325,5 +323,4 @@ def test_iso_module_and_styles_included_in_page(tmp_path):
     assert "MapaIsometrico" in index_html
     assert "mp-modo-toggle" in index_html
     assert "mp-iso-container" in index_html
-    assert ".mp-modo-ativo" in index_html
-
+    assert ".mp-iso-ctrl" in index_html

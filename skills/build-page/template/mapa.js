@@ -2,7 +2,8 @@
   // Mapa geral da área (estilo The Division): vista de cima por andar, zonas de fogueira em sequência, chefes, NPCs,
   // todos os itens com ícone, grade, régua, zoom e arrastar, filtros, painel "Rota da área" e "Ver no mapa".
   // Dados: mapas/indice.json + mapas/<area>.json, gerados por script a partir dos arquivos do jogo.
-  // Pelo servidor local (/p/<jogo>/<personagem>/): você no mapa (posição do save) e "Rota até aqui" pelo chão.
+  // Pelo servidor local (/p/<jogo>/<personagem>/): você no mapa (posição do save), "Rota até aqui" pelo chão e a vista
+  // 3D (iso.js) com o cenário do jogo, com os mesmos marcadores, filtros, andares e rota projetados por cima.
   const AREA_OK = /^m\d\d_\d\d_\d\d_\d\d$/;
   const ICONE_OK = /^icons\/[A-Za-z0-9._-]+$/;
   const esc = (v) => String(v ?? "").replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
@@ -15,6 +16,7 @@
   const MIN_S = 0.6, MAX_S = 40;  // pixels por metro
   const FILTROS = [["zonas", "Zonas"], ["fogueiras", "Fogueiras"], ["chefes", "Chefes"], ["npcs", "NPCs"],
                    ["plano", "Itens do plano"], ["outros", "Outros itens"], ["inimigos", "Inimigos"]];
+  const Iso = () => (typeof window !== "undefined" && window.MapaIsometrico) || null;
 
   // ---- funções puras (testadas no node) ------------------------------------------------------------
   function caixa(pontos) {
@@ -42,17 +44,35 @@
     const a = andares.find((x) => y >= x.min - 1 && y <= x.max + 1);
     return (a || andares.reduce((m, x) => (Math.abs(x.altura - y) < Math.abs(m.altura - y) ? x : m), andares[0])).id;
   }
-  // Escala sequencial da zona 1 (dourado claro) até a última (brasa escura).
+  // Escala sequencial da zona 1 (dourado claro) até a última (brasa escura). As paradas da rota usam a mesma escala.
   function corZona(ordem, total) {
     const t = total > 1 ? (ordem - 1) / (total - 1) : 0;
     const h = Math.round(46 - t * 38), sat = Math.round(62 + t * 10), l = Math.round(62 - t * 24);
     return `hsl(${h} ${sat}% ${l}%)`;
   }
+  // Número da parada legível em cima da cor dela: escuro nas claras (começo), claro nas escuras (fim).
+  const tintaParada = (ordem, total) => (total > 1 && (ordem - 1) / (total - 1) > 0.5 ? "#fff4e6" : "#1a1206");
+  // Pino de parada com a ponta em (x, y): bolha de raio 10 com o centro 18 px acima.
+  const pino = (x, y) => `M${x.toFixed(1)} ${y.toFixed(1)}L${(x - 7.5).toFixed(1)} ${(y - 11.4).toFixed(1)}A10 10 0 1 1 ${(x + 7.5).toFixed(1)} ${(y - 11.4).toFixed(1)}Z`;
+  // Trechos da rota na tela (3D): partes contíguas de pontos visíveis (fora do corte de interior), em pixels.
+  function trechosTela(pontos, projetar) {
+    const out = [];
+    let atual = [];
+    for (const p of pontos) {
+      const [sx, sy, vis, extra] = projetar(p);
+      if (!vis || (extra && extra.cortado)) { if (atual.length > 1) out.push(atual); atual = []; continue; }
+      atual.push([sx, sy]);
+    }
+    if (atual.length > 1) out.push(atual);
+    return out;
+  }
 
   // ---- estado ------------------------------------------------------------------------------------
   const st = { raiz: null, plano: null, indice: null, docs: {}, doc: null, andar: "todos", vista: null, rota: null,
-               destaque: null, zonaSel: null, pop: null, jogador: null, tipoSel: null, poll: null, modo: "2d", mapaIso: null,
+               destaque: null, zonaSel: null, pop: null, jogador: null, tipoSel: null, poll: null,
+               modo: "2d", iso: null, interior: false, foco: true,
                filtros: { zonas: true, fogueiras: true, chefes: true, npcs: true, plano: true, outros: true, inimigos: false } };
+  const em3d = () => st.modo === "iso" && st.iso;
 
   function carregar(url) {
     return fetch(url, { cache: "no-store" }).then((r) => (r.ok ? r.json() : null)).catch(() => null);
@@ -68,21 +88,22 @@
   const nomeAndar = (id) => { const a = st.doc.planta.andares.find((x) => x.id === id); return a ? metros(a.altura) : "—"; };
   const nomeArea = (area) => { const a = (st.indice || []).find((x) => x.area === area); return a ? a.nome : "outra área"; };
   const tipoInimigo = (t) => (st.doc && st.doc.tipos_inimigo && st.doc.tipos_inimigo[t]) || {};
+  // No 3D sem interior tudo aparece inteiro (nada está "em outro andar" sem o corte).
+  const andarVisivel = () => (st.modo === "iso" && !st.interior ? "todos" : st.andar);
+  const motivoSem3d = () => (!API ? "A vista 3D só abre pelo servidor local (o cenário vem dos arquivos do jogo)."
+    : !Iso() || !Iso().suportado() ? "Este navegador não tem WebGL 2: a vista 3D não abre." : "");
 
   function montar(raiz, plano) {
     if (st.raiz === raiz) return Promise.resolve();
     st.raiz = raiz;
     st.plano = plano;
+    const sem3d = motivoSem3d();
     raiz.innerHTML = `<div class="mp">
       <div class="mp-barra">
         <label class="mp-campo">Área <select class="mp-area" aria-label="Área do mapa"></select></label>
-        <div class="mp-modo-toggle" role="group" aria-label="Modo de visualização">
-          <button type="button" class="mp-modo mp-modo-ativo" data-modo="2d" aria-pressed="true">2D</button>
-          <button type="button" class="mp-modo" data-modo="iso" aria-pressed="false">Isométrico</button>
-        </div>
-        <div class="mp-rotacao" role="group" aria-label="Girar câmera" hidden>
-          <button type="button" class="mp-btn-rot" data-rot="-1" title="Girar 90° anti-horário (Q)">⟲ Q</button>
-          <button type="button" class="mp-btn-rot" data-rot="1" title="Girar 90° horário (E)">⟳ E</button>
+        <div class="mp-modo-toggle" role="group" aria-label="Vista do mapa">
+          <button type="button" class="mp-modo" data-modo="2d" aria-pressed="true">2D</button>
+          <button type="button" class="mp-modo" data-modo="iso" aria-pressed="false"${sem3d ? ` disabled title="${esc(sem3d)}"` : ' title="Cenário do jogo em 3D"'}>3D</button>
         </div>
         <div class="mp-filtros" role="group" aria-label="Mostrar no mapa">
           ${FILTROS.map(([k, l]) => `<button type="button" class="mp-filtro" data-filtro="${k}" aria-pressed="${st.filtros[k]}">${l}</button>`).join("")}
@@ -91,9 +112,22 @@
       <div class="mp-corpo">
         <div class="mp-tela" tabindex="0" aria-label="Mapa: arraste para mover, roda ou pinça para zoom">
           <div class="mp-iso-container" hidden></div>
-          <svg class="mp-svg" xmlns="${NS}"><g class="mp-mundo"><g class="mp-grade"></g><g class="mp-chao"></g><g class="mp-zonas-chao"></g><g class="mp-paredes"></g><g class="mp-trilha"></g></g><g class="mp-pontos"></g></svg>
+          <div class="mp-iso-sombra" hidden></div>
+          <svg class="mp-svg" xmlns="${NS}"><defs class="mp-defs"></defs><g class="mp-mundo"><g class="mp-grade"></g><g class="mp-chao"></g><g class="mp-zonas-chao"></g><g class="mp-paredes"></g><g class="mp-trilha"></g></g><g class="mp-trilha-tela"></g><g class="mp-pontos"></g></svg>
           <div class="mp-info"><p class="mp-onde" hidden></p><p class="mp-rota-info" role="status" hidden></p></div>
           <div class="mp-zoom"><button type="button" data-zoom="mais" aria-label="Aproximar">+</button><button type="button" data-zoom="menos" aria-label="Afastar">&#8722;</button><button type="button" data-zoom="tudo" aria-label="Ver a área inteira">&#9635;</button></div>
+          <div class="mp-iso-ui" hidden>
+            <div class="mp-iso-ctrl" role="toolbar" aria-label="Câmera 3D">
+              <button type="button" data-iso="esq" title="Girar para a esquerda (segure Q)" aria-label="Girar para a esquerda">&#10226;</button>
+              <button type="button" class="mp-bussola" data-iso="norte" title="Norte para cima (N)" aria-label="Norte para cima"><span>N</span></button>
+              <button type="button" data-iso="dir" title="Girar para a direita (segure E)" aria-label="Girar para a direita">&#10227;</button>
+              <button type="button" class="mp-iso-tg" data-iso="topo" aria-pressed="false" title="Olhar de cima ou de lado (T); segure R/F para inclinar">De cima</button>
+              <button type="button" class="mp-iso-tg" data-iso="interior" aria-pressed="false" title="Cortar o que está acima do andar para ver dentro de cavernas e prédios (I); PgUp/PgDn trocam o andar">Interior</button>
+              <button type="button" class="mp-iso-tg" data-iso="foco" aria-pressed="true" title="Escurecer o que está longe do centro da vista (O)">Foco</button>
+            </div>
+            <p class="mp-iso-ajuda"><kbd>WASD</kbd> andar · <kbd>Q</kbd><kbd>E</kbd> girar · <kbd>R</kbd><kbd>F</kbd> inclinar · <kbd>Shift</kbd> rápido · botão direito arrasta: girar · roda: zoom</p>
+          </div>
+          <p class="mp-iso-status" role="status" hidden></p>
           <div class="mp-regua"><span class="mp-regua-barra"></span><span class="mp-regua-txt"></span></div>
           <div class="mp-pop" hidden></div>
           <p class="mp-vazio" hidden></p>
@@ -106,7 +140,7 @@
           <p class="mp-nota"></p>
         </aside>
       </div>
-      <p class="mp-leg"><span class="mp-k mp-k-zonas"></span>zona 1 → última <span class="mp-k mp-k-chefe"></span>chefe <span class="mp-k mp-k-npc"></span>NPC <span class="mp-k mp-k-plano"></span>do plano <span class="mp-k mp-k-outro"></span>item <span class="mp-k mp-k-rota"></span>rota <span class="mp-k mp-k-eu"></span>você <span class="mp-k mp-k-inimigo"></span>inimigo <span class="mp-aviso">rota pelo chão; portas e alavancas não aparecem</span></p>
+      <p class="mp-leg"><span class="mp-k mp-k-zonas"></span>zona 1 → última <span class="mp-k mp-k-chefe"></span>chefe <span class="mp-k mp-k-npc"></span>NPC <span class="mp-k mp-k-plano"></span>do plano <span class="mp-k mp-k-outro"></span>item <span class="mp-k mp-k-rota"></span>rota <span class="mp-k mp-k-parada"></span>paradas 1 → última <span class="mp-k mp-k-eu"></span>você <span class="mp-k mp-k-inimigo"></span>inimigo <span class="mp-aviso">rota pelo chão; portas e alavancas não aparecem</span></p>
     </div>`;
     ligar(raiz);
     return carregar("mapas/indice.json").then((indice) => {
@@ -156,9 +190,9 @@
     st.andar = andarDe(st.doc.planta.andares, j.pos[1]) ?? "todos";
     st.vista = { ...ajustar(caixa([[j.pos[0], j.pos[2]]]), tela.clientWidth, tela.clientHeight, 40) };
     desenharChao();
-    sincronizarAndarIso();
-    if (st.modo === "iso" && st.mapaIso) {
-      st.mapaIso.focar(j.pos);
+    if (em3d()) {
+      sincronizarAndarIso();
+      st.iso.focar(j.pos, tela.clientHeight / st.vista.s);
     }
     atualizar();
   }
@@ -201,9 +235,7 @@
     st.vista = ajustar(caixa(j.rota.pontos.map((p) => [p[0], p[2]])), tela.clientWidth, tela.clientHeight, 30);
     fecharPop();
     desenharChao();
-    if (st.modo === "iso" && st.mapaIso && j && j.rota) {
-      st.mapaIso.desenharRota(j.rota.pontos);
-    }
+    vistaParaIso(true);
     atualizar();
     statusRota(`${aviso} ${fmt.format(j.rota.metros)} m pelo chão até ${esc(alvo.nome)}.`);
   }
@@ -238,6 +270,7 @@
     st.zonaSel = null;
     st.tipoSel = null;
     st.pop = null;
+    st.interior = false;  // no 3D, cada área abre inteira; o corte é escolha de quem está olhando
     st.raiz.querySelector(".mp-pop").hidden = true;
     statusRota("");
     const andares = d.planta.andares;
@@ -250,21 +283,11 @@
     }).join("") + '<li><button type="button" data-andar="todos">Todos</button></li>';
     desenharRotaArea();
     desenharChao();
-    if (st.modo === "iso" && st.mapaIso) {
-      try {
-        await st.mapaIso.carregarCena(area);
-        sincronizarAndarIso();
-        if (st.rota && st.rota.trechos && st.rota.trechos[0]) {
-          st.mapaIso.desenharRota(st.rota.trechos[0]);
-        }
-      } catch (err) {
-        console.warn("Cena 3D indisponível para esta área:", err);
-      }
-    }
     const tela = st.raiz.querySelector(".mp-tela");
     const pts = opcoes.foco && opcoes.foco.length ? opcoes.foco : todosPontosChao();
     st.vista = ajustar(caixa(pts), tela.clientWidth || 600, tela.clientHeight || 400, opcoes.foco ? 30 : 10);
     atualizar();
+    if (em3d()) await abrirIso();
   }
 
   function todosPontosChao() {
@@ -294,6 +317,17 @@
 
   // ---- desenho -----------------------------------------------------------------------------------
   const caminho = (pol) => "M" + pol.map((p) => `${p[0]} ${-p[1]}`).join("L") + "Z";
+  const ultimaParada = () => (st.rota && st.rota.pontos.length ? Math.max(...st.rota.pontos.map((p) => p.n)) : 1);
+
+  // Gradiente da linha da rota (cor da 1ª parada até a da última), do início ao fim de cada trecho.
+  function gradienteRota(id, a, b) {
+    const total = ultimaParada();
+    return `<linearGradient id="${id}" gradientUnits="userSpaceOnUse" x1="${a[0].toFixed(1)}" y1="${a[1].toFixed(1)}" x2="${b[0].toFixed(1)}" y2="${b[1].toFixed(1)}"><stop offset="0" stop-color="${corZona(1, total)}"/><stop offset="1" stop-color="${corZona(total, total)}"/></linearGradient>`;
+  }
+  const linhaRota = (pts, id) => {
+    const p = pts.map((q) => `${q[0].toFixed(1)},${q[1].toFixed(1)}`).join(" ");
+    return `<polyline class="mp-rota-base" vector-effect="non-scaling-stroke" points="${p}"/><polyline class="mp-rota" vector-effect="non-scaling-stroke" stroke="url(#${id})" points="${p}"/>`;
+  };
 
   function desenharChao() {
     const g = st.raiz.querySelector(".mp-chao");
@@ -314,106 +348,149 @@
       return `<path class="mp-zona${foco}" fill="${corDe(z.ordem)}" fill-rule="evenodd" d="${polys.map(caminho).join("")}"/>`;
     }).join("") : "";
     st.raiz.querySelector(".mp-paredes").innerHTML = visiveis.map((a) => `<path class="mp-parede${sel ? "" : " mp-parede-todos"}" fill-rule="evenodd" vector-effect="non-scaling-stroke" d="${a.poligonos.map(caminho).join("")}"/>`).join("");
-    st.raiz.querySelectorAll("[data-andar]").forEach((b) => b.setAttribute("aria-pressed", String(String(st.andar) === b.dataset.andar)));
+    marcarAndares();
     st.raiz.querySelectorAll("[data-zona]").forEach((b) => b.setAttribute("aria-pressed", String(st.zonaSel === Number(b.dataset.zona))));
     const cx = caixa(todosPontosChao());
     const linhas = [];
     for (let x = Math.floor(cx.x0 / 10) * 10; x <= cx.x1 + 10; x += 10) linhas.push(`<line class="${x % 50 ? "mp-g10" : "mp-g50"}" vector-effect="non-scaling-stroke" x1="${x}" y1="${-(cx.z1 + 10)}" x2="${x}" y2="${-(cx.z0 - 10)}"/>`);
     for (let z = Math.floor(cx.z0 / 10) * 10; z <= cx.z1 + 10; z += 10) linhas.push(`<line class="${z % 50 ? "mp-g10" : "mp-g50"}" vector-effect="non-scaling-stroke" x1="${cx.x0 - 10}" y1="${-z}" x2="${cx.x1 + 10}" y2="${-z}"/>`);
     st.raiz.querySelector(".mp-grade").innerHTML = linhas.join("");
-    st.raiz.querySelector(".mp-trilha").innerHTML = st.rota ? st.rota.trechos.filter(Boolean).map((t) => `<polyline class="mp-rota" vector-effect="non-scaling-stroke" points="${t.map((p) => `${p[0]},${-p[2]}`).join(" ")}"/>`).join("") : "";
+    st.raiz.querySelector(".mp-trilha").innerHTML = st.rota ? st.rota.trechos.filter((t) => t && t.length > 1).map((t, i) => {
+      const pts = t.map((p) => [p[0], -p[2]]);
+      return gradienteRota(`mp-rg2-${i}`, pts[0], pts[pts.length - 1]) + linhaRota(pts, `mp-rg2-${i}`);
+    }).join("") : "";
   }
 
-  function sincronizarAndarIso() {
-    if (!st.mapaIso || st.modo !== "iso" || !st.doc) return;
-    if (st.andar === "todos") {
-      st.mapaIso.setAlturaCorte(null);
-    } else {
-      const andares = st.doc.planta.andares || [];
-      const a = andares.find((x) => x.id === st.andar);
-      if (a) {
-        st.mapaIso.setAlturaCorte(a.max != null ? a.max + 1.0 : a.altura + 3.0);
-      } else {
-        st.mapaIso.setAlturaCorte(null);
-      }
-    }
+  function marcarAndares() {
+    const vis = andarVisivel();
+    st.raiz.querySelectorAll("[data-andar]").forEach((b) => b.setAttribute("aria-pressed", String(String(vis) === b.dataset.andar)));
   }
 
-  async function mudarModo(novoModo) {
-    if (st.modo === novoModo) return;
-    st.modo = novoModo;
-    const raiz = st.raiz;
-    raiz.querySelectorAll(".mp-modo").forEach((b) => {
-      const ativo = b.dataset.modo === novoModo;
-      b.classList.toggle("mp-modo-ativo", ativo);
-      b.setAttribute("aria-pressed", String(ativo));
-    });
-    const isoCont = raiz.querySelector(".mp-iso-container");
-    const rotCont = raiz.querySelector(".mp-rotacao");
-    const mundoSvg = raiz.querySelector(".mp-mundo");
+  // ---- vista 3D ------------------------------------------------------------------------------------
+  function statusIso(texto) {
+    const el = st.raiz.querySelector(".mp-iso-status");
+    el.textContent = texto || "";
+    el.hidden = !texto || st.modo !== "iso";
+  }
 
-    if (novoModo === "iso") {
-      isoCont.hidden = false;
-      rotCont.hidden = false;
-      mundoSvg.style.display = "none";
-      if (!st.mapaIso) {
-        const MapaIsoClass = (typeof MapaIsometrico !== "undefined") ? MapaIsometrico : window.MapaIsometrico;
-        if (MapaIsoClass) {
-          st.mapaIso = new MapaIsoClass(isoCont, {
-            onMarkerUpdate: () => atualizar(),
-          });
-        }
-      }
-      if (st.mapaIso && st.doc) {
-        if (st.vista) {
-          st.mapaIso.centro.x = st.vista.cx;
-          st.mapaIso.centro.z = st.vista.cz;
-        }
-        try {
-          await st.mapaIso.carregarCena(st.doc.area);
-          sincronizarAndarIso();
-          if (st.rota && st.rota.trechos && st.rota.trechos[0]) {
-            st.mapaIso.desenharRota(st.rota.trechos[0]);
-          }
-        } catch (err) {
-          console.warn("Cena 3D indisponível para esta área:", err);
-        }
-      }
-    } else {
-      isoCont.hidden = true;
-      rotCont.hidden = true;
-      mundoSvg.style.display = "";
-      if (st.mapaIso && st.vista) {
-        st.vista.cx = st.mapaIso.centro.x;
-        st.vista.cz = st.mapaIso.centro.z;
-      }
-    }
+  async function abrirIso() {
+    const area = st.doc.area;
+    const v = st.vista;
+    await st.iso.iniciar();
+    st.iso.redimensionar();
+    const cena = await st.iso.abrir(area);
+    if (!cena || !em3d() || st.doc.area !== area) return;
+    sincronizarAndarIso();
+    st.iso.verComo2D(v.cx, v.cz, v.s);
     atualizar();
   }
 
-  function paraTela(x, z, y) {
-    if (st.modo === "iso" && st.mapaIso) {
-      const p = st.mapaIso.projetar(x, y ?? 0, z);
-      return [p.x, p.y, p.visivel];
-    }
-    const tela = st.raiz.querySelector(".mp-tela");
-    const v = st.vista;
-    return [(x - v.cx) * v.s + tela.clientWidth / 2, (v.cz - z) * v.s + tela.clientHeight / 2, true];
+  // Leva o enquadramento do 2D (st.vista) para a câmera 3D, mantendo giro e inclinação.
+  function vistaParaIso(animar) {
+    if (!em3d() || !st.iso.cena || !st.vista) return;
+    st.iso.verComo2D(st.vista.cx, st.vista.cz, st.vista.s, undefined, animar);
   }
 
-  function atualizar() {
-    if (!st.doc || (!st.vista && st.modo !== "iso")) return;
+  function sincronizarAndarIso() {
+    marcarAndares();
+    const ui = st.raiz.querySelector(".mp-iso-ui");
+    ui.querySelector('[data-iso="interior"]').setAttribute("aria-pressed", String(st.interior && st.andar !== "todos"));
+    if (!em3d()) return;
+    const a = st.interior && st.andar !== "todos" ? st.doc.planta.andares.find((x) => x.id === st.andar) : null;
+    st.iso.setCorte(a ? { min: a.min, max: a.max, altura: a.altura } : null);
+  }
+
+  // Interior: corta acima do andar de onde a vista está (o seu, se você estiver perto do centro); PgUp/PgDn trocam.
+  function alternarInterior(ligar = !st.interior) {
+    st.interior = ligar;
+    if (ligar) {
+      const alvo = st.iso.alvo, j = st.jogador && st.jogador.area === st.doc.area ? st.jogador.pos : null;
+      const y = j && Math.hypot(j[0] - alvo[0], j[2] - alvo[2]) < st.iso.vista * 0.6 ? j[1] : alvo[1];
+      st.andar = andarDe(st.doc.planta.andares, y) ?? "todos";
+      if (st.andar === "todos") st.interior = false;
+    }
+    desenharChao();
+    sincronizarAndarIso();
+    atualizar();
+  }
+
+  function trocarAndar(dir) {
+    const ord = [...st.doc.planta.andares].sort((a, b) => a.altura - b.altura);
+    if (!ord.length) return;
+    let i = ord.findIndex((a) => a.id === st.andar);
+    if (i < 0 || !st.interior) i = ord.findIndex((a) => a.id === andarDe(ord, st.iso.alvo[1]));
+    else i = Math.min(ord.length - 1, Math.max(0, i + dir));
+    st.andar = ord[i].id;
+    st.interior = true;
+    desenharChao();
+    sincronizarAndarIso();
+    atualizar();
+  }
+
+  async function mudarModo(novo) {
+    if (st.modo === novo || (novo === "iso" && motivoSem3d())) return;
+    const raiz = st.raiz;
+    if (novo === "iso" && !st.iso) {
+      st.iso = new (Iso())(raiz.querySelector(".mp-iso-container"), { onMudar: atualizar, onStatus: statusIso });
+      st.iso.setFoco(st.foco);
+    }
+    if (st.modo === "iso" && st.iso && st.iso.cena) {
+      const v = st.iso.comoVista2D();
+      st.vista = { cx: v.cx, cz: v.cz, s: Math.min(MAX_S, Math.max(MIN_S, v.s)) };
+    }
+    st.modo = novo;
+    raiz.querySelectorAll(".mp-modo").forEach((b) => b.setAttribute("aria-pressed", String(b.dataset.modo === novo)));
+    const tres = novo === "iso";
+    raiz.querySelector(".mp-iso-container").hidden = !tres;
+    raiz.querySelector(".mp-iso-ui").hidden = !tres;
+    raiz.querySelector(".mp-iso-sombra").hidden = !tres || !st.foco;
+    raiz.querySelector(".mp-mundo").style.display = tres ? "none" : "";
+    raiz.querySelector(".mp-tela").classList.toggle("mp-3d", tres);
+    st.iso && st.iso.setAtivo(tres);
+    statusIso(null);
+    desenharChao();
+    sincronizarAndarIso();
+    atualizar();
+    if (tres) {
+      raiz.querySelector(".mp-tela").focus({ preventScroll: true });
+      await abrirIso();
+    }
+  }
+
+  function paraTela(x, z, y) {
+    if (em3d()) return st.iso.projetar(x, y ?? 0, z);
     const tela = st.raiz.querySelector(".mp-tela");
-    const w = tela.clientWidth, h = tela.clientHeight, v = st.vista || { s: 5, cx: 0, cz: 0 };
-    if (st.modo !== "iso") {
+    const v = st.vista;
+    return [(x - v.cx) * v.s + tela.clientWidth / 2, (v.cz - z) * v.s + tela.clientHeight / 2, true, null];
+  }
+
+  // Escala em pixels por metro (no 3D ortográfico, a da vista no plano da tela).
+  const escala = (h) => (em3d() ? h / st.iso.vista : st.vista ? st.vista.s : 5);
+
+  function atualizar() {
+    if (!st.doc || !st.vista) return;
+    const tela = st.raiz.querySelector(".mp-tela");
+    const w = tela.clientWidth, h = tela.clientHeight, v = st.vista, tres = em3d();
+    if (!tres) {
       st.raiz.querySelector(".mp-mundo").setAttribute("transform", `translate(${w / 2 - v.cx * v.s} ${h / 2 + v.cz * v.s}) scale(${v.s})`);
       st.raiz.querySelector(".mp-grade").classList.toggle("mp-longe", v.s < 2);
     }
-    st.raiz.querySelector(".mp-regua").hidden = st.modo === "iso";
-    const tam = st.modo === "iso" ? 22 : tamanhoIcone(v.s), nomes = st.modo === "iso" || v.s >= 4;
-    const partes = [], clips = [];
+    if (tres && !st.iso.cena) {  // cenário ainda carregando: nada projetado numa câmera sem lugar
+      st.raiz.querySelector(".mp-pontos").innerHTML = "";
+      st.raiz.querySelector(".mp-trilha-tela").innerHTML = "";
+      return;
+    }
+    const s = escala(h), andarSel = andarVisivel();
+    const tam = tamanhoIcone(s), nomes = s >= 4;
+    const partes = [], clips = [], defs = [];
     const dentro = (sx, sy) => sx > -50 && sy > -50 && sx < w + 50 && sy < h + 50;
     const f1 = (n) => n.toFixed(1);
+    // projeção + o que esconder: fora da tela, acima do corte de interior; "longe" do foco fica apagado
+    const ver = (pos) => {
+      const [sx, sy, vis, extra] = paraTela(pos[0], pos[2], pos[1]);
+      if (!vis || !dentro(sx, sy) || (extra && extra.cortado)) return null;
+      return [sx, sy, extra && extra.longe ? " mp-fora-foco" : ""];
+    };
     const retrato = (k, sx, sy, r, src, classe, titulo, rotulo, dados) => {
       const id = `mp-c${k}`;
       clips.push(`<clipPath id="${id}"><circle cx="${f1(sx)}" cy="${f1(sy)}" r="${f1(r)}"/></clipPath>`);
@@ -422,66 +499,95 @@
       return `<g class="${classe}" ${dados} tabindex="0"><title>${esc(titulo)}</title><circle class="mp-fundo" cx="${f1(sx)}" cy="${f1(sy)}" r="${f1(r)}"/>${img}<circle class="mp-aro" cx="${f1(sx)}" cy="${f1(sy)}" r="${f1(r)}"/>${rotulo ? `<text class="mp-rotulo" x="${f1(sx)}" y="${f1(sy + r + 12)}">${esc(rotulo)}</text>` : ""}</g>`;
     };
     if (st.filtros.inimigos) st.doc.inimigos.forEach((e, i) => {
-      const [sx, sy, visivel] = paraTela(e.pos[0], e.pos[2], e.pos[1]);
-      if (!visivel || !dentro(sx, sy)) return;
+      const p = ver(e.pos);
+      if (!p) return;
+      const [sx, sy, longe] = p;
       const t = tipoInimigo(e.tipo), igual = st.tipoSel && e.tipo === st.tipoSel;
-      const classe = `mp-inimigo ${estadoAndar(e.andar, st.andar)}${igual ? " mp-inimigo-sel" : st.tipoSel ? " mp-inimigo-fora" : ""}`;
+      const classe = `mp-inimigo ${estadoAndar(e.andar, andarSel)}${longe}${igual ? " mp-inimigo-sel" : st.tipoSel ? " mp-inimigo-fora" : ""}`;
       partes.push(`<circle class="${classe}" data-tipo="inimigo" data-i="${i}" tabindex="0" cx="${f1(sx)}" cy="${f1(sy)}" r="${igual ? 6 : 4.5}"><title>${esc(t.nome || "Inimigo (nome não confirmado)")}</title></circle>`);
     });
     st.doc.itens.forEach((p, i) => {
       const destaque = p.plano || (st.destaque && p.item_id === st.destaque);
       if (destaque ? !st.filtros.plano : !st.filtros.outros) return;
-      const [sx, sy, visivel] = paraTela(p.pos[0], p.pos[2], p.pos[1]);
-      if (!visivel || !dentro(sx, sy)) return;
-      const estado = estadoAndar(p.andar, st.andar);
+      const q = ver(p.pos);
+      if (!q) return;
+      const [sx, sy, longe] = q;
+      const estado = estadoAndar(p.andar, andarSel);
       const t = estado === "cheio" ? (destaque ? tam + 4 : tam) : Math.max(12, tam - 8);
       const img = p.icone && ICONE_OK.test(p.icone) ? `<image href="${esc(p.icone)}" x="${f1(sx - t / 2)}" y="${f1(sy - t / 2)}" width="${t}" height="${t}"/>` : `<rect class="mp-losango" x="${f1(sx - t / 4)}" y="${f1(sy - t / 4)}" width="${t / 2}" height="${t / 2}" transform="rotate(45 ${f1(sx)} ${f1(sy)})"/>`;
       const nome = p.itens[0] ? `${p.itens[0].nome}${p.itens[0].qtd > 1 ? ` ×${p.itens[0].qtd}` : ""}${p.itens.length > 1 ? ` +${p.itens.length - 1}` : ""}` : "";
-      partes.push(`<g class="mp-item ${destaque ? "mp-do-plano" : ""} ${estado}" data-tipo="item" data-i="${i}" tabindex="0"><title>${esc(nome)}</title><rect class="mp-moldura" x="${f1(sx - t / 2 - 2)}" y="${f1(sy - t / 2 - 2)}" width="${t + 4}" height="${t + 4}" rx="3"/>${img}${nomes && estado === "cheio" ? `<text class="mp-rotulo" x="${f1(sx)}" y="${f1(sy + t / 2 + 12)}">${esc(nome)}</text>` : ""}</g>`);
+      partes.push(`<g class="mp-item ${destaque ? "mp-do-plano" : ""} ${estado}${longe}" data-tipo="item" data-i="${i}" tabindex="0"><title>${esc(nome)}</title><rect class="mp-moldura" x="${f1(sx - t / 2 - 2)}" y="${f1(sy - t / 2 - 2)}" width="${t + 4}" height="${t + 4}" rx="3"/>${img}${nomes && estado === "cheio" && !longe ? `<text class="mp-rotulo" x="${f1(sx)}" y="${f1(sy + t / 2 + 12)}">${esc(nome)}</text>` : ""}</g>`);
     });
     if (st.filtros.fogueiras) st.doc.fogueiras.forEach((f, i) => {
-      const [sx, sy, visivel] = paraTela(f.pos[0], f.pos[2], f.pos[1]);
-      if (!visivel || !dentro(sx, sy)) return;
-      const estado = estadoAndar(f.andar, st.andar), t = estado === "cheio" ? tam + 2 : Math.max(12, tam - 8);
+      const q = ver(f.pos);
+      if (!q) return;
+      const [sx, sy, longe] = q;
+      const estado = estadoAndar(f.andar, andarSel), t = estado === "cheio" ? tam + 2 : Math.max(12, tam - 8);
       const badge = f.zona && st.filtros.zonas ? `<circle class="mp-badge" cx="${f1(sx - t / 2)}" cy="${f1(sy - t / 2)}" r="8" fill="${corDe(f.zona)}"/><text class="mp-badge-n" x="${f1(sx - t / 2)}" y="${f1(sy - t / 2 + 3.5)}">${f.zona}</text>` : "";
-      partes.push(`<g class="mp-fog ${estado}" data-tipo="fogueira" data-i="${i}" tabindex="0"><title>${esc(f.zona ? nomeZona(f.zona) : f.nome)}</title><image href="icons/fogueira.png" x="${f1(sx - t / 2)}" y="${f1(sy - t / 2)}" width="${t}" height="${t}"/>${badge}${(nomes || v.s >= 1.5) && estado === "cheio" ? `<text class="mp-rotulo mp-rotulo-fog" x="${f1(sx)}" y="${f1(sy - t / 2 - 5)}">${esc(f.zona ? `${f.zona} · ${f.nome}` : f.nome)}</text>` : ""}</g>`);
+      partes.push(`<g class="mp-fog ${estado}${longe}" data-tipo="fogueira" data-i="${i}" tabindex="0"><title>${esc(f.zona ? nomeZona(f.zona) : f.nome)}</title><image href="icons/fogueira.png" x="${f1(sx - t / 2)}" y="${f1(sy - t / 2)}" width="${t}" height="${t}"/>${badge}${(nomes || s >= 1.5) && estado === "cheio" && !longe ? `<text class="mp-rotulo mp-rotulo-fog" x="${f1(sx)}" y="${f1(sy - t / 2 - 5)}">${esc(f.zona ? `${f.zona} · ${f.nome}` : f.nome)}</text>` : ""}</g>`);
     });
     if (st.filtros.npcs) (st.doc.npcs || []).forEach((n, i) => {
-      const [sx, sy, visivel] = paraTela(n.pos[0], n.pos[2], n.pos[1]);
-      if (!visivel || !dentro(sx, sy)) return;
-      const estado = estadoAndar(n.andar, st.andar);
+      const q = ver(n.pos);
+      if (!q) return;
+      const [sx, sy, longe] = q;
+      const estado = estadoAndar(n.andar, andarSel);
       const r = (estado === "cheio" ? tam + (n.plano ? 6 : 2) : Math.max(12, tam - 8)) / 2;
-      partes.push(retrato(`n${i}`, sx, sy, r, n.retrato, `mp-npc ${n.plano ? "mp-do-plano" : ""} ${estado}`, n.nome,
-        (n.plano || v.s >= 3 || st.modo === "iso") && estado === "cheio" ? n.nome : "", `data-tipo="npc" data-i="${i}"`));
+      partes.push(retrato(`n${i}`, sx, sy, r, n.retrato, `mp-npc ${n.plano ? "mp-do-plano" : ""} ${estado}${longe}`, n.nome,
+        (n.plano || s >= 3) && estado === "cheio" && !longe ? n.nome : "", `data-tipo="npc" data-i="${i}"`));
     });
     if (st.filtros.chefes) (st.doc.chefes || []).forEach((c, i) => {
-      const [sx, sy, visivel] = paraTela(c.pos[0], c.pos[2], c.pos[1]);
-      if (!visivel || !dentro(sx, sy)) return;
-      const estado = estadoAndar(c.andar, st.andar);
+      const q = ver(c.pos);
+      if (!q) return;
+      const [sx, sy, longe] = q;
+      const estado = estadoAndar(c.andar, andarSel);
       const r = (estado === "cheio" ? tam + 12 : Math.max(14, tam - 4)) / 2;
-      partes.push(retrato(`c${i}`, sx, sy, r, c.retrato, `mp-chefe ${c.estado === "derrotado" ? "derrotado" : ""} ${estado}`, c.nome,
-        estado === "cheio" ? c.nome : "", `data-tipo="chefe" data-i="${i}"`));
+      partes.push(retrato(`c${i}`, sx, sy, r, c.retrato, `mp-chefe ${c.estado === "derrotado" ? "derrotado" : ""} ${estado}${longe}`, c.nome,
+        estado === "cheio" && !longe ? c.nome : "", `data-tipo="chefe" data-i="${i}"`));
     });
-    if (st.rota) st.rota.pontos.forEach((p) => {
-      const [sx, sy, visivel] = paraTela(p.pos[0], p.pos[2], p.pos[1]);
-      if (!visivel || !dentro(sx, sy)) return;
-      partes.push(`<g class="mp-passo ${estadoAndar(p.andar, st.andar)}"><title>${esc(`${p.n}. ${p.nome}`)}</title><circle cx="${f1(sx)}" cy="${f1(sy - tam / 2 - 10)}" r="9"/><text x="${f1(sx)}" y="${f1(sy - tam / 2 - 6.5)}">${p.n}</text></g>`);
-    });
+    // rota no 3D: a linha é projetada aqui (no 2D ela fica no mundo, em desenharChao)
+    let trilha = "";
+    if (tres && st.rota) {
+      st.rota.trechos.filter((t) => t && t.length > 1).forEach((t, i) => {
+        trechosTela(t, (p) => st.iso.projetar(p[0], p[1] + 0.3, p[2])).forEach((pts, k) => {
+          const id = `mp-rg3-${i}-${k}`;
+          defs.push(gradienteRota(id, pts[0], pts[pts.length - 1]));
+          trilha += linhaRota(pts, id);
+        });
+      });
+    }
+    st.raiz.querySelector(".mp-trilha-tela").innerHTML = trilha;
+    // paradas da rota: pinos numerados na cor da ordem (dourado na 1ª até brasa na última)
+    if (st.rota) {
+      const total = ultimaParada();
+      const eu = st.jogador && st.jogador.area === st.doc.area ? st.jogador.pos : null;
+      st.rota.pontos.forEach((p) => {
+        if (eu && Math.hypot(p.pos[0] - eu[0], p.pos[1] - eu[1], p.pos[2] - eu[2]) < 0.5) return;  // a parada é você: vale o seu marcador
+        const q = ver(p.pos);
+        if (!q) return;
+        const [sx, sy, longe] = q;
+        const cor = corZona(p.n, total), fim = p.n === total && total > 1;
+        partes.push(`<g class="mp-passo ${estadoAndar(p.andar, andarSel)}${longe}${fim ? " mp-passo-fim" : ""}"><title>${esc(`${p.n}. ${p.nome}`)}</title><circle class="mp-passo-chao" cx="${f1(sx)}" cy="${f1(sy)}" r="3"/><path class="mp-passo-pino" d="${pino(sx, sy)}" fill="${cor}"/><text x="${f1(sx)}" y="${f1(sy - 14.2)}" fill="${tintaParada(p.n, total)}">${p.n}</text></g>`);
+      });
+    }
     const j = st.jogador;
     if (j && j.area === st.doc.area) {
-      const [sx, sy, visivel] = paraTela(j.pos[0], j.pos[2], j.pos[1]);
-      if (visivel && dentro(sx, sy)) {
-        const estado = estadoAndar(andarDe(st.doc.planta.andares, j.pos[1]), st.andar);
+      const [sx, sy, vis, extra] = paraTela(j.pos[0], j.pos[2], j.pos[1]);
+      if (vis && dentro(sx, sy) && !(extra && extra.cortado)) {
+        const estado = estadoAndar(andarDe(st.doc.planta.andares, j.pos[1]), andarSel);
         partes.push(`<g class="mp-eu ${estado}"><title>Você (última gravação do save)</title><circle class="mp-eu-pulso" cx="${f1(sx)}" cy="${f1(sy)}" r="9"/><circle class="mp-eu-ponto" cx="${f1(sx)}" cy="${f1(sy)}" r="7"/><text class="mp-rotulo mp-rotulo-eu" x="${f1(sx)}" y="${f1(sy - 13)}">Você</text></g>`);
       }
     }
+    st.raiz.querySelector(".mp-defs").innerHTML = defs.join("");
     st.raiz.querySelector(".mp-pontos").innerHTML = `<defs>${clips.join("")}</defs>${partes.join("")}`;
-    if (st.modo !== "iso") {
-      const m = regua(v.s);
-      st.raiz.querySelector(".mp-regua-barra").style.width = `${Math.round(m * v.s)}px`;
-      st.raiz.querySelector(".mp-regua-txt").textContent = `${m} m`;
+    const m = regua(s);
+    st.raiz.querySelector(".mp-regua-barra").style.width = `${Math.round(m * s)}px`;
+    st.raiz.querySelector(".mp-regua-txt").textContent = `${m} m`;
+    if (tres) {
+      const ui = st.raiz.querySelector(".mp-iso-ui");
+      ui.querySelector(".mp-bussola span").style.transform = `rotate(${(-st.iso.giro).toFixed(3)}rad)`;
+      ui.querySelector('[data-iso="topo"]').setAttribute("aria-pressed", String(st.iso.deCima()));
     }
-    if (st.pop) mostrarPop(st.pop.tipo, st.pop.i);
+    if (st.pop) posicionarPop();
   }
 
   function mostrarPop(tipo, i) {
@@ -514,11 +620,19 @@
     }
     const rota = API ? '<p><button type="button" class="pesq" data-rota-ate>Rota até aqui</button></p>' : "";
     pop.innerHTML = `<button type="button" class="mp-pop-x" aria-label="Fechar">&#10005;</button>${corpo}${rota}${meta}`;
+    pop.hidden = false;
+    posicionarPop();
+  }
+
+  // O balão acompanha o ponto quando a vista anda (sem refazer o conteúdo).
+  function posicionarPop() {
+    const p = (listaDe(st.pop.tipo) || [])[st.pop.i];
+    if (!p) return;
+    const pop = st.raiz.querySelector(".mp-pop");
     const [sx, sy] = paraTela(p.pos[0], p.pos[2], p.pos[1]);
     const tela = st.raiz.querySelector(".mp-tela");
     pop.style.left = `${Math.min(Math.max(8, sx + 16), tela.clientWidth - 240)}px`;
     pop.style.top = `${Math.min(Math.max(8, sy - 20), tela.clientHeight - 150)}px`;
-    pop.hidden = false;
   }
 
   function fecharPop() {
@@ -537,15 +651,14 @@
     const tela = st.raiz.querySelector(".mp-tela");
     if (pts.length) st.vista = ajustar(caixa(pts), tela.clientWidth, tela.clientHeight, 30);
     desenharChao();
+    sincronizarAndarIso();
+    vistaParaIso(true);
     atualizar();
   }
 
   // ---- interação ---------------------------------------------------------------------------------
   function zoom(fator, ox, oy) {
-    if (st.modo === "iso" && st.mapaIso) {
-      st.mapaIso.setZoom(st.mapaIso.zoom * fator);
-      return;
-    }
+    if (em3d()) { st.iso.zoomPor(fator, ox, oy); return; }
     const tela = st.raiz.querySelector(".mp-tela");
     const v = st.vista;
     const w = tela.clientWidth, h = tela.clientHeight;
@@ -557,14 +670,6 @@
   }
 
   function mover(dx, dz) {
-    if (st.modo === "iso" && st.mapaIso) {
-      const ang = st.mapaIso.anguloAtual;
-      const cos = Math.cos(ang), sin = Math.sin(ang);
-      st.mapaIso.centro.x += dx * cos - dz * sin;
-      st.mapaIso.centro.z += dx * sin + dz * cos;
-      st.mapaIso._atualizarCamera();
-      return;
-    }
     st.vista = { ...st.vista, cx: st.vista.cx + dx, cz: st.vista.cz + dz };
     atualizar();
   }
@@ -573,51 +678,46 @@
     const tela = raiz.querySelector(".mp-tela");
     const toques = new Map();
     let arrasto = null, pinca = null, moveu = false;
+    const escalaAgora = () => (em3d() ? tela.clientHeight / st.iso.vista : st.vista ? st.vista.s : 1);
     tela.addEventListener("wheel", (ev) => {
       ev.preventDefault();
       const r = tela.getBoundingClientRect();
-      zoom(ev.deltaY < 0 ? 1.2 : 1 / 1.2, ev.clientX - r.left, ev.clientY - r.top);
+      zoom(Math.exp(-Math.max(-300, Math.min(300, ev.deltaY)) * 0.0016), ev.clientX - r.left, ev.clientY - r.top);
     }, { passive: false });
+    tela.addEventListener("contextmenu", (ev) => { if (em3d()) ev.preventDefault(); });
+    tela.addEventListener("pointerenter", () => {
+      if (em3d() && (!document.activeElement || document.activeElement === document.body)) tela.focus({ preventScroll: true });
+    });
     tela.addEventListener("pointerdown", (ev) => {
-      if (ev.target.closest(".mp-zoom, .mp-pop, .mp-info")) return;
+      if (ev.target.closest(".mp-zoom, .mp-pop, .mp-info, .mp-iso-ui")) return;
       toques.set(ev.pointerId, [ev.clientX, ev.clientY]);
       tela.setPointerCapture(ev.pointerId);
       moveu = false;
-      if (toques.size === 1) arrasto = {
-        x: ev.clientX,
-        y: ev.clientY,
-        v: { ...st.vista },
-        c: st.mapaIso ? { ...st.mapaIso.centro } : { x: 0, y: 0, z: 0 }
-      };
+      if (em3d()) tela.focus({ preventScroll: true });
+      if (toques.size === 1) {
+        arrasto = { x: ev.clientX, y: ev.clientY, v: { ...st.vista } };
+        if (em3d()) st.iso.apertar(ev);
+      }
       if (toques.size === 2) {
         const [a, b] = [...toques.values()];
-        pinca = {
-          d: Math.hypot(a[0] - b[0], a[1] - b[1]),
-          s: st.modo === "iso" && st.mapaIso ? st.mapaIso.zoom : (st.vista ? st.vista.s : 1)
-        };
+        pinca = { d: Math.hypot(a[0] - b[0], a[1] - b[1]), s: escalaAgora() };
         arrasto = null;
+        if (em3d()) st.iso.soltar();
       }
     });
     tela.addEventListener("pointermove", (ev) => {
-      if (!toques.has(ev.pointerId) || (!st.vista && st.modo !== "iso")) return;
+      if (!toques.has(ev.pointerId) || !st.vista) return;
       toques.set(ev.pointerId, [ev.clientX, ev.clientY]);
       if (pinca && toques.size === 2) {
         const [a, b] = [...toques.values()];
         const r = tela.getBoundingClientRect();
-        const base = st.modo === "iso" && st.mapaIso ? st.mapaIso.zoom : (st.vista ? st.vista.s : 1);
-        zoom((pinca.s * Math.hypot(a[0] - b[0], a[1] - b[1]) / pinca.d) / base, (a[0] + b[0]) / 2 - r.left, (a[1] + b[1]) / 2 - r.top);
+        zoom((pinca.s * Math.hypot(a[0] - b[0], a[1] - b[1]) / pinca.d) / escalaAgora(), (a[0] + b[0]) / 2 - r.left, (a[1] + b[1]) / 2 - r.top);
         moveu = true;
       } else if (arrasto) {
         const dx = ev.clientX - arrasto.x, dy = ev.clientY - arrasto.y;
         if (Math.abs(dx) + Math.abs(dy) > 3) moveu = true;
-        if (st.modo === "iso" && st.mapaIso) {
-          const ang = st.mapaIso.anguloAtual;
-          const cos = Math.cos(ang), sin = Math.sin(ang);
-          const fator = (400 / (tela.clientHeight || 600)) / (st.mapaIso.camera ? st.mapaIso.camera.zoom : 1);
-          st.mapaIso.centro.x = arrasto.c.x - (dx * cos - dy * sin) * fator;
-          st.mapaIso.centro.z = arrasto.c.z - (dx * sin + dy * cos) * fator;
-          st.mapaIso._atualizarCamera();
-        } else {
+        if (em3d()) st.iso.mover(ev);
+        else {
           st.vista = { ...arrasto.v, cx: arrasto.v.cx - dx / arrasto.v.s, cz: arrasto.v.cz + dy / arrasto.v.s };
           atualizar();
         }
@@ -626,21 +726,27 @@
     const soltar = (ev) => {
       toques.delete(ev.pointerId);
       if (toques.size < 2) pinca = null;
-      if (!toques.size) arrasto = null;
+      if (!toques.size) { arrasto = null; if (st.iso) st.iso.soltar(); }
     };
     tela.addEventListener("pointerup", (ev) => {
       soltar(ev);
-      if (moveu) return;
+      if (moveu || ev.button === 2) return;
       const alvo = document.elementFromPoint(ev.clientX, ev.clientY);
       const marca = alvo && alvo.closest("[data-tipo]");
       if (marca) mostrarPop(marca.dataset.tipo, Number(marca.dataset.i));
       else if (!alvo || !alvo.closest(".mp-pop")) fecharPop();
     });
     tela.addEventListener("pointercancel", soltar);
+    tela.addEventListener("blur", () => { if (st.iso) st.iso.limparTeclas(); });
+    tela.addEventListener("keyup", (ev) => { if (em3d()) st.iso.tecla(ev, false); });
     tela.addEventListener("keydown", (ev) => {
-      if (st.modo === "iso" && st.mapaIso) {
-        if (ev.key === "q" || ev.key === "Q") { ev.preventDefault(); st.mapaIso.girar(-1); return; }
-        if (ev.key === "e" || ev.key === "E") { ev.preventDefault(); st.mapaIso.girar(1); return; }
+      if (ev.target !== tela && ev.target.closest && ev.target.closest(".mp-pop")) return;
+      if (em3d()) {
+        if (st.iso.tecla(ev, true)) { ev.preventDefault(); return; }
+        const acoes3d = { KeyI: () => alternarInterior(), KeyO: () => alternarFoco(), KeyT: () => { st.iso.alternarTopo(); atualizar(); },
+                          KeyN: () => st.iso.norte(), PageUp: () => trocarAndar(1), PageDown: () => trocarAndar(-1),
+                          Home: () => enquadrarTudo() };
+        if (acoes3d[ev.code] && !ev.ctrlKey && !ev.metaKey && !ev.altKey) { ev.preventDefault(); acoes3d[ev.code](); return; }
       }
       const passo = 40 / (st.vista ? st.vista.s : 1);
       const acoes = { "+": () => zoom(1.25), "=": () => zoom(1.25), "-": () => zoom(0.8), ArrowLeft: () => mover(-passo, 0),
@@ -652,33 +758,28 @@
     raiz.addEventListener("click", (ev) => {
       const modoBtn = ev.target.closest(".mp-modo");
       if (modoBtn) { mudarModo(modoBtn.dataset.modo); return; }
-      const rotBtn = ev.target.closest(".mp-btn-rot");
-      if (rotBtn) { if (st.mapaIso) st.mapaIso.girar(Number(rotBtn.dataset.rot)); return; }
+      const isoBtn = ev.target.closest("[data-iso]");
+      if (isoBtn && em3d()) {
+        const acao = isoBtn.dataset.iso;
+        if (acao === "esq") st.iso.girar(-Math.PI / 4);
+        else if (acao === "dir") st.iso.girar(Math.PI / 4);
+        else if (acao === "norte") st.iso.norte();
+        else if (acao === "topo") st.iso.alternarTopo();
+        else if (acao === "interior") alternarInterior();
+        else if (acao === "foco") alternarFoco();
+        atualizar();
+        return;
+      }
       const z = ev.target.closest("[data-zoom]");
       if (z) {
-        if (z.dataset.zoom === "tudo") {
-          if (st.modo === "iso" && st.mapaIso) {
-            st.mapaIso.setZoom(1.0);
-            if (st.mapaIso.cenaDados && st.mapaIso.cenaDados.limites) {
-              const lim = st.mapaIso.cenaDados.limites;
-              st.mapaIso.focar([
-                (lim.min[0] + lim.max[0]) / 2,
-                (lim.min[1] + lim.max[1]) / 2,
-                (lim.min[2] + lim.max[2]) / 2
-              ]);
-            }
-          } else {
-            st.vista = ajustar(caixa(todosPontosChao()), tela.clientWidth, tela.clientHeight, 10);
-            atualizar();
-          }
-        } else {
-          zoom(z.dataset.zoom === "mais" ? 1.4 : 1 / 1.4);
-        }
+        if (z.dataset.zoom === "tudo") enquadrarTudo();
+        else zoom(z.dataset.zoom === "mais" ? 1.4 : 1 / 1.4);
         return;
       }
       const a = ev.target.closest("[data-andar]");
       if (a) {
         st.andar = a.dataset.andar === "todos" ? "todos" : Number(a.dataset.andar);
+        if (st.modo === "iso") st.interior = st.andar !== "todos";  // no 3D, escolher o andar já corta acima dele
         desenharChao();
         sincronizarAndarIso();
         atualizar();
@@ -696,27 +797,33 @@
       }
       if (ev.target.closest("[data-rota-ate]")) { rotaAte(); return; }
       if (ev.target.closest("[data-eu]")) { irParaJogador(); return; }
-      if (ev.target.closest("[data-limpar-rota]")) {
-        st.rota = null;
-        statusRota("");
-        if (st.mapaIso) st.mapaIso.desenharRota([]);
-        desenharChao();
-        atualizar();
-        return;
-      }
+      if (ev.target.closest("[data-limpar-rota]")) { st.rota = null; statusRota(""); desenharChao(); atualizar(); return; }
       const iguais = ev.target.closest("[data-iguais]");
       if (iguais) {
         st.tipoSel = st.tipoSel === iguais.dataset.iguais ? null : iguais.dataset.iguais;
+        if (st.pop) mostrarPop(st.pop.tipo, st.pop.i);
         atualizar();
         return;
       }
       if (ev.target.closest(".mp-pop-x")) fecharPop();
     });
     raiz.querySelector(".mp-area").addEventListener("change", (ev) => abrirArea(ev.target.value));
-    if (window.ResizeObserver) new ResizeObserver(() => {
-      if (st.mapaIso) st.mapaIso.redimensionar();
-      atualizar();
-    }).observe(tela);
+    if (window.ResizeObserver) new ResizeObserver(() => { if (st.iso) st.iso.redimensionar(); atualizar(); }).observe(tela);
+  }
+
+  function alternarFoco() {
+    st.foco = !st.foco;
+    if (st.iso) st.iso.setFoco(st.foco);
+    st.raiz.querySelector('[data-iso="foco"]').setAttribute("aria-pressed", String(st.foco));
+    st.raiz.querySelector(".mp-iso-sombra").hidden = st.modo !== "iso" || !st.foco;
+    atualizar();
+  }
+
+  function enquadrarTudo() {
+    const tela = st.raiz.querySelector(".mp-tela");
+    st.vista = ajustar(caixa(todosPontosChao()), tela.clientWidth, tela.clientHeight, 10);
+    vistaParaIso(true);
+    atualizar();
   }
 
   // "Ver no mapa": rota de uma fonte/passo, ou todos os pontos de um item do plano.
@@ -741,5 +848,5 @@
     }
   }
 
-  window.buildsmithMapa = { montar, ver, _teste: { caixa, ajustar, regua, tamanhoIcone, estadoAndar, corZona, andarDe } };
+  window.buildsmithMapa = { montar, ver, _teste: { caixa, ajustar, regua, tamanhoIcone, estadoAndar, corZona, andarDe, tintaParada, pino, trechosTela } };
 })();

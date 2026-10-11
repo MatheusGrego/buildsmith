@@ -31,7 +31,7 @@ Vários personagens no mesmo save: **Trocar personagem** (no topo da página) li
 
 **Equipamento:** a página mostra seu equipamento como o menu do DS2 (mãos, armadura, anéis, sintonia) e o melhor do plano ao lado, com o ganho de AR em cada slot e em cada feitiço, quanto do dano vem dos seus atributos e a letra de escala de cada peça (da wiki).
 
-**Mapa:** com o DS2 SotFS instalado, a seção Mapa oferece alternância entre visão 2D e Isométrica 3D com a geometria real do jogo (paredes, chão, escadas) e texturas originais (DDS). Permite rotação em passos de 90° (atalhos Q e E), corte de altura por andar e sincronização total dos marcadores (itens, fogueiras, NPCs, chefes, inimigos, rota e "Você") projetados sobre o mundo 3D. Tudo gerado localmente em `~/.buildsmith/cache/ds2/` sem dependências pesadas externas.
+**Mapa:** com o DS2 SotFS instalado, a seção Mapa tem vista 2D e **3D** com o cenário do jogo (peças de mapa e texturas originais). No 3D a câmera é de espectador: arrastar move pelo chão, botão direito (ou Alt) gira e inclina, roda dá zoom no cursor, **WASD** anda, **Q/E** giram, **R/F** inclinam, Shift acelera. **Interior** (tecla I) corta o que está acima do andar para ver dentro de cavernas e prédios em qualquer ângulo (PgUp/PgDn trocam o andar); **Foco** (O) escurece o que está longe do centro da vista. Itens, fogueiras, NPCs, chefes, inimigos, "Você" e a rota aparecem por cima nos dois modos; a rota pelo chão sai reta, dobrando só nas quinas, com as paradas numeradas do dourado (1ª) à brasa (última). O cenário de cada área é extraído na primeira vez que você abre o 3D (uns 5–10 s) para `~/.buildsmith/cache/ds2/cena/`.
 
 Para ver no celular, publique no Artifact: `/buildsmith:build ds2 publicar`.
 

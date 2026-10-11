@@ -45,6 +45,8 @@ COLLECTIONS = {"feitos", "pedidos", "config"}
 MODOS = {"plano", "fila"}
 MAX_BODY = 4 * 1024
 AREA_OK = re.compile(r"^m\d\d_\d\d_\d\d_\d\d$")
+TEX_OK = re.compile(r"^[a-z0-9][a-z0-9_-]{0,120}\.dds$")  # textura da cena 3D (o extrator grava em minúsculas)
+TIPOS_ESTATICOS = {".js": "text/javascript", ".mjs": "text/javascript", ".json": "application/json"}  # o registro do Windows erra o .js
 COORD_MAX = 10000.0
 AREAS_EM_MEMORIA = 4
 MAX_FILA = 50  # pedidos na_fila ao mesmo tempo
@@ -245,20 +247,72 @@ class MapaVivo:
         return ds2mapa.rota(dados, de, ate, grafo)
 
 
+class Cenas:
+    """Cena 3D por área: o que já está no cache e a extração em segundo plano (uma por área; o GET nunca extrai)."""
+
+    def __init__(self, home: Path, extrair=None):
+        self.home = Path(home)
+        self.extrair = extrair  # (area, cache_dir) -> cena; None = ds2cena.extrair_cena com o jogo instalado
+        self._estado: dict[str, str] = {}
+        self._lock = threading.Lock()
+
+    def dir(self, area: str) -> Path:
+        return self.home / "cache" / "ds2" / "cena" / area
+
+    def pronta(self, area: str) -> bytes | None:
+        import ds2cena
+
+        try:
+            corpo = (self.dir(area) / "cena.json").read_bytes()
+            versao = json.loads(corpo).get("versao")
+        except (OSError, ValueError, AttributeError):
+            return None
+        return corpo if versao == ds2cena.CENA_VERSAO and (self.dir(area) / ds2cena.GEO).is_file() else None
+
+    def estado(self, area: str) -> str | None:
+        with self._lock:
+            return self._estado.get(area)
+
+    def iniciar(self, area: str) -> bool:
+        with self._lock:
+            if self._estado.get(area) == "extraindo":
+                return False
+            self._estado[area] = "extraindo"
+        threading.Thread(target=self._rodar, args=(area,), daemon=True).start()
+        return True
+
+    def _rodar(self, area: str) -> None:
+        try:
+            if self.extrair:
+                self.extrair(area, self.home / "cache" / "ds2")
+            else:
+                import ds2cena
+
+                ds2cena.extrair_cena(area=area, cache_dir=self.home / "cache" / "ds2", forcar=self.pronta(area) is None)
+            with self._lock:
+                self._estado.pop(area, None)
+        except Exception as err:  # jogo ausente, área sem modelos, formato inesperado
+            with self._lock:
+                self._estado[area] = f"{type(err).__name__}: {err}"[:200]
+
+
 class Handler(BaseHTTPRequestHandler):
     home: Path = default_home()
     runner: Runner | None = None
     save: Path | None = None  # None = o save ativo do jogo (ds2save.find_save)
     steam_dirs: list | None = None  # None = pastas padrão da Steam
     mapa: "MapaVivo | None" = None
+    cenas: "Cenas | None" = None
     server_version = "buildsmith"
 
     def log_message(self, *args):  # sem log no console (roda com pythonw)
         pass
 
-    def _send(self, status: int, body: bytes, ctype: str, csp: str | None = None) -> None:
+    def _send(self, status: int, body: bytes, ctype: str, csp: str | None = None, extra: dict | None = None) -> None:
         self.send_response(status)
         self.send_header("Content-Type", ctype)
+        for nome, valor in (extra or {}).items():
+            self.send_header(nome, valor)
         self.send_header("Content-Length", str(len(body)))
         self.send_header("Cache-Control", "no-store")
         self.send_header("X-Content-Type-Options", "nosniff")
@@ -319,8 +373,9 @@ class Handler(BaseHTTPRequestHandler):
                 return self._cena_json(parts[3])
             if parts[4] == "geo.bin":
                 return self._cena_geo(parts[3])
-        if len(parts) == 6 and parts[:3] == ["api", "ds2", "cena"] and AREA_OK.match(parts[3]) and parts[4] == "tex" and SEGMENT.match(parts[5]):
-            return self._cena_tex(parts[3], parts[5])
+        if (len(parts) == 6 and parts[:3] == ["api", "ds2", "cena"] and AREA_OK.match(parts[3]) and parts[4] == "tex"
+                and TEX_OK.match(parts[5])):
+            return self._cena_arquivo(parts[3], ["tex", parts[5]], "application/octet-stream")
         if len(parts) == 4 and parts[0] == "api" and parts[3] == "retrato" and all(SEGMENT.match(p) for p in parts[1:3]):
             foto = retrato.achar(self.home, parts[1], parts[2])
             if foto is None:
@@ -371,42 +426,41 @@ class Handler(BaseHTTPRequestHandler):
                 return self._send(409, b"fila cheia", "text/plain; charset=utf-8")
         return self._json(write_doc(self.home, jogo, personagem, collection, doc_id, data))
 
-    def _cena_dir(self, area: str) -> Path:
-        return (Path(self.home) / "cache" / "ds2" / "cena" / area).resolve()
-
     def _cena_json(self, area: str):
-        import ds2cena
-        area_dir = self._cena_dir(area)
-        cena_path = area_dir / "cena.json"
-        if not cena_path.is_file():
-            try:
-                ds2cena.extrair_cena(area=area, cache_dir=self.home / "cache" / "ds2")
-            except Exception as err:
-                return self._json({"erro": f"cena nao encontrada ({type(err).__name__})"}, status=404)
-        if not cena_path.is_file():
-            return self._send(404, b"cena nao encontrada", "text/plain; charset=utf-8")
-        return self._send(200, cena_path.read_bytes(), "application/json; charset=utf-8")
+        pronta = self.cenas.pronta(area)
+        if pronta is not None:
+            return self._send(200, pronta, "application/json; charset=utf-8")
+        estado = self.cenas.estado(area)
+        if estado == "extraindo":
+            return self._json({"estado": "extraindo"}, status=202)
+        comando = f"python skills/ds2-save/scripts/ds2cena.py extrair --area {area}"
+        if estado:
+            return self._json({"erro": f"a extração falhou ({estado})", "comando": comando}, status=500)
+        return self._json({"erro": "cena não extraída", "comando": comando}, status=404)
+
+    def _cena_arquivo(self, area: str, rel: list[str], ctype: str):
+        base = self.cenas.dir(area).resolve()
+        target = base.joinpath(*rel).resolve()
+        if base not in target.parents or not target.is_file():
+            return self._send(404, b"nao encontrado", "text/plain; charset=utf-8")
+        return self._send(200, target.read_bytes(), ctype)
 
     def _cena_geo(self, area: str):
-        geo_path = self._cena_dir(area) / "geo.bin"
-        if not geo_path.is_file():
-            return self._send(404, b"geometria nao encontrada", "text/plain; charset=utf-8")
-        return self._send(200, geo_path.read_bytes(), "application/octet-stream")
+        """geo.bin fica em gzip no cache: vai comprimido (o navegador abre) ou aberto aqui, se o cliente não aceitar."""
+        import gzip
+        import ds2cena
 
-    def _cena_tex(self, area: str, arquivo: str):
-        tex_dir = (self._cena_dir(area) / "tex").resolve()
-        target = (tex_dir / arquivo).resolve()
-        if tex_dir not in target.parents or not target.is_file():
-            return self._send(404, b"textura nao encontrada", "text/plain; charset=utf-8")
-        return self._send(200, target.read_bytes(), "application/octet-stream")
+        alvo = self.cenas.dir(area) / ds2cena.GEO
+        if not alvo.is_file():
+            return self._send(404, b"nao encontrado", "text/plain; charset=utf-8")
+        corpo = alvo.read_bytes()
+        if "gzip" in (self.headers.get("Accept-Encoding") or ""):
+            return self._send(200, corpo, "application/octet-stream", extra={"Content-Encoding": "gzip"})
+        return self._send(200, gzip.decompress(corpo), "application/octet-stream")
 
     def _cena_extrair(self, area: str):
-        import ds2cena
-        try:
-            cena = ds2cena.extrair_cena(area=area, cache_dir=self.home / "cache" / "ds2", forcar=True)
-            return self._json({"ok": True, "area": area, "instancias": len(cena.get("instancias", []))})
-        except Exception as err:
-            return self._json({"erro": f"falha na extracao ({type(err).__name__}: {err})"}, status=500)
+        self.cenas.iniciar(area)
+        return self._json({"estado": "extraindo"}, status=202)
 
     def _posicao(self, personagem: str):
         try:
@@ -496,7 +550,7 @@ class Handler(BaseHTTPRequestHandler):
         body = target.read_bytes()
         if target.name == "index.html":
             return self._send(200, DOCTYPE + body + b"</body></html>", "text/html; charset=utf-8", CSP_PAGINA)
-        ctype = mimetypes.guess_type(target.name)[0] or "application/octet-stream"
+        ctype = TIPOS_ESTATICOS.get(target.suffix.lower()) or mimetypes.guess_type(target.name)[0] or "application/octet-stream"
         if ctype.startswith("text/") or ctype == "application/json":
             ctype += "; charset=utf-8"
         return self._send(200, body, ctype)
@@ -512,10 +566,11 @@ class Handler(BaseHTTPRequestHandler):
 
 
 def make_server(home: Path, port: int = PORT, runner: Runner | None = None, save=None, steam_dirs=None,
-                mapa: MapaVivo | None = None) -> ThreadingHTTPServer:
+                mapa: MapaVivo | None = None, extrair_cena=None) -> ThreadingHTTPServer:
     runner = runner or Runner(cwd=Path(home), log_path=Path(home) / "execucoes" / "ultima.jsonl")
     handler = type("BuildsmithHandler", (Handler,), {"home": Path(home), "runner": runner, "save": save,
-                                                     "steam_dirs": steam_dirs, "mapa": mapa or MapaVivo(home, save)})
+                                                     "steam_dirs": steam_dirs, "mapa": mapa or MapaVivo(home, save),
+                                                     "cenas": Cenas(home, extrair_cena)})
     return ThreadingHTTPServer(("127.0.0.1", port), handler)
 
 

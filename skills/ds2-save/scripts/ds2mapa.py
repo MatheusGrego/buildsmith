@@ -404,7 +404,9 @@ def ponto_de(area: dict, tipo: str, ref: int) -> list[float]:
 
 
 def _grafo(area: dict):
-    """Triângulos da área (centróides) e vizinhos por aresta compartilhada, inclusive entre malhas."""
+    """Triângulos da área (centróides) e vizinhos por aresta compartilhada, inclusive entre malhas.
+
+    vizinhos[t] = {vizinho: (u, w)}: a aresta em comum (o "portal" por onde a rota passa de um triângulo ao outro)."""
     centros, vizinhos, arestas = [], [], {}
     for m in area["malhas"]:
         v, f = m["v"], m["f"]
@@ -413,12 +415,12 @@ def _grafo(area: dict):
             a, b, c = pts[f[i]], pts[f[i + 1]], pts[f[i + 2]]
             t = len(centros)
             centros.append(tuple((a[k] + b[k] + c[k]) / 3 for k in range(3)))
-            vizinhos.append(set())
+            vizinhos.append({})
             for u, w in ((a, b), (b, c), (c, a)):
                 key = (u, w) if u <= w else (w, u)
                 for outro in arestas.setdefault(key, []):
-                    vizinhos[t].add(outro)
-                    vizinhos[outro].add(t)
+                    vizinhos[t][outro] = key
+                    vizinhos[outro][t] = key
                 arestas[key].append(t)
     return centros, vizinhos
 
@@ -427,8 +429,101 @@ def _dist(a, b) -> float:
     return ((a[0] - b[0]) ** 2 + (a[1] - b[1]) ** 2 + (a[2] - b[2]) ** 2) ** 0.5
 
 
+def _area2(a, b, c) -> float:
+    """Dobro da área com sinal do triângulo (a, b, c) no plano XZ (convenção do funil de Mononen)."""
+    return (c[0] - a[0]) * (b[2] - a[2]) - (b[0] - a[0]) * (c[2] - a[2])
+
+
+def _mesmo_xz(a, b) -> bool:
+    return (a[0] - b[0]) ** 2 + (a[2] - b[2]) ** 2 < 1e-8
+
+
+def _portais(caminho: list[int], centros, vizinhos, de, ate) -> list[tuple]:
+    """(esquerda, direita) de cada aresta atravessada, olhando no sentido da rota; o 1º e o último são o início e o fim."""
+    out = [(tuple(de), tuple(de))]
+    for t, n in zip(caminho, caminho[1:]):
+        u, w = vizinhos[t][n]
+        ca, cb = centros[t], centros[n]
+        dx, dz = cb[0] - ca[0], cb[2] - ca[2]
+        lado = dx * (u[2] - ca[2]) - dz * (u[0] - ca[0])  # > 0: u fica à esquerda (anti-horário) do avanço
+        out.append((u, w) if lado > 0 else (w, u))
+    out.append((tuple(ate), tuple(ate)))
+    return out
+
+
+def funil(portais: list[tuple]) -> list[tuple[tuple, int]]:
+    """Menor caminho pelo corredor de portais ("string pulling"): cantos (ponto 3D, índice do portal onde ele está)."""
+    apice = esq = portais[0][0]
+    dir_ = portais[0][1]
+    i_apice = i_esq = i_dir = 0
+    cantos = [(apice, 0)]
+    i = 1
+    while i < len(portais):
+        e, d = portais[i]
+        if _area2(apice, dir_, d) <= 0.0:
+            if _mesmo_xz(apice, dir_) or _area2(apice, esq, d) > 0.0:
+                dir_, i_dir = d, i
+            else:  # a direita passou da esquerda: a esquerda vira canto
+                apice, i_apice = esq, i_esq
+                cantos.append((apice, i_apice))
+                esq = dir_ = apice
+                i_esq = i_dir = i_apice
+                i = i_apice + 1
+                continue
+        if _area2(apice, esq, e) >= 0.0:
+            if _mesmo_xz(apice, esq) or _area2(apice, dir_, e) < 0.0:
+                esq, i_esq = e, i
+            else:
+                apice, i_apice = dir_, i_dir
+                cantos.append((apice, i_apice))
+                esq = dir_ = apice
+                i_esq = i_dir = i_apice
+                i = i_apice + 1
+                continue
+        i += 1
+    fim = portais[-1][0]
+    if not _mesmo_xz(cantos[-1][0], fim) or len(cantos) == 1:
+        cantos.append((fim, len(portais) - 1))
+    return cantos
+
+
+def _cruzamento(a, b, p, q):
+    """Ponto onde o segmento a→b (XZ) cruza a aresta p→q, com a altura da aresta ali (o chão); None se paralelos."""
+    rx, rz = b[0] - a[0], b[2] - a[2]
+    sx, sz = q[0] - p[0], q[2] - p[2]
+    den = rx * sz - rz * sx
+    if abs(den) < 1e-12:
+        return None
+    t = ((p[0] - a[0]) * sz - (p[2] - a[2]) * sx) / den
+    u = ((p[0] - a[0]) * rz - (p[2] - a[2]) * rx) / den
+    t, u = min(1.0, max(0.0, t)), min(1.0, max(0.0, u))
+    return (a[0] + rx * t, p[1] + (q[1] - p[1]) * u, a[2] + rz * t)
+
+
+def _simplificar3d(pts: list, tol: float) -> list:
+    """Douglas-Peucker em 3D: tira os pontos que quase não desviam da reta (mantém as subidas e descidas)."""
+    if len(pts) < 3:
+        return pts
+    a, b = pts[0], pts[-1]
+    ab = [b[k] - a[k] for k in range(3)]
+    n2 = sum(c * c for c in ab) or 1e-12
+    pior, k_pior = -1.0, 0
+    for k in range(1, len(pts) - 1):
+        ap = [pts[k][j] - a[j] for j in range(3)]
+        t = max(0.0, min(1.0, sum(ap[j] * ab[j] for j in range(3)) / n2))
+        d = sum((ap[j] - ab[j] * t) ** 2 for j in range(3)) ** 0.5
+        if d > pior:
+            pior, k_pior = d, k
+    if pior <= tol:
+        return [a, b]
+    return _simplificar3d(pts[:k_pior + 1], tol)[:-1] + _simplificar3d(pts[k_pior:], tol)
+
+
 def rota(area: dict, de, ate, grafo=None) -> dict | None:
-    """Caminho mais curto pelo chão (centróides dos triângulos) de um ponto a outro; None se não há caminho.
+    """Caminho mais curto pelo chão de um ponto a outro; None se não há caminho.
+
+    Os triângulos vêm de um Dijkstra pelos centróides; o traçado é o funil pelas arestas atravessadas (reto onde dá,
+    dobrando só nas quinas) e acompanha a altura do chão em cada aresta.
     grafo: o de _grafo(area), para quem calcula várias rotas na mesma área (o servidor guarda em memória)."""
     import heapq
 
@@ -453,9 +548,20 @@ def rota(area: dict, de, ate, grafo=None) -> dict | None:
         return None
     caminho, t = [], g
     while t is not None:
-        caminho.append(_r(centros[t]))
+        caminho.append(t)
         t = anterior[t]
-    pontos = [list(de)] + caminho[::-1] + [list(ate)]
+    caminho.reverse()
+    portais = _portais(caminho, centros, vizinhos, de, ate)
+    cantos = funil(portais)
+    pontos = [cantos[0][0]]
+    for (a, ia), (b, ib) in zip(cantos, cantos[1:]):
+        for k in range(ia + 1, ib):  # arestas cruzadas entre dois cantos: a altura do chão em cada uma
+            x = _cruzamento(a, b, *portais[k])
+            if x is not None:
+                pontos.append(x)
+        pontos.append(b)
+    pontos = _simplificar3d(pontos, 0.25)
+    pontos = [list(de)] + [_r(p) for p in pontos[1:-1]] + [list(ate)]
     metros = sum(_dist(pontos[i], pontos[i + 1]) for i in range(len(pontos) - 1))
     return {"pontos": pontos, "metros": round(metros, 1)}
 

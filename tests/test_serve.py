@@ -279,38 +279,123 @@ def test_route_and_position_refuse_other_hosts(server_mapa):
 
 
 def test_cena_json_geo_and_textures(server):
+    import ds2cena
     base, tmp_path = server
     area_dir = tmp_path / "cache" / "ds2" / "cena" / "m10_04_00_00"
     (area_dir / "tex").mkdir(parents=True)
-    (area_dir / "cena.json").write_text(json.dumps({"versao": 1, "area": "m10_04_00_00"}), encoding="utf-8")
-    (area_dir / "geo.bin").write_bytes(b"\x00\x01\x02\x03")
+    (area_dir / "cena.json").write_text(json.dumps({"versao": ds2cena.CENA_VERSAO, "area": "m10_04_00_00"}), encoding="utf-8")
+    (area_dir / "geo.bin.gz").write_bytes(__import__("gzip").compress(b"\x00\x01\x02\x03"))
     (area_dir / "tex" / "pedra_d.dds").write_bytes(b"DDS " + bytes(124))
 
-    # cena.json
     status, ctype, body = get(f"{base}/api/ds2/cena/m10_04_00_00/cena.json")
-    assert status == 200
-    assert "application/json" in ctype
-    assert json.loads(body)["area"] == "m10_04_00_00"
-
-    # geo.bin
+    assert status == 200 and "application/json" in ctype and json.loads(body)["area"] == "m10_04_00_00"
     status, ctype, body = get(f"{base}/api/ds2/cena/m10_04_00_00/geo.bin")
-    assert status == 200
-    assert ctype == "application/octet-stream"
-    assert body == b"\x00\x01\x02\x03"
-
-    # textura .dds
+    assert (status, ctype, body) == (200, "application/octet-stream", b"\x00\x01\x02\x03")  # aberto para quem não aceita gzip
+    req = urllib.request.Request(f"{base}/api/ds2/cena/m10_04_00_00/geo.bin", headers={"Accept-Encoding": "gzip, br"})
+    with urllib.request.urlopen(req, timeout=5) as resp:
+        assert resp.headers["Content-Encoding"] == "gzip"
+        assert __import__("gzip").decompress(resp.read()) == b"\x00\x01\x02\x03"
     status, ctype, body = get(f"{base}/api/ds2/cena/m10_04_00_00/tex/pedra_d.dds")
-    assert status == 200
-    assert ctype == "application/octet-stream"
-    assert body.startswith(b"DDS ")
+    assert status == 200 and body.startswith(b"DDS ")
+    for caminho in ("tex/fantasma.dds", "tex/Pedra_D.dds", "tex/pedra_d.png", "tex/..%2Fcena.json"):
+        with pytest.raises(urllib.error.HTTPError) as err:
+            get(f"{base}/api/ds2/cena/m10_04_00_00/{caminho}")
+        assert err.value.code in (400, 404)
 
-    # textura inexistente -> 404
+
+def test_cena_of_an_old_version_counts_as_not_extracted(server):
+    base, tmp_path = server
+    area_dir = tmp_path / "cache" / "ds2" / "cena" / "m10_04_00_00"
+    area_dir.mkdir(parents=True)
+    (area_dir / "cena.json").write_text(json.dumps({"versao": 1}), encoding="utf-8")
+    (area_dir / "geo.bin.gz").write_bytes(b"\0")
     with pytest.raises(urllib.error.HTTPError) as err:
-        get(f"{base}/api/ds2/cena/m10_04_00_00/tex/fantasma.dds")
+        get(f"{base}/api/ds2/cena/m10_04_00_00/cena.json")
     assert err.value.code == 404
+    corpo = json.loads(err.value.read())
+    assert corpo["erro"] == "cena não extraída" and "ds2cena.py extrair --area m10_04_00_00" in corpo["comando"]
 
-    # area inexistente -> 404
+
+@pytest.fixture
+def server_cena(tmp_path):
+    import ds2cena
+    liberar = threading.Event()
+    chamadas = []
+
+    def extrair(area, cache_dir):
+        chamadas.append(area)
+        liberar.wait(5)
+        if area == "m10_10_00_00":
+            raise OSError("sem o jogo")
+        pasta = cache_dir / "cena" / area
+        pasta.mkdir(parents=True)
+        (pasta / "geo.bin.gz").write_bytes(b"\0")
+        (pasta / "cena.json").write_text(json.dumps({"versao": ds2cena.CENA_VERSAO, "area": area}), encoding="utf-8")
+
+    httpd = serve.make_server(tmp_path, port=0, runner=serve.Runner(command=lambda p: [sys.executable, "-c", "0"], cwd=tmp_path),
+                              extrair_cena=extrair)
+    threading.Thread(target=httpd.serve_forever, daemon=True).start()
+    yield f"http://127.0.0.1:{httpd.server_address[1]}", liberar, chamadas
+    liberar.set()
+    httpd.shutdown()
+
+
+def post_status(url, headers=None):
+    req = urllib.request.Request(url, data=b"", method="POST", headers={"X-Buildsmith": "1"} if headers is None else headers)
+    with urllib.request.urlopen(req, timeout=5) as resp:
+        return resp.status, json.loads(resp.read())
+
+
+def esperar(url, status, tentativas=60):
+    import time
+    for _ in range(tentativas):
+        try:
+            if get(url)[0] == status:
+                return True
+        except urllib.error.HTTPError as err:
+            if err.code == status:
+                return True
+        time.sleep(0.05)
+    return False
+
+
+def test_cena_extraction_runs_in_background_once(server_cena):
+    base, liberar, chamadas = server_cena
+    url = f"{base}/api/ds2/cena/m10_04_00_00/cena.json"
     with pytest.raises(urllib.error.HTTPError) as err:
-        get(f"{base}/api/ds2/cena/m99_99_00_00/cena.json")
-    assert err.value.code == 404
+        get(url)
+    assert err.value.code == 404  # o GET nunca extrai
+    assert post_status(f"{base}/api/ds2/cena/m10_04_00_00/extrair") == (202, {"estado": "extraindo"})
+    assert post_status(f"{base}/api/ds2/cena/m10_04_00_00/extrair")[0] == 202  # pedido repetido não começa outra
+    status, _, body = get(url)
+    assert status == 202 and json.loads(body) == {"estado": "extraindo"}
+    liberar.set()
+    assert esperar(url, 200)
+    assert chamadas == ["m10_04_00_00"]
 
+
+def test_cena_extraction_error_is_reported(server_cena):
+    base, liberar, _ = server_cena
+    liberar.set()
+    post_status(f"{base}/api/ds2/cena/m10_10_00_00/extrair")
+    url = f"{base}/api/ds2/cena/m10_10_00_00/cena.json"
+    assert esperar(url, 500)
+    with pytest.raises(urllib.error.HTTPError) as err:
+        get(url)
+    assert "sem o jogo" in json.loads(err.value.read())["erro"]
+
+
+def test_cena_extraction_needs_the_page_header(server_cena):
+    base, _, chamadas = server_cena
+    with pytest.raises(urllib.error.HTTPError) as err:
+        post_status(f"{base}/api/ds2/cena/m10_04_00_00/extrair", headers={})
+    assert err.value.code == 403 and chamadas == []
+
+
+def test_page_scripts_are_served_as_javascript(server):
+    base, tmp_path = server
+    vendor = tmp_path / "paginas" / "ds2" / "personagem-um" / "vendor"
+    vendor.mkdir()
+    (vendor / "three.module.js").write_text("export const REVISION = '160';", encoding="utf-8")
+    status, ctype, _ = get(f"{base}/p/ds2/personagem-um/vendor/three.module.js")
+    assert status == 200 and ctype.startswith("text/javascript")  # módulo ES não carrega com text/plain

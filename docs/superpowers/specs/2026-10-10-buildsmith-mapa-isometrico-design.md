@@ -96,3 +96,34 @@ Estado aceso/apagado depende de achar a flag de cada sconce no save (`flags-diff
 5. Objetos com rótulo + filtro Tochas.
 6. Docs (skills, design system, README), versão do plugin.
 7. (Depois) Estado das tochas pelo save.
+
+## Ajustes depois do primeiro teste (2026-10-10)
+
+Prints do Huntsman's Copse mostraram cenário cinza e lavado, manchas pretas, peças gigantes cobrindo tudo e o arrasto
+"girando" a vista. Causas e o que mudou:
+
+- **Cor:** a textura não era marcada como sRGB (cor lavada) e o tone mapping ACES tirava o resto da cor; o servidor também
+  recusava nome de textura com maiúscula. Agora: textura sRGB (ou conversão no shader sem a extensão), sem tone mapping,
+  luz hemisférica + direcional que segue a câmera, leve saturação e um "ombro" nas luzes altas; o extrator grava os nomes
+  em minúsculas.
+- **Textura torta:** a UV do FLVER2 do DS2 é int16 ÷ 2048 (tipo 0x15), não float16; normais por tipo (Byte4B); strips e
+  LOD tratados.
+- **Manchas pretas e peças gigantes:** materiais SkyDome e NoLit (céu de 10 km, cartões pretos de neblina/escuridão nas
+  entradas de caverna) e caixas de textura `dummy` ficam de fora; o que passa da área jogável some aos poucos no shader.
+  Folhagem `_Alp_1bit` usa recorte (DXT1 com alfa), decal é translúcido, água semitransparente.
+- **Câmera:** em vez de giro em passos de 90°, câmera de espectador livre: arrastar agarra o chão (o ponto fica sob o
+  cursor), botão direito/Alt gira e inclina (15°–89,5°), roda dá zoom no cursor, WASD/setas andam, Q/E giram, R/F
+  inclinam, Shift acelera; botões ⟲ ⟳ (45°), bússola (norte para cima), De cima, Interior e Foco. O alvo desliza pelo
+  raio da vista até o chão sob o centro (a imagem não pula).
+- **Interior:** o corte deixa de ser um plano só: é a altura do navmesh do andar (grade de 1,5 m, alargada para pegar as
+  paredes) + 3,2 m, com a linha do corte cor de osso. No 3D, clicar num andar liga o corte; "Todos" desliga; I liga no
+  andar do centro da vista (ou no seu, se estiver perto); PgUp/PgDn trocam. Cada área abre inteira.
+- **Foco:** o que está longe do centro da vista escurece e perde a cor (raio proporcional ao zoom), com vinheta leve;
+  marcadores fora do foco ficam apagados.
+- **Rota:** era Dijkstra pelos centróides dos triângulos (zigue-zague). Agora o caminho é o funil (string pulling) pelas
+  arestas atravessadas, com a altura do chão em cada travessia; a linha tem gradiente da 1ª à última parada e traços que
+  andam no sentido da rota; paradas são pinos numerados na escala das zonas (dourado → brasa).
+- **Cache:** `CENA_VERSAO` 2 (o cache da versão 1 é refeito), gravação atômica, `geo.bin` em gzip (~3× menor, vai com
+  `Content-Encoding: gzip`), o GET nunca extrai: a página faz `POST .../extrair` e consulta até ficar pronto (202 enquanto
+  extrai). As 28 áreas extraem em até ~14 s; Drangleic Castle (1393 peças) desenha em ~5 ms por quadro.
+- Objetos do MSB (portas, baús, alavancas, tochas) continuam para a etapa 5.

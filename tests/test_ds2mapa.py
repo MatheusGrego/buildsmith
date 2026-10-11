@@ -201,8 +201,36 @@ def faixa_area(ilhas=False):
 def test_route_follows_the_floor():
     area = faixa_area()
     r = ds2mapa.rota(area, ds2mapa.ponto_de(area, "fogueira", 16675), ds2mapa.ponto_de(area, "item", 10165010))
-    assert r["pontos"][0] == [0.2, 0, 0.3] and r["pontos"][-1] == [2.9, 0, 0.6]
-    assert 2.7 <= r["metros"] <= 4.0 and len(r["pontos"]) >= 3
+    assert r["pontos"] == [[0.2, 0, 0.3], [2.9, 0, 0.6]]  # corredor reto: linha reta, sem zigue-zague pelos centróides
+    assert r["metros"] == pytest.approx(2.72, abs=0.05)
+
+
+def l_area(subida=0.0):
+    """Corredor em L de 1 m de largura: x de 0 a 3 (z 0..1), depois z de 1 a 4 (x 2..3); o braço sobe `subida` m."""
+    v = [0, 0, 0, 1, 0, 0, 2, 0, 0, 3, 0, 0, 0, 0, 1, 1, 0, 1, 2, 0, 1, 3, 0, 1,
+         2, subida / 3, 2, 3, subida / 3, 2, 2, subida * 2 / 3, 3, 3, subida * 2 / 3, 3, 2, subida, 4, 3, subida, 4]
+    f = [0, 1, 5, 0, 5, 4, 1, 2, 6, 1, 6, 5, 2, 3, 7, 2, 7, 6, 6, 7, 9, 6, 9, 8, 8, 9, 11, 8, 11, 10, 10, 11, 13, 10, 13, 12]
+    return {"area": "m10_16_00_00", "malhas": [{"v": v, "f": f}]}
+
+
+def test_route_bends_only_at_the_corner():
+    import math
+    r = ds2mapa.rota(l_area(), [0.5, 0, 0.5], [2.5, 0, 3.5])
+    assert len(r["pontos"]) == 3 and [r["pontos"][1][0], r["pontos"][1][2]] == [2, 1]  # dobra rente à quina de dentro
+    assert r["metros"] == pytest.approx(math.dist((0.5, 0.5), (2, 1)) + math.dist((2, 1), (2.5, 3.5)), abs=0.05)
+
+
+def test_route_keeps_the_floor_height():
+    import math
+    r = ds2mapa.rota(l_area(subida=3.0), [0.5, 0, 0.5], [2.5, 3.0, 3.5])
+    alturas = [p[1] for p in r["pontos"]]
+    assert alturas[0] == 0 and alturas[-1] == 3.0 and alturas == sorted(alturas)
+    assert r["metros"] > math.dist((0.5, 0.5), (2, 1)) + math.dist((2, 1), (2.5, 3.5))  # a subida conta
+
+
+def test_funil_straight_corridor_has_no_corners():
+    portais = [((0, 0, 0), (0, 0, 0)), ((1, 0, 1), (1, 0, 0)), ((2, 0, 1), (2, 0, 0)), ((3, 0, 0.5), (3, 0, 0.5))]
+    assert [c[0] for c in ds2mapa.funil(portais)] == [(0, 0, 0), (3, 0, 0.5)]
 
 
 def test_route_between_islands_is_none():
