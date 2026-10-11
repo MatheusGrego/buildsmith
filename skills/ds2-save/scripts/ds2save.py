@@ -306,12 +306,22 @@ def _slug(text: str) -> str:
     return re.sub(r"[^a-z0-9]+", "-", _plain(text)).strip("-")
 
 
+def slugs_unicos(found: list[dict]) -> dict[int, str]:
+    """slot -> slug da página. Personagens com o mesmo nome: o de maior nível fica com o slug do nome e os outros
+    ganham o número do slot ("pssk" nível 87 e "pssk-1" nível 32), para página, posição e ficha serem do mesmo."""
+    out = {}
+    for item in sorted(found, key=lambda i: (-i["level"], i["slot"])):
+        base = _slug(item["name"]) or f"slot-{item['slot']}"
+        out[item["slot"]] = base if base not in out.values() else f"{base}-{item['slot']}"
+    return out
+
+
 def slot_by_name(path, name: str) -> int:
     """Slot do personagem pelo nome ou pelo slug da página (sem diferença de maiúscula/acento/pontuação)."""
     found = list_slots(path)
-    for item in found:
-        if _slug(item["name"]) == _slug(name):
-            return item["slot"]
+    for slot, slug in sorted(slugs_unicos(found).items(), key=lambda kv: kv[1] != _slug(name)):
+        if slug == _slug(name):
+            return slot
     options = ", ".join(f'{item["slot"]}: {item["name"]}' for item in found) or "nenhum"
     raise SaveError(f"personagem {name!r} não está no save (personagens: {options})")
 
@@ -332,23 +342,26 @@ def posicao(path, slot: int) -> dict:
 
 def posicoes(path) -> dict[str, dict]:
     """slug do personagem -> slot, nome, mapa e posição (uma leitura do save para todos)."""
-    out = {}
-    for number, slot in _occupied(_read_entries(path)):
-        nome = _utf16z(slot, OFF_NAME, NAME_CHARS)
-        out[_slug(nome)] = {"slot": number, "nome": nome, **posicao_do_slot(slot)}
-    return out
+    ocupados = list(_occupied(_read_entries(path)))
+    slugs = slugs_unicos([{"slot": n, "name": _utf16z(s, OFF_NAME, NAME_CHARS),
+                           "level": struct.unpack_from("<I", s, OFF_LEVEL)[0]} for n, s in ocupados])
+    return {slugs[number]: {"slot": number, "nome": _utf16z(slot, OFF_NAME, NAME_CHARS), **posicao_do_slot(slot)}
+            for number, slot in ocupados}
 
 
 def personagens(path, names=None) -> list[dict]:
     """Personagens do save com o que a seleção da página mostra: nível, soul memory e o equipamento do retrato."""
     names = names if names is not None else load_item_names()
     out = []
-    for number, slot in _occupied(_read_entries(path)):
+    ocupados = list(_occupied(_read_entries(path)))
+    slugs = slugs_unicos([{"slot": n, "name": _utf16z(s, OFF_NAME, NAME_CHARS),
+                           "level": struct.unpack_from("<I", s, OFF_LEVEL)[0]} for n, s in ocupados])
+    for number, slot in ocupados:
         info = parse_slot(slot, names)
         eq = info["equipped"]
         equipado = {k: eq["armor"].get(k) for k in ("cabeca", "peito", "maos", "pernas")}
         equipado.update({k: eq["hands"].get(k) for k in ("R1", "L1")})
-        out.append({"slot": number, "nome": info["name"], "slug": _slug(info["name"]), "nivel": info["level"],
+        out.append({"slot": number, "nome": info["name"], "slug": slugs[number], "nivel": info["level"],
                     "soul_memory": info["soul_memory"], "equipado": equipado})
     return out
 

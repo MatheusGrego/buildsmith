@@ -106,6 +106,19 @@ def test_slot_by_name_picks_character_in_shared_save(tmp_path, capsys):
     assert json.loads(capsys.readouterr().out)["slot"] == 2
 
 
+def test_characters_with_the_same_name_get_unique_slugs(tmp_path, names):
+    path = tmp_path / "multi.co2"
+    a, b = make_slot(name="pssk", level=32), make_slot(name="pssk", level=87)
+    b[ds2save.OFF_MAPA:ds2save.OFF_MAPA + 4] = bytes([0, 0, 0x04, 0x0A])  # m10_04_00_00
+    path.write_bytes(build_bnd4({"USER_DATA001": bytes(a), "USER_DATA002": bytes(b),
+                                 "USER_DATA011": bytes(0x30000), "USER_DATA012": bytes(0x30000)}))
+    assert ds2save.slot_by_name(path, "pssk") == 2  # o nome sozinho é o de maior nível
+    assert ds2save.slot_by_name(path, "pssk-1") == 1
+    assert [(p["slot"], p["slug"]) for p in ds2save.personagens(path, names=names)] == [(1, "pssk-1"), (2, "pssk")]
+    pos = ds2save.posicoes(path)
+    assert pos["pssk"]["slot"] == 2 and pos["pssk"]["area"] == "m10_04_00_00" and pos["pssk-1"]["slot"] == 1
+
+
 def test_find_save_picks_newest(tmp_path):
     folder = tmp_path / "DarkSoulsII" / "0110000100000000"
     folder.mkdir(parents=True)
