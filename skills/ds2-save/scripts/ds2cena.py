@@ -43,10 +43,11 @@ from pathlib import Path
 import ds2arquivos
 import ds2mapa
 
-CENA_VERSAO = 7  # 2: UV int16, normais por tipo, LOD0, céu/NoLit fora, matriz, chão andável; 3: objetos e inimigos;
+CENA_VERSAO = 8  # 2: UV int16, normais por tipo, LOD0, céu/NoLit fora, matriz, chão andável; 3: objetos e inimigos;
                  # 4: modelo rígido com várias malhas (baú), lápide/ajudantes fora, motivo de quem ficou sem modelo;
                  # 5: textura de objeto/personagem até 256 (orçamento); 6: ossos também nas peças de mapa;
-                 # 7: personagens na pose de espera (Idle do Morpheme, ds2anim) em vez da pose T
+                 # 7: personagens na pose de espera (Idle do Morpheme, ds2anim) em vez da pose T;
+                 # 8: NPC humano montado com as peças de armadura dele (modelo_humano)
 TEX_MAX = 512  # lado máximo das texturas (descarta os mipmaps maiores)
 TEX_MAX_ENTIDADE = 256  # objeto e personagem ficam pequenos na tela: orçamento de 30 MB por área (spec)
 FORA_M = 40.0  # peças além desta margem do chão andável (céu, montanhas de fundo) ficam de fora
@@ -754,6 +755,41 @@ def pose_padrao(ler, cid: str) -> tuple[dict | None, str | None]:
     return None, "sem animação no jogo"
 
 
+PARTES_HUMANAS = (("cabeca", "head", "hd"), ("peito", "body", "bd"), ("maos", "arm", "am"), ("pernas", "leg", "lg"))
+
+
+def modelo_humano(ler, pecas: dict) -> tuple[dict | None, dict, str | None]:
+    """NPC humano sem modelo próprio: as peças de armadura dele (ds2mapa.pecas_npc) em /model/parts/, cada uma com o
+    esqueleto humano inteiro, na pose de espera do corpo c0001. Cabeça x001 sem capacete = o rosto padrão
+    (/model/parts/face/fg_1001_m.bnd; o cabelo não foi achado). Versão masculina (_m), senão a feminina (_f)."""
+    pose, _anim = pose_padrao(ler, "c0001")
+    malhas, tex, faltam = [], {}, []
+    pecas = dict(pecas)
+    if not pecas.get("cabeca") and pecas.get("peito", 0) < 7000:  # sem capacete (0) e corpo comum: o rosto padrão
+        pecas["cabeca"] = 1001
+    for slot, pasta, pre in PARTES_HUMANAS:
+        n = pecas.get(slot)
+        if not n:  # 0 = nada nesse slot (a estátua da Rosabeth é só o peito 7630)
+            continue
+        candidatos = [f"/model/parts/{pasta}/{pre}_{n:04d}_{sx}.bnd" for sx in ("m", "f")]
+        if slot == "cabeca":
+            candidatos += [f"/model/parts/face/fg_{n:04d}_{sx}.bnd" for sx in ("m", "f")]
+        for caminho in candidatos:
+            mod, t, aviso = modelo_do_binder(ler, caminho, pose=pose)
+            if mod:
+                malhas += mod["malhas"]
+                for k, v in t.items():
+                    tex.setdefault(k, v)
+                break
+        else:
+            faltam.append(f"{slot} {n}")
+    pts = [v for m in malhas if m["tipo"] != "ignorar" for v in m["vertices"]]
+    if not pts:
+        return None, {}, "peças de armadura sem modelo legível" + (f" ({', '.join(faltam)})" if faltam else "")
+    bb = (tuple(min(p[k] for p in pts) for k in range(3)), tuple(max(p[k] for p in pts) for k in range(3)))
+    return {"version": "partes", "bb": bb, "materiais": [], "malhas": malhas, "puladas": faltam}, tex, None
+
+
 def modelo_do_binder(ler, caminho: str, caminho_tex: str | None = None, preferido: str | None = None, pose: dict | None = None):
     """(modelo, {textura: dds}, aviso) de um modelo de objeto ou personagem: o .flv do binder (o de nome igual ao modelo,
     senão o primeiro) com os ossos aplicados (na pose dada, se houver), e as texturas dos .tpf do binder e do binder de
@@ -794,6 +830,15 @@ def motivo_sem_malha(modelo: dict) -> str | None:
         mtds = sorted({m["mtd"] for m in modelo["malhas"]})
         return f"só malhas que o jogo não desenha ({', '.join(mtds[:3])})"
     return "nenhuma malha lida: " + "; ".join(sorted(set(modelo.get("puladas", [])))[:3]) if modelo.get("puladas") else "nenhuma malha"
+
+
+def pecas_dos_npcs(game_dir, area: str, cache_base) -> dict[str, dict]:
+    """Modelo do NPC (cXXXX) -> peças de armadura dele, para os NPCs humanos sem modelo próprio (ds2mapa)."""
+    try:
+        dados = ds2mapa.extrair_area(game_dir, area, cache_base)
+    except Exception:
+        return {}
+    return {n["modelo"]: n["pecas"] for n in dados.get("npcs", []) if n.get("modelo") and n.get("pecas")}
 
 
 def modelos_inimigos(game_dir, area: str, cache_base) -> list[str]:
@@ -936,10 +981,14 @@ def extrair_cena(game_dir=None, area: str = "m10_04_00_00", cache_dir=None, forc
             inst["caixa"] = [round(c, 2) for c in caixa[0] + caixa[1]]
             mantidas.append(inst)
         personagens = {}
+        pecas = pecas_dos_npcs(game_dir, area, cache_base)
         for cid in modelos_inimigos(game_dir, area, cache_base):
             pose, anim = pose_padrao(pac.ler, cid)
             mod, tex, aviso = modelo_do_binder(pac.ler, f"/model/chr/{cid}.bnd", f"/model/chr/{cid}.texbnd", preferido=cid,
                                                pose=pose)
+            if aviso == "sem arquivo no jogo" and cid in pecas:  # NPC humano: o corpo com as peças de armadura dele
+                pose, anim = pose_padrao(pac.ler, "c0001")
+                mod, tex, aviso = modelo_humano(pac.ler, pecas[cid])
             aviso = aviso or (motivo_sem_malha(mod) if mod else None)
             if aviso:
                 sem_modelo[cid] = aviso

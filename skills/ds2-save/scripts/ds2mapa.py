@@ -30,8 +30,10 @@ from pathlib import Path
 from ds2planta import PLANTA_VERSAO  # noqa: F401 (versão da planta guardada no cache)
 
 AREA = re.compile(r"^m(\d\d)_(\d\d)_(\d\d)_(\d\d)$")
-EXTRACAO_VERSAO = 9  # 2: NPCs e chefes; 3: início do mapa (zonas); 4: tipo de inimigo; 5: objetos; 6: rotação do inimigo;
-                     # 7: modelo do NPC; 8: estado_ref (estado pelo save); 9: chave da porta pelo evento (ds2esd)
+EXTRACAO_VERSAO = 10  # 2: NPCs e chefes; 3: início do mapa (zonas); 4: tipo de inimigo; 5: objetos; 6: rotação do inimigo;
+                      # 7: modelo do NPC; 8: estado_ref (estado pelo save); 9: chave da porta pelo evento (ds2esd);
+                      # 10: peças de armadura do NPC humano (pecas)
+SLOTS_ARMADURA = {1: "cabeca", 2: "peito", 3: "maos", 4: "pernas"}  # ArmorParam +0x05 (o byte alto de +0x04)
 ESTADO_CATS = ("porta", "alavanca", "bau")  # objetos com regra de estado no save (ds2save.estado_mundo)
 EP_HP, EP_ALMAS, EP_LOTES = 0x28, 0xD0, (0x4C, 0x134)  # EnemyParam
 INICIO_MAPA = "マップ開始地点"  # nome do ponto de início no MSB (texto do próprio jogo)
@@ -299,6 +301,23 @@ def modelos_npcs(npcs: list[dict], geradores: list[dict]) -> None:
             n["modelo"], n["rot"] = f"c{int(g['tipo']) // 100:04d}", g.get("rot")
 
 
+def pecas_npc(status: bytes | None, armaduras: dict[int, bytes]) -> dict | None:
+    """Modelo de cada peça de armadura do NPC humano (o corpo c0001 com peças): as armaduras da linha dele no
+    NpcPlayerStatusParam (a linha é o ID do NPC; Saulden = 7410), com o slot (+0x04 >> 8) e o número do modelo (+0x08)
+    da linha da armadura no ArmorParam. Ex.: Saulden 11050101 -> peito 1050 (/model/parts/body/bd_1050_m.bnd)."""
+    if not status:
+        return None
+    out = {}
+    for v in struct.unpack_from(f"<{len(status) // 4}i", status):
+        raw = armaduras.get(v)
+        if raw is None or len(raw) < 12:
+            continue
+        slot = SLOTS_ARMADURA.get(struct.unpack_from("<i", raw, 4)[0] >> 8)
+        if slot and slot not in out:
+            out[slot] = struct.unpack_from("<i", raw, 8)[0]
+    return out or None
+
+
 def montar_objetos(partes: list[dict], instancias: dict[int, dict], nomes_itens: dict[int, str], tabelas=None,
                    chaves_evento: dict[int, int] | None = None) -> list[dict]:
     """Objetos do mapa que importam para andar pela área: portas (com a chave, quando o modelo diz ou o evento da porta
@@ -421,6 +440,12 @@ def extrair_area(game_dir, area: str, cache_dir, names=None) -> dict:
         e["tipo"] = registro.get(e["personagem"])
         e["papel"] = papel_gerador(e["personagem"], e["tipo"], nomes_npc, out["chefes"])
     modelos_npcs(out["npcs"], out["inimigos"])
+    status_npc = dict(linhas_param(params["NpcPlayerStatusParam"])) if "NpcPlayerStatusParam" in params else {}
+    armaduras = dict(linhas_param(params["ArmorParam"])) if "ArmorParam" in params else {}
+    for n in out["npcs"]:
+        pecas = pecas_npc(status_npc.get(n["id"]), armaduras)
+        if pecas:
+            n["pecas"] = pecas
     out["tipos_inimigo"] = tipos_inimigo(params["EnemyParam"], lotes_itens(params["ItemLotParam2_Chr"]), nomes_itens,
                                          [e["tipo"] for e in out["inimigos"] if e["tipo"] and not e["papel"]])
     chaves = {i for i, (cat, _n) in names.items() if cat == "KeyItems"}

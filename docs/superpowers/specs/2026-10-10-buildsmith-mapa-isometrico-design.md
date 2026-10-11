@@ -371,3 +371,18 @@ estava mesmo errado.
   achar, todos ficam na espera em pé.
 - Animação em movimento (laço do Idle no 3D) fica para depois: a pose estática já tira a pose T; animar exige mandar os
   pesos e os ossos para a página.
+
+## NPC humano com as peças de armadura dele (2026-10-11, Task 8b do plano)
+
+- Cerca de 25 NPCs não têm modelo próprio em `/model/chr/` (Saulden c7410, Maughlin c7610, Carhillion c7660, Rosabeth
+  c7630, Vorgel, Bellclaire, Oliver, Fencer Sharron, os fantasmas invocáveis...): são o corpo humano `c0001` (só
+  esqueleto, sem malha) com peças de armadura.
+- **Onde**: a linha do NPC no `NpcPlayerStatusParam` é o ID do NPC (Saulden = 7410) e traz as armas e as 4 armaduras
+  (Saulden: 11001100, 11050101, 11050102, 11030103). No `ArmorParam`, +0x04 >> 8 é o slot (1 cabeça, 2 peito, 3 mãos,
+  4 pernas) e +0x08 o número do modelo: `/model/parts/{head,body,arm,leg}/{hd,bd,am,lg}_<modelo>_{m,f}.bnd`. Cada peça
+  é um FLVER com o esqueleto humano inteiro e as próprias texturas.
+- Cabeça x001 (sem capacete) não tem `hd_`: entra o rosto padrão `/model/parts/face/fg_1001_m.bnd`; peça 0 = nada
+  no slot (cabeça 0 com corpo comum também ganha o rosto; corpo único de NPC ≥ 7000, como a estátua da Rosabeth, não).
+  O cabelo não foi achado: quem não usa capacete aparece com o rosto sem cabelo.
+- **Na extração**: `ds2mapa` (`EXTRACAO_VERSAO` 10) grava `npcs[].pecas`; `ds2cena` (`CENA_VERSAO` 8) monta o modelo
+  com o mesmo `cXXXX` do NPC (a página não muda), as peças na pose de espera do `c0001`. Versão masculina primeiro.

@@ -567,3 +567,14 @@ def test_rota_devolve_as_portas_no_caminho():
 def test_ponto_de_objeto_pela_parte_do_msb():
     area = {**faixa_area(), "objetos": [porta("o00_0316_0002", [1.5, 0.0, 0.5])]}
     assert ds2mapa.ponto_de(area, "objeto", "o00_0316_0002") == [1.5, 0.0, 0.5]
+
+
+def test_pecas_do_npc_humano_pelo_status_e_pela_armadura():
+    """Linha do NPC no NpcPlayerStatusParam (o ID do NPC) com IDs de armadura no meio de armas e outros números; o
+    ArmorParam dá o slot (+0x04 >> 8) e o número do modelo (+0x08)."""
+    status = struct.pack("<8i", 0, 7410, 3405000, 11220000, 11001100, 11050101, 11050102, 11030103)
+    armaduras = {11001100: struct.pack("<3i", 11001100, 0x100, 1001), 11050101: struct.pack("<3i", 11050101, 0x203, 1050),
+                 11050102: struct.pack("<3i", 11050102, 0x303, 1050), 11030103: struct.pack("<3i", 11030103, 0x401, 1030)}
+    assert ds2mapa.pecas_npc(status, armaduras) == {"cabeca": 1001, "peito": 1050, "maos": 1050, "pernas": 1030}
+    assert ds2mapa.pecas_npc(None, armaduras) is None
+    assert ds2mapa.pecas_npc(struct.pack("<2i", 1, 2), armaduras) is None

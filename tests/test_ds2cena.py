@@ -608,3 +608,32 @@ def test_malha_com_pele_segue_a_pose_pelos_pesos():
     assert v[0] == pytest.approx((1.0, 0.0, -1.0), abs=1e-5)
     assert v[1] == pytest.approx(((2 * 128 + 1 * 127) / 255, 1.0, -127 / 255), abs=1e-3)
     assert v[2] == pytest.approx((0.0, 0.0, 0.0))
+
+
+def test_npc_humano_e_a_soma_das_pecas_com_o_rosto_padrao():
+    """Peças em /model/parts/<pasta>/<pre>_<modelo>_m.bnd; cabeça 0 com corpo comum vira o rosto padrão (fg_1001);
+    peça sem arquivo fica de fora com aviso, as outras entram."""
+    peca = lambda z: build_bnd4({"P.flv": build_flver([{**tri_malha(), "vertices": [((0.0, z, 0.0), CIMA, (0, 0)), ((1.0, z, 0.0), CIMA, (0, 0)), ((1.0, z, 1.0), CIMA, (0, 0))]}])})  # noqa: E731
+    arquivos = {"/model/parts/body/bd_1050_m.bnd": peca(1.2), "/model/parts/leg/lg_1030_f.bnd": peca(0.4),
+                "/model/parts/face/fg_1001_m.bnd": peca(1.7)}
+    lidos = []
+
+    def ler(caminho):
+        lidos.append(caminho)
+        return arquivos.get(caminho)
+
+    modelo, _tex, aviso = ds2cena.modelo_humano(ler, {"cabeca": 0, "peito": 1050, "maos": 9999, "pernas": 1030})
+    assert aviso is None and len(modelo["malhas"]) == 3
+    assert sorted(m["vertices"][0][1] for m in modelo["malhas"]) == pytest.approx([0.4, 1.2, 1.7])
+    assert modelo["puladas"] == ["maos 9999"] and "/model/parts/face/fg_1001_m.bnd" in lidos
+    assert modelo["bb"][1][1] == pytest.approx(1.7)
+    estatua, _t, _a = ds2cena.modelo_humano(ler, {"cabeca": 0, "peito": 7630})
+    assert estatua is None  # corpo único de NPC (>= 7000) não ganha o rosto padrão; sem arquivo do corpo, sem modelo
+
+
+@pytest.mark.skipif(not (GAME / "GameDataEbl.bhd").exists(), reason="DS2 SotFS não instalado")
+def test_saulden_e_maughlin_montados_com_as_pecas_com_o_jogo(tmp_path):
+    cena = ds2cena.extrair_cena(GAME, "m10_04_00_00", tmp_path)
+    for cid in ("c7410", "c7610"):  # Crestfallen Saulden, Maughlin the Armourer: humanos sem modelo próprio
+        assert cid in cena["personagens"], cena["sem_modelo"].get(cid)
+        assert 1.4 < cena["personagens"][cid]["altura"] < 2.0
