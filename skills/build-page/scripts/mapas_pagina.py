@@ -6,12 +6,42 @@
 - `mapas/<area>.json`: nome, planta (andares com polígonos), fogueiras, itens (com ícone local e marca do plano),
   inimigos comuns (gerador de NPC e de chefe fica de fora) e os tipos deles (HP, almas e drops do jogo; nome só quando
   a wiki confirma, com a prova) — sem os triângulos do navmesh. `mapas/indice.json`: áreas na ordem do seletor.
-- Área onde o personagem está (posição do save) entra sempre.
+- Área onde o personagem está (posição do save) entra sempre; depois, todas as outras áreas do jogo (o seletor separa
+  liberadas e não liberadas pelas fogueiras acesas no save, que a página lê ao vivo do servidor).
+- `indice.json`: por área, o rótulo (nome repetido ganha a 1ª fogueira, ex. "Majula · Old Akelarre"), os IDs das
+  fogueiras e a posição na rota de progressão da wiki (games/ds2/rota.json; Majula e Things Betwixt primeiro).
 """
 import json
 from pathlib import Path
 
 MAX_AREAS_POR_NOME = 4
+ROTA = Path(__file__).resolve().parents[3] / "games" / "ds2" / "rota.json"
+
+
+def _norm(area: str) -> str:
+    return area.lower().replace("the ", "").replace("-", " ").strip()
+
+
+def ordem_rota(nome: str, rota: dict | None = None) -> int:
+    """Posição da área na rota de progressão: hubs = -1, fora da rota (memórias, DLC) = 100."""
+    rota = rota or json.loads(ROTA.read_text(encoding="utf-8"))
+    if any(_norm(nome) == _norm(h) for h in rota["hubs"]):
+        return -1
+    lista = [_norm(a) for a in rota["rota"]]
+    return lista.index(_norm(nome)) if _norm(nome) in lista else 100
+
+
+def rotulos(areas: list[dict]) -> dict[str, str]:
+    """Rótulo de cada área no seletor: nome do jogo; nome repetido ganha a 1ª fogueira (ou "sem fogueira")."""
+    contagem = {}
+    for a in areas:
+        contagem[a["nome"].strip()] = contagem.get(a["nome"].strip(), 0) + 1
+    out = {}
+    for a in areas:
+        nome = a["nome"].strip()
+        extra = a["fogueiras"][0]["nome"] if a.get("fogueiras") else "sem fogueira"
+        out[a["area"]] = f"{nome} · {extra}" if contagem[nome] > 1 else nome
+    return out
 
 
 def alvos(plano: dict):
@@ -93,7 +123,7 @@ def area_para_pagina(dados: dict, nomes_plano: dict, icone_local, precisa: dict 
 
 
 def preparar(plano: dict, out_dir: Path, carregar_area, listar_areas, icone_local, prebuscar=None, pagina_wiki=None,
-             nomes_inimigos=None, area_jogador: str | None = None) -> dict:
+             nomes_inimigos=None, area_jogador: str | None = None, todas_areas: bool = True) -> dict:
     import ds2mapa
     import ds2planta
 
@@ -147,6 +177,14 @@ def preparar(plano: dict, out_dir: Path, carregar_area, listar_areas, icone_loca
             ordem.append(area_jogador)
         except Exception:  # área sem mapa no jogo (ou nome estranho no save): fica sem
             pass
+    if todas_areas:  # o resto do jogo, para o seletor mostrar o que já foi liberado e o que falta
+        for area_id in listar_areas():
+            if area_id not in ordem:
+                try:
+                    area_de(area_id)
+                    ordem.append(area_id)
+                except Exception:
+                    pass
 
     if prebuscar:  # ícones de itens, NPCs e chefes das áreas, de uma vez (em paralelo, com cache)
         prebuscar(sorted({i["nome"] for a in ordem for p in area_de(a)["itens"] for i in p["itens"][:1]}
@@ -154,6 +192,8 @@ def preparar(plano: dict, out_dir: Path, carregar_area, listar_areas, icone_loca
                             if i["nome"].casefold() in nomes_plano}
                          | {x["nome"] for a in ordem for x in area_de(a).get("npcs", []) + area_de(a).get("chefes", [])}))
     files, indice = {}, []
+    nomes_rotulo = rotulos([area_de(a) for a in ordem])
+    rota = json.loads(ROTA.read_text(encoding="utf-8"))
     for area_id in ordem:
         dados = area_de(area_id)
         nomes = {}
@@ -167,7 +207,8 @@ def preparar(plano: dict, out_dir: Path, carregar_area, listar_areas, icone_loca
         destino.parent.mkdir(parents=True, exist_ok=True)
         destino.write_text(json.dumps(doc, ensure_ascii=False, separators=(",", ":")), encoding="utf-8")
         files[f"mapas/{area_id}.json"] = str(destino)
-        indice.append({"area": area_id, "nome": doc["nome"], "itens_plano": sum(1 for p in doc["itens"] if p["plano"])})
+        indice.append({"area": area_id, "nome": nomes_rotulo[area_id], "itens_plano": sum(1 for p in doc["itens"] if p["plano"]),
+                       "fogueiras": [f["id"] for f in doc["fogueiras"]], "ordem": ordem_rota(doc["nome"], rota)})
     if indice:
         destino = Path(out_dir) / "mapas" / "indice.json"
         destino.write_text(json.dumps(indice, ensure_ascii=False), encoding="utf-8")

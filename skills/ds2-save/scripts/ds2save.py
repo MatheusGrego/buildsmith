@@ -49,6 +49,10 @@ SHOP_MAX = 256
 FLAG_BASE_ID = 100944
 FLAG_BASE_OFFSET = 0x26DAA
 FLAG_MIN, FLAG_MAX = 100000, 110000
+# Fogueiras no bloco de mundo: 256 IDs u16 (os do jogo, ex. 16650 = Straid's Cell) e logo depois 1 byte por fogueira,
+# ≠ 0 = acesa. Conferido em 11 backups de um save: cada fogueira nova aparece quando o personagem passa por ela.
+OFF_FOGUEIRAS = 0x282CC
+FOGUEIRAS_MAX = 256
 LEARNED_DEFAULT = Path.home() / ".buildsmith" / "flags" / "ds2.json"
 GAME_DIRS = [
     Path(r"C:\Program Files (x86)\Steam\steamapps\common\Dark Souls II Scholar of the First Sin\Game"),
@@ -340,12 +344,24 @@ def posicao(path, slot: int) -> dict:
     return posicao_do_slot(occupied[slot])
 
 
+def fogueiras_acesas(world: bytes) -> list[int]:
+    """IDs das fogueiras acesas (os do jogo, os mesmos do mapa), na ordem da tabela do save."""
+    fim = OFF_FOGUEIRAS + 3 * FOGUEIRAS_MAX
+    if len(world) < fim:
+        return []
+    ids = struct.unpack_from(f"<{FOGUEIRAS_MAX}H", world, OFF_FOGUEIRAS)
+    estado = world[OFF_FOGUEIRAS + 2 * FOGUEIRAS_MAX:fim]
+    return [i for i, e in zip(ids, estado) if i and e]
+
+
 def posicoes(path) -> dict[str, dict]:
-    """slug do personagem -> slot, nome, mapa e posição (uma leitura do save para todos)."""
-    ocupados = list(_occupied(_read_entries(path)))
+    """slug do personagem -> slot, nome, mapa, posição e fogueiras acesas (uma leitura do save para todos)."""
+    entries = _read_entries(path)
+    ocupados = list(_occupied(entries))
     slugs = slugs_unicos([{"slot": n, "name": _utf16z(s, OFF_NAME, NAME_CHARS),
                            "level": struct.unpack_from("<I", s, OFF_LEVEL)[0]} for n, s in ocupados])
-    return {slugs[number]: {"slot": number, "nome": _utf16z(slot, OFF_NAME, NAME_CHARS), **posicao_do_slot(slot)}
+    return {slugs[number]: {"slot": number, "nome": _utf16z(slot, OFF_NAME, NAME_CHARS), **posicao_do_slot(slot),
+                            "fogueiras": fogueiras_acesas(entries.get(f"USER_DATA{10 + number:03d}", b""))}
             for number, slot in ocupados}
 
 
@@ -395,7 +411,8 @@ def snapshot(path, slot: int | None = None, names=None, regulation=None, learned
         "save_mtime": time.strftime("%Y-%m-%dT%H:%M:%S", time.localtime(stat.st_mtime)),
         "slot": slot,
         **parse_slot(occupied[slot], names),
-        "progresso": progress(occupied[slot], entries[world_name], names, shop_items, load_learned(learned)),
+        "progresso": {**progress(occupied[slot], entries[world_name], names, shop_items, load_learned(learned)),
+                      "fogueiras": fogueiras_acesas(entries[world_name])},
         "avisos": avisos,
     }
 
@@ -414,6 +431,10 @@ def main(argv=None) -> int:
     po.add_argument("--save")
     po.add_argument("--slot", type=int)
     po.add_argument("--personagem")
+    fg = sub.add_parser("fogueiras", help="fogueiras acesas do personagem (IDs do jogo)")
+    fg.add_argument("--save")
+    fg.add_argument("--slot", type=int)
+    fg.add_argument("--personagem")
     fd = sub.add_parser("flags-diff", help="flags globais que ligaram/desligaram entre dois snapshots")
     fd.add_argument("--antes", required=True)
     fd.add_argument("--depois", required=True)
@@ -434,10 +455,13 @@ def main(argv=None) -> int:
                 out = list_slots(path)
             else:
                 slot = slot_by_name(path, args.personagem) if args.personagem else args.slot
+                if args.cmd in ("posicao", "fogueiras") and slot is None:
+                    raise SaveError("use --personagem ou --slot")
                 if args.cmd == "posicao":
-                    if slot is None:
-                        raise SaveError("use --personagem ou --slot")
                     out = posicao(path, slot)
+                elif args.cmd == "fogueiras":
+                    world = _read_entries(path).get(f"USER_DATA{10 + slot:03d}", b"")
+                    out = {"slot": slot, "acesas": fogueiras_acesas(world)}
                 else:
                     out = snapshot(path, slot)
     except SaveError as err:

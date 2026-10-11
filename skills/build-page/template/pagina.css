@@ -370,6 +370,13 @@ a.agora2-t:hover { text-decoration: underline; }
 .mp-campo { display: inline-flex; align-items: center; gap: 8px; font: 13px var(--display); color: var(--text); letter-spacing: 0.04em; }
 .mp-area { background: var(--th); color: var(--head); border: 1px solid var(--line); padding: 5px 8px; font: 14px var(--body); }
 .mp-area:focus-visible { outline: 2px solid var(--link); outline-offset: 1px; }
+.mp-area optgroup { color: var(--link); background: var(--th); font: 12px var(--display); letter-spacing: 0.04em; }
+.mp-area option { color: var(--head); font: 14px var(--body); }
+.mp-fog-apagada image { filter: grayscale(1) brightness(0.55); }
+.mp-fog-apagada .mp-rotulo-fog { fill: var(--dim); }
+.mp-zona-apagada .mp-zn { filter: grayscale(0.85) brightness(0.75); }
+.mp-zfog { font: 11px var(--body); color: var(--ember); }
+.mp-zfog.apagada { color: var(--dim); }
 .mp-modo-toggle { display: inline-flex; border: 1px solid var(--line); background: var(--th); }
 .mp-modo { font: 12px var(--display); letter-spacing: 0.06em; padding: 4px 14px; border: 0; background: transparent; color: var(--dim); cursor: pointer; transition: color 0.15s ease, background 0.15s ease; }
 .mp-modo + .mp-modo { border-left: 1px solid var(--line); }

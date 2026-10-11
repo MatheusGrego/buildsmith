@@ -189,10 +189,10 @@ def test_plan_points_become_area_and_route(tmp_path):
     assert Path(out["files"][pontos[10165020]["icone"]]).exists()
     assert all("andar" in p for p in area["fogueiras"] + area["itens"] + area["inimigos"])
     indice = json.loads(Path(out["files"]["mapas/indice.json"]).read_text(encoding="utf-8"))
-    assert indice == [{"area": "m10_16_00_00", "nome": "The Lost Bastille", "itens_plano": 1}]
+    assert indice == [{"area": "m10_16_00_00", "nome": "The Lost Bastille", "itens_plano": 1, "fogueiras": [16675], "ordem": 5}]
 
 
-def test_area_is_included_only_by_plan_item_name(tmp_path):
+def test_every_game_area_is_listed_with_bonfires_and_route_order(tmp_path):
     outra = {**faixa_area(), "area": "m10_04_00_00", "nome": "Majula",
              "itens": [{"lote": 9, "pos": [1, 0, 1], "itens": [{"id": 9, "nome": "Rubbish", "qtd": 1}]}]}
     areas = {"m10_16_00_00": faixa_area(), "m10_04_00_00": outra}
@@ -200,7 +200,11 @@ def test_area_is_included_only_by_plan_item_name(tmp_path):
     src.write_text(json.dumps(example(), ensure_ascii=False), encoding="utf-8")
     out = prepare_page.prepare(src, tmp_path / "saida", "ds2", cache_root=tmp_path / "cache", fetch=FakeFetch(),
                                carregar_area=lambda area: areas[area], listar_areas=lambda: list(areas))
-    assert "mapas/m10_16_00_00.json" in out["files"] and "mapas/m10_04_00_00.json" not in out["files"]
+    assert "mapas/m10_16_00_00.json" in out["files"] and "mapas/m10_04_00_00.json" in out["files"]
+    indice = json.loads(Path(out["files"]["mapas/indice.json"]).read_text(encoding="utf-8"))
+    # a do plano primeiro (é a que abre sem servidor); o seletor ordena pela rota e separa pelas fogueiras acesas
+    assert [(a["area"], a["itens_plano"], a["ordem"]) for a in indice] == [("m10_16_00_00", 1, 5), ("m10_04_00_00", 0, -1)]
+    assert indice[1]["fogueiras"] == [16675]
 
 
 def test_unknown_point_is_an_error(tmp_path):

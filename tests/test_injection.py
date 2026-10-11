@@ -338,6 +338,12 @@ console.log(JSON.stringify({
   tinta: [t.tintaParada(1, 3), t.tintaParada(3, 3), t.tintaParada(1, 1)],
   pino: t.pino(10, 20),
   trechos: t.trechosTela([[0, 0, 0], [1, 0, 0], [2, 9, 0], [3, 0, 0], [4, 0, 0], [5, 0, 1]], proj),
+  liberadas: [...t.liberadas([
+    {area: "m10_04_00_00", ordem: -1, fogueiras: [4650]}, {area: "m10_30_00_00", ordem: 2, fogueiras: []},
+    {area: "m10_31_00_00", ordem: 2, fogueiras: [31650]}, {area: "m10_16_00_00", ordem: 5, fogueiras: [16650, 16655]},
+    {area: "m10_19_00_00", ordem: 19, fogueiras: [19650]}, {area: "m40_03_00_00", ordem: 29, fogueiras: []},
+    {area: "m20_10_00_00", ordem: 100, fogueiras: []}, {area: "m10_23_00_00", ordem: 8, fogueiras: [23650]},
+  ], new Set([4650, 16655]), "m10_23_00_00")].sort(),
 }));
 """, encoding="utf-8")
     out = subprocess.run(["node", str(script), str(ROOT / "skills/build-page/template/mapa.js")],
@@ -346,6 +352,8 @@ console.log(JSON.stringify({
     assert r["tinta"] == ["#1a1206", "#fff4e6", "#1a1206"]  # número escuro na parada clara, claro na escura
     assert r["pino"].startswith("M10.0 20.0L2.5 8.6A10 10 0 1 1 17.5 8.6Z")  # ponta no ponto, bolha acima
     assert r["trechos"] == [[[0, 0], [10, 0]], [[30, 0], [40, 0], [50, 10]]]  # o ponto acima do corte quebra a linha
+    # fogueira acesa (Majula, Bastille) ou você lá (Huntsman's); trecho sem fogueira antes disso na rota também
+    assert r["liberadas"] == ["m10_04_00_00", "m10_16_00_00", "m10_23_00_00", "m10_30_00_00"]
 
 
 @pytest.mark.skipif(shutil.which("node") is None, reason="sem node para rodar o JS da página")

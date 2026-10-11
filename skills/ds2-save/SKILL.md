@@ -15,6 +15,7 @@ Script: `scripts/ds2save.py` nesta pasta. Precisa de Python 3 e `pycryptodome` (
 | `python "<pasta>/scripts/ds2save.py" snapshot [--personagem NOME \| --slot N] [--save CAMINHO]` | ficha completa em JSON |
 | `python "<pasta>/scripts/ds2save.py" levels --from A --to B` | custo de cada nível de A+1 até B e o total |
 | `python "<pasta>/scripts/ds2save.py" posicao --personagem NOME` | mapa e posição do personagem na última gravação do save |
+| `python "<pasta>/scripts/ds2save.py" fogueiras --personagem NOME` | IDs das fogueiras acesas (os do jogo, os mesmos de `ds2mapa extrair`); também em `snapshot` → `progresso.fogueiras` |
 | `python "<pasta>/scripts/ds2save.py" flags-diff --antes A.json --depois B.json` | flags globais que ligaram/desligaram entre dois snapshots |
 | `python "<pasta>/scripts/ds2calc.py" ar --arma Uchigatana --nivel 5 --str 10 --dex 18` | AR físico da arma pelas regras do jogo (bate com o menu) |
 | `python "<pasta>/scripts/ds2calc.py" catalisador --catalisador "Sorcerer's Staff" --nivel 2 --int 26 --fth 6` | AR por elemento do catalisador; `menu` = número do menu Status (validado: 356, 204) |
@@ -48,6 +49,8 @@ Script: `scripts/ds2save.py` nesta pasta. Precisa de Python 3 e `pycryptodome` (
 - `chefes`: todos os chefes com `derrotado` lido da flag global do save (fonte: `BossBattleParam` do jogo). Exato.
 - `compras`: histórico das lojas com `loja`, `item` e `qtd`. O nome do item vem do `enc_regulation.bnd.dcx` instalado; sem ele, `item` = `null` e aparece em `avisos`.
 - `flags`: todas as flags globais ligadas (100000–109999).
+- `fogueiras`: IDs das fogueiras acesas (bloco de mundo: 256 IDs em 0x282CC e 1 byte de estado por fogueira logo depois; conferido em 11 backups de um save). É o que separa áreas liberadas e não liberadas no mapa da página.
+- Dois personagens com o mesmo nome: o de maior nível fica com o slug do nome (`pssk`) e os outros com o slot (`pssk-1`).
 - `eventos`: eventos aprendidos em `~/.buildsmith/flags/ds2.json` (`{"eventos": [{"nome": "...", "flags": [...], "data": "AAAA-MM-DD"}]}`) com `feito` true/false.
 - O regulation é procurado na pasta do Steam; outra pasta → variável `BUILDSMITH_DS2_GAME` (pasta `Game` do DS2).
 

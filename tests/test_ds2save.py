@@ -119,6 +119,22 @@ def test_characters_with_the_same_name_get_unique_slugs(tmp_path, names):
     assert pos["pssk"]["slot"] == 2 and pos["pssk"]["area"] == "m10_04_00_00" and pos["pssk-1"]["slot"] == 1
 
 
+def test_lit_bonfires_come_from_the_world_block(tmp_path, names, capsys):
+    world = bytearray(0x30000)
+    ids = [2650, 4650, 16650, 16655]
+    struct.pack_into(f"<{len(ids)}H", world, ds2save.OFF_FOGUEIRAS, *ids)
+    estado = ds2save.OFF_FOGUEIRAS + 2 * ds2save.FOGUEIRAS_MAX
+    world[estado:estado + 4] = bytes([1, 1, 0, 1])  # Things Betwixt, Majula e Exile Holding Cells; Straid's Cell apagada
+    path = tmp_path / "a.co2"
+    path.write_bytes(build_bnd4({"USER_DATA001": bytes(make_slot(name="pssk")), "USER_DATA011": bytes(world)}))
+    assert ds2save.fogueiras_acesas(bytes(world)) == [2650, 4650, 16655]
+    assert ds2save.posicoes(path)["pssk"]["fogueiras"] == [2650, 4650, 16655]
+    assert ds2save.snapshot(path, names=names, regulation=False)["progresso"]["fogueiras"] == [2650, 4650, 16655]
+    assert ds2save.main(["fogueiras", "--save", str(path), "--personagem", "pssk"]) == 0
+    assert json.loads(capsys.readouterr().out) == {"slot": 1, "acesas": [2650, 4650, 16655]}
+    assert ds2save.fogueiras_acesas(b"curto") == []
+
+
 def test_find_save_picks_newest(tmp_path):
     folder = tmp_path / "DarkSoulsII" / "0110000100000000"
     folder.mkdir(parents=True)

@@ -54,6 +54,14 @@
   const tintaParada = (ordem, total) => (total > 1 && (ordem - 1) / (total - 1) > 0.5 ? "#fff4e6" : "#1a1206");
   // Pino de parada com a ponta em (x, y): bolha de raio 10 com o centro 18 px acima.
   const pino = (x, y) => `M${x.toFixed(1)} ${y.toFixed(1)}L${(x - 7.5).toFixed(1)} ${(y - 11.4).toFixed(1)}A10 10 0 1 1 ${(x + 7.5).toFixed(1)} ${(y - 11.4).toFixed(1)}Z`;
+  // Áreas liberadas pelo save: alguma fogueira dela acesa ou você está nela. Área sem fogueira (trecho de mapa, memória)
+  // acompanha a rota: liberada se vem antes da área liberada mais adiante.
+  function liberadas(indice, acesas, areaJogador) {
+    const ok = new Set(indice.filter((a) => (a.fogueiras || []).some((id) => acesas.has(id)) || a.area === areaJogador).map((a) => a.area));
+    const ate = Math.max(-1, ...indice.filter((a) => ok.has(a.area) && (a.ordem ?? 100) < 100).map((a) => a.ordem));
+    indice.forEach((a) => { if (!(a.fogueiras || []).length && (a.ordem ?? 100) <= ate) ok.add(a.area); });
+    return ok;
+  }
   // Trechos da rota na tela (3D): partes contíguas de pontos visíveis (fora do corte de interior), em pixels.
   function trechosTela(pontos, projetar) {
     const out = [];
@@ -70,7 +78,7 @@
   // ---- estado ------------------------------------------------------------------------------------
   const st = { raiz: null, plano: null, indice: null, docs: {}, doc: null, andar: "todos", vista: null, rota: null,
                destaque: null, zonaSel: null, pop: null, jogador: null, tipoSel: null, poll: null,
-               modo: "2d", iso: null, interior: false, foco: true,
+               modo: "2d", iso: null, interior: false, foco: true, acesas: null, fogChave: undefined, escolhida: false,
                filtros: { zonas: true, fogueiras: true, chefes: true, npcs: true, plano: true, outros: true, inimigos: false } };
   const em3d = () => st.modo === "iso" && st.iso;
 
@@ -145,13 +153,17 @@
     ligar(raiz);
     return carregar("mapas/indice.json").then((indice) => {
       st.indice = Array.isArray(indice) ? indice.filter((a) => AREA_OK.test(a.area)) : [];
-      const sel = raiz.querySelector(".mp-area");
-      sel.innerHTML = st.indice.map((a) => `<option value="${esc(a.area)}">${esc(a.nome)}${a.itens_plano ? ` (${a.itens_plano})` : ""}</option>`).join("");
+      preencherAreas();
       if (!st.indice.length) return vazio("Mapa indisponível. Rode o /buildsmith:build com o DS2 SotFS instalado.");
       if (API && !st.poll) {
         st.poll = setInterval(() => { if (!document.hidden && st.raiz.offsetParent !== null) buscarJogador(); }, POLL_MS);
       }
-      return abrirArea(st.indice[0].area).then(() => (API ? buscarJogador() : null));
+      // abre onde você está (posição do save); sem servidor ou fora das áreas, a 1ª do plano
+      return (API ? buscarJogador() : Promise.resolve()).then(() => {
+        if (st.escolhida && st.doc) return null;
+        const j = st.jogador;
+        return abrirArea(j && st.indice.some((a) => a.area === j.area) ? j.area : st.indice[0].area);
+      });
     });
   }
 
@@ -164,10 +176,37 @@
     } catch (e) { j = null; }
     const novo = j && AREA_OK.test(j.area) && Array.isArray(j.pos) && j.pos.length === 3 ? j : null;
     const chave = (x) => (x ? `${x.area}|${x.pos.join(",")}` : "");
-    if (chave(novo) === chave(st.jogador)) return;
+    const fogs = novo && Array.isArray(novo.fogueiras) ? novo.fogueiras.filter(Number.isInteger) : null;
+    const fogChave = fogs ? fogs.join(",") : null;
+    if (chave(novo) === chave(st.jogador) && fogChave === st.fogChave) return;
+    const mudouArea = (novo && novo.area) !== (st.jogador && st.jogador.area);
     st.jogador = novo;
+    if (fogChave !== st.fogChave || mudouArea) {  // fogueira acesa no jogo: áreas e zonas mudam na hora
+      st.fogChave = fogChave;
+      st.acesas = fogs ? new Set(fogs) : null;
+      preencherAreas();
+      if (st.doc) desenharRotaArea();
+    }
     mostrarOnde();
     atualizar();
+  }
+
+  // Seletor de áreas na ordem da rota; com o save, separado em liberadas e ainda não liberadas.
+  function preencherAreas() {
+    const sel = st.raiz.querySelector(".mp-area");
+    const valor = sel.value;
+    const pos = new Map(st.indice.map((a, i) => [a.area, i]));
+    const ordenadas = [...st.indice].sort((a, b) => (a.ordem ?? 100) - (b.ordem ?? 100) || pos.get(a.area) - pos.get(b.area));
+    const opcao = (a) => `<option value="${esc(a.area)}">${esc(a.nome)}${a.itens_plano ? ` (${a.itens_plano})` : ""}</option>`;
+    if (st.acesas) {
+      const ok = liberadas(st.indice, st.acesas, st.jogador && st.jogador.area);
+      const sim = ordenadas.filter((a) => ok.has(a.area)), nao = ordenadas.filter((a) => !ok.has(a.area));
+      sel.innerHTML = `<optgroup label="Liberadas · ${sim.length}">${sim.map(opcao).join("")}</optgroup>`
+        + (nao.length ? `<optgroup label="Ainda não liberadas · ${nao.length}">${nao.map(opcao).join("")}</optgroup>` : "");
+    } else {
+      sel.innerHTML = ordenadas.map(opcao).join("");
+    }
+    if (valor) sel.value = valor;
   }
 
   function mostrarOnde() {
@@ -305,14 +344,18 @@
       const npcs = (d.npcs || []).filter((n) => n.zona === z.ordem && n.plano);
       const chefes = (d.chefes || []).filter((c) => c.zona === z.ordem);
       const resumo = [itens ? `${itens} ${itens === 1 ? "item" : "itens"} do plano` : "", ...npcs.map((n) => n.nome)].filter(Boolean).join(" · ");
-      return `<li><button type="button" class="mp-zona-i" data-zona="${z.ordem}" aria-pressed="${st.zonaSel === z.ordem}">
+      const acesa = st.acesas ? st.acesas.has(z.fogueira) : null;
+      return `<li><button type="button" class="mp-zona-i${acesa === false ? " mp-zona-apagada" : ""}" data-zona="${z.ordem}" aria-pressed="${st.zonaSel === z.ordem}">
         <span class="mp-zn" style="background:${corDe(z.ordem)}">${z.ordem}</span>
-        <span class="mp-zt">${esc(z.nome)}${resumo ? `<span class="mp-zr">${esc(resumo)}</span>` : ""}${chefes.map((c) => `<span class="mp-zchefe${c.estado === "derrotado" ? " derrotado" : ""}">Chefe: ${esc(c.nome)}</span>`).join("")}</span>
+        <span class="mp-zt">${esc(z.nome)}${acesa === null ? "" : `<span class="mp-zfog${acesa ? "" : " apagada"}">${acesa ? "fogueira acesa" : "fogueira apagada"}</span>`}${resumo ? `<span class="mp-zr">${esc(resumo)}</span>` : ""}${chefes.map((c) => `<span class="mp-zchefe${c.estado === "derrotado" ? " derrotado" : ""}">Chefe: ${esc(c.nome)}</span>`).join("")}</span>
       </button></li>`;
     }).join("") || '<li class="mp-sem">Área sem fogueira.</li>';
     const por = d.zonas ? d.zonas.ordem_por : "nenhuma";
-    st.raiz.querySelector(".mp-nota").textContent = por === "inicio" ? "Ordem: distância a pé desde a entrada da área. Portas e atalhos podem mudar o caminho."
-      : por === "id" ? "Ordem pelo número da fogueira no jogo." : "";
+    const acesas = st.acesas ? d.fogueiras.filter((f) => st.acesas.has(f.id)).length : null;
+    st.raiz.querySelector(".mp-nota").textContent = [
+      acesas === null || !d.fogueiras.length ? "" : `${acesas} de ${d.fogueiras.length} ${d.fogueiras.length === 1 ? "fogueira acesa" : "fogueiras acesas"} no save.`,
+      por === "inicio" ? "Ordem: distância a pé desde a entrada da área. Portas e atalhos podem mudar o caminho."
+        : por === "id" ? "Ordem pelo número da fogueira no jogo." : ""].filter(Boolean).join(" ");
   }
 
   // ---- desenho -----------------------------------------------------------------------------------
@@ -524,7 +567,8 @@
       const [sx, sy, longe] = q;
       const estado = estadoAndar(f.andar, andarSel), t = estado === "cheio" ? tam + 2 : Math.max(12, tam - 8);
       const badge = f.zona && st.filtros.zonas ? `<circle class="mp-badge" cx="${f1(sx - t / 2)}" cy="${f1(sy - t / 2)}" r="8" fill="${corDe(f.zona)}"/><text class="mp-badge-n" x="${f1(sx - t / 2)}" y="${f1(sy - t / 2 + 3.5)}">${f.zona}</text>` : "";
-      partes.push(`<g class="mp-fog ${estado}${longe}" data-tipo="fogueira" data-i="${i}" tabindex="0"><title>${esc(f.zona ? nomeZona(f.zona) : f.nome)}</title><image href="icons/fogueira.png" x="${f1(sx - t / 2)}" y="${f1(sy - t / 2)}" width="${t}" height="${t}"/>${badge}${(nomes || s >= 1.5) && estado === "cheio" && !longe ? `<text class="mp-rotulo mp-rotulo-fog" x="${f1(sx)}" y="${f1(sy - t / 2 - 5)}">${esc(f.zona ? `${f.zona} · ${f.nome}` : f.nome)}</text>` : ""}</g>`);
+      const apagada = st.acesas && !st.acesas.has(f.id) ? " mp-fog-apagada" : "";
+      partes.push(`<g class="mp-fog ${estado}${longe}${apagada}" data-tipo="fogueira" data-i="${i}" tabindex="0"><title>${esc(`${f.zona ? nomeZona(f.zona) : f.nome}${apagada ? " (apagada)" : ""}`)}</title><image href="icons/fogueira.png" x="${f1(sx - t / 2)}" y="${f1(sy - t / 2)}" width="${t}" height="${t}"/>${badge}${(nomes || s >= 1.5) && estado === "cheio" && !longe ? `<text class="mp-rotulo mp-rotulo-fog" x="${f1(sx)}" y="${f1(sy - t / 2 - 5)}">${esc(f.zona ? `${f.zona} · ${f.nome}` : f.nome)}</text>` : ""}</g>`);
     });
     if (st.filtros.npcs) (st.doc.npcs || []).forEach((n, i) => {
       const q = ver(n.pos);
@@ -614,7 +658,8 @@
         <p><button type="button" class="pesq" data-iguais="${esc(p.tipo)}">${st.tipoSel === p.tipo ? "Parar de destacar" : `Destacar os ${fmt.format(t.n || 1)} iguais`}</button></p>
         ${link ? `<a href="${esc(link)}" target="_blank" rel="noopener noreferrer">página na wiki</a>` : ""}`;
     } else if (tipo === "fogueira") {
-      corpo = `<p class="mp-pop-tit">${esc(p.nome)}</p><p class="mp-pop-sub">Fogueira${p.zona ? ` da zona ${esc(nomeZona(p.zona))}` : ""}</p>`;
+      const acesa = st.acesas ? (st.acesas.has(p.id) ? " · acesa no save" : " · ainda apagada") : "";
+      corpo = `<p class="mp-pop-tit">${esc(p.nome)}</p><p class="mp-pop-sub">Fogueira${p.zona ? ` da zona ${esc(nomeZona(p.zona))}` : ""}${acesa}</p>`;
     } else {
       corpo = `<ul>${p.itens.map((it) => `<li>${esc(it.nome)}${it.qtd > 1 ? ` <span class="mp-qtd">×${it.qtd}</span>` : ""}</li>`).join("")}</ul>${p.item_id ? `<a class="req-link" href="#item-${esc(p.item_id)}" data-goto-item="${esc(p.item_id)}">ver em Onde pegar</a>` : ""}`;
     }
@@ -807,7 +852,7 @@
       }
       if (ev.target.closest(".mp-pop-x")) fecharPop();
     });
-    raiz.querySelector(".mp-area").addEventListener("change", (ev) => abrirArea(ev.target.value));
+    raiz.querySelector(".mp-area").addEventListener("change", (ev) => { st.escolhida = true; abrirArea(ev.target.value); });
     if (window.ResizeObserver) new ResizeObserver(() => { if (st.iso) st.iso.redimensionar(); atualizar(); }).observe(tela);
   }
 
@@ -829,6 +874,7 @@
   // "Ver no mapa": rota de uma fonte/passo, ou todos os pontos de um item do plano.
   async function ver(alvo) {
     if (!st.raiz || !st.indice) return;
+    st.escolhida = true;
     if (alvo.mapa && AREA_OK.test(alvo.mapa.area)) {
       const r = alvo.mapa;
       const foco = r.pontos.map((p) => [p.pos[0], p.pos[2]]).concat(...r.trechos.filter(Boolean).map((t) => t.map((p) => [p[0], p[2]])));
@@ -848,5 +894,5 @@
     }
   }
 
-  window.buildsmithMapa = { montar, ver, _teste: { caixa, ajustar, regua, tamanhoIcone, estadoAndar, corZona, andarDe, tintaParada, pino, trechosTela } };
+  window.buildsmithMapa = { montar, ver, _teste: { caixa, ajustar, regua, tamanhoIcone, estadoAndar, corZona, andarDe, tintaParada, pino, trechosTela, liberadas } };
 })();
