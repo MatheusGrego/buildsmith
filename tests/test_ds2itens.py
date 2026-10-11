@@ -75,7 +75,15 @@ def test_trade_source_names_the_soul_and_its_boss(names):
 def test_enemy_drop_source_counts_the_enemies_of_that_type(names):
     drop = next(f for f in indice(names)["itens"][str(WEAPON)]["fontes"] if f["tipo"] == "drop")
     assert drop == {"tipo": "drop", "area": "m10_16_00_00", "inimigo": "Royal Swordsman", "tipo_inimigo": TIPO_SOLDADO,
-                    "quantos": 2}
+                    "tipos_inimigo": [TIPO_SOLDADO], "quantos": 2}
+
+
+def test_variants_of_the_same_enemy_in_an_area_are_one_source(names):
+    area = {**BASTILLE, "inimigos": BASTILLE["inimigos"] + [{"id": 4, "tipo": TIPO_SOLDADO + 1, "papel": None, "pos": [0.0, 0.0, 0.0]}]}
+    idx = ds2itens.montar(names, synthetic(), [area], {TIPO_SOLDADO: [WEAPON], TIPO_SOLDADO + 1: [WEAPON]}, CHEFES,
+                          nome_inimigo=lambda t: {"nome": "Royal Swordsman"} if t in (TIPO_SOLDADO, TIPO_SOLDADO + 1) else None)
+    drops = [f for f in idx["itens"][str(WEAPON)]["fontes"] if f["tipo"] == "drop"]
+    assert len(drops) == 1 and drops[0]["quantos"] == 3 and drops[0]["tipos_inimigo"] == [TIPO_SOLDADO, TIPO_SOLDADO + 1]
 
 
 def test_boss_reward_source(names):

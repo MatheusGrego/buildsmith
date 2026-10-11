@@ -9,7 +9,8 @@ wiki, sem rede) e as fontes:
   3071) casa pelo nome.
 - troca: ShopLineupParam com material (alma de chefe) e o chefe que dá a alma.
 - chao: lote de item no chão, baú ou cadáver de cada mapa (ds2mapa).
-- drop: lotes de drop do EnemyParam (+0x4C e +0x134, ItemLotParam2_Chr) dos inimigos comuns de cada mapa, com quantos.
+- drop: lotes de drop do EnemyParam (+0x4C e +0x134, ItemLotParam2_Chr) dos inimigos comuns de cada mapa, com quantos
+  (variantes do mesmo inimigo na área juntas).
 - recompensa: lote do BossBattleParam em +0x08 (ItemLotParam2_Other); a flag do chefe está em +0x14. Conferido em 30+
   chefes: The Pursuer 318000 = Soul of the Pursuer, The Last Giant 309600, Lud & Zallen 679010 = as duas almas.
 
@@ -26,7 +27,7 @@ import sys
 from collections import defaultdict
 from pathlib import Path
 
-INDICE_VERSAO = 1
+INDICE_VERSAO = 2  # 2: drops do mesmo inimigo na mesma área juntos (tipos_inimigo)
 CATEGORIA_ARQUIVO = {"MeleeWeapons": "arma", "RangedWeapons": "arma", "Shields": "escudo", "SpellTools": "catalisador",
                      "Armor": "armadura", "Rings": "anel", "Ammo": "municao", "Consumeables": "consumivel",
                      "UseableItems": "consumivel", "UpgradeMaterials": "material", "KeyItems": "chave"}
@@ -148,11 +149,19 @@ def montar(names: dict, data, areas: list[dict], drops: dict[int, list[int]], ch
         for e in a.get("inimigos", []):
             if e.get("tipo") and not e.get("papel"):
                 contagem[e["tipo"]] += 1
+        juntos = {}  # o mesmo inimigo em linhas diferentes do EnemyParam (variantes) vira uma fonte só por área
         for tipo, quantos in sorted(contagem.items()):
-            nome = nome_inimigo(tipo)
+            nome = (nome_inimigo(tipo) or {}).get("nome")
             for item_id in drops.get(tipo, []):
-                fontes[item_id].append({"tipo": "drop", "area": a["area"], "inimigo": nome["nome"] if nome else None,
-                                        "tipo_inimigo": tipo, "quantos": quantos})
+                if (item_id, nome or tipo) in juntos:
+                    junto = juntos[(item_id, nome or tipo)]
+                    junto["quantos"] += quantos
+                    junto["tipos_inimigo"].append(tipo)
+                    continue
+                junto = {"tipo": "drop", "area": a["area"], "inimigo": nome, "tipo_inimigo": tipo, "tipos_inimigo": [tipo],
+                         "quantos": quantos}
+                juntos[(item_id, nome or tipo)] = junto
+                fontes[item_id].append(junto)
     for c in chefes:
         for item_id in c.get("itens", []):
             fontes[item_id].append({"tipo": "recompensa", "chefe": c["nome"], "flag": c["flag"], "area": c["mapa"]})
