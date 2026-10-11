@@ -415,6 +415,9 @@ a.agora2-t:hover { text-decoration: underline; }
 .mp-iso-status { position: absolute; left: 50%; top: 50%; z-index: 2; transform: translate(-50%, -50%); max-width: min(420px, 80%); margin: 0; padding: 10px 16px; background: rgba(17, 17, 17, 0.92); border: 1px solid var(--link); color: var(--head); font-size: 13px; text-align: center; }
 .mp-fora-foco { opacity: 0.3; }
 .mp-fora-foco:hover, .mp-fora-foco:focus-visible { opacity: 1; }
+/* câmera livre: atrás de parede, chão ou teto (iso.js mede a profundidade da cena) */
+.mp-atras { opacity: 0.28; filter: grayscale(1); }
+.mp-atras:hover, .mp-atras:focus-visible { opacity: 0.9; filter: none; }
 .mp-g10 { stroke: #1b1b1d; stroke-width: 1; }
 .mp-g50 { stroke: #2a2a2d; stroke-width: 1; }
 .mp-longe .mp-g10 { display: none; }

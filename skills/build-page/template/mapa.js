@@ -638,11 +638,12 @@
     const partes = [], clips = [], defs = [];
     const dentro = (sx, sy) => sx > -50 && sy > -50 && sx < w + 50 && sy < h + 50;
     const f1 = (n) => n.toFixed(1);
-    // projeção + o que esconder: fora da tela, acima do corte de interior; "longe" do foco fica apagado
+    // projeção + o que esconder: fora da tela, acima do corte de interior; "longe" do foco e, na câmera livre, o que
+    // está atrás de parede ficam apagados e sem nome (senão o chefe da outra sala parece estar na parede da frente)
     const ver = (pos) => {
       const [sx, sy, vis, extra] = paraTela(pos[0], pos[2], pos[1]);
       if (!vis || !dentro(sx, sy) || (extra && extra.cortado)) return null;
-      return [sx, sy, extra && extra.longe ? " mp-fora-foco" : ""];
+      return [sx, sy, extra && extra.longe ? " mp-fora-foco" : extra && extra.atras ? " mp-atras" : ""];
     };
     const retrato = (k, sx, sy, r, src, classe, titulo, rotulo, dados) => {
       const id = `mp-c${k}`;
@@ -1148,5 +1149,5 @@
   }
 
   window.buildsmithMapa = { montar, ver, setVivo, _teste: { caixa, ajustar, regua, tamanhoIcone, estadoAndar, corZona, andarDe, tintaParada, pino, trechosTela, liberadas,
-                                                   dimsObjeto, alturaInimigo, raioInimigo } };
+                                                   dimsObjeto, alturaInimigo, raioInimigo, iso: () => st.iso } };
 })();

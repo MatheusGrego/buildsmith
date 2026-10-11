@@ -357,6 +357,49 @@ console.log(JSON.stringify({
 
 
 @pytest.mark.skipif(shutil.which("node") is None, reason="sem node para rodar o JS da página")
+def test_iso_marker_behind_the_scenery(tmp_path):
+    """Câmera livre: chefe, NPC e item de outra sala não aparecem colados na parede da frente (Iron Keep)."""
+    script = tmp_path / "iso_atras.js"
+    script.write_text(r"""
+const Iso = require(process.argv[2]);
+const t = Iso._teste;
+// packDepthToRGBA do three.js (r160), para gerar os bytes como a GPU gera
+function empacotar(v) {
+  const PF = [256 * 256 * 256, 256 * 256, 256], fr = (x) => x - Math.floor(x);
+  const r = [fr(v * PF[0]), fr(v * PF[1]), fr(v * PF[2]), v];
+  for (let i = 1; i < 4; i++) r[i] -= r[i - 1] / 256;
+  return r.map((c) => Math.round(c * 256 / 255 * 255));
+}
+const n = 0.3, f = 4500;
+const profDe = (dist) => { const z = (f + n) / (f - n) - 2 * f * n / ((f - n) * dist); return (z + 1) / 2; };
+// tela 400x300, mapa 4x3: parede a 20 m em tudo, menos uma janela (pixel x=3, y=2 de baixo) aberta até 100 m
+const prof = { larg: 4, alt: 3, dist: new Float32Array(12).fill(20) };
+prof.dist[2 * 4 + 3] = 100;
+console.log(JSON.stringify({
+  metade: t.profundidadeDoPixel(0, 0, 0, 128),
+  volta: t.profundidadeDoPixel(...empacotar(0.123456789)),
+  perto: t.distanciaDaProfundidade(t.profundidadeDoPixel(...empacotar(profDe(10))), n, f, true),
+  longe: t.distanciaDaProfundidade(t.profundidadeDoPixel(...empacotar(profDe(180))), n, f, true),
+  orto: t.distanciaDaProfundidade(0.5, 1, 8801, false),
+  atras: t.atrasDoCenario(prof, 400, 300, 50, 250, 60),      // atrás da parede (20 m) no canto de baixo
+  frente: t.atrasDoCenario(prof, 400, 300, 50, 250, 12),     // antes da parede
+  rente: t.atrasDoCenario(prof, 400, 300, 50, 250, 20.5),    // na própria parede (chão, porta): aparece
+  janela: t.atrasDoCenario(prof, 400, 300, 290, 60, 60),     // vizinho da janela: dá para ver
+  fora: t.atrasDoCenario(prof, 400, 300, 900, 900, 60),      // fora do mapa: não esconde
+}));
+""", encoding="utf-8")
+    out = subprocess.run(["node", str(script), str(ROOT / "skills/build-page/template/iso.js")],
+                         capture_output=True, text=True, timeout=20, check=True)
+    r = json.loads(out.stdout)
+    assert r["metade"] == pytest.approx(0.5)
+    assert r["volta"] == pytest.approx(0.123456789, abs=1e-8)
+    assert r["perto"] == pytest.approx(10, abs=0.01) and r["longe"] == pytest.approx(180, rel=0.01)
+    assert r["orto"] == pytest.approx(4401)
+    assert r["atras"] is True and r["frente"] is False and r["rente"] is False
+    assert r["janela"] is False and r["fora"] is False
+
+
+@pytest.mark.skipif(shutil.which("node") is None, reason="sem node para rodar o JS da página")
 def test_iso_camera_and_floor_helpers(tmp_path):
     script = tmp_path / "iso_teste.js"
     script.write_text(r"""

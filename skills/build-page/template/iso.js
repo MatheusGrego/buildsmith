@@ -27,6 +27,7 @@
     "ArrowLeft", "ArrowRight", "ShiftLeft", "ShiftRight", "Equal", "Minus", "NumpadAdd", "NumpadSubtract"]);
   const TECLAS_LIVRE = new Set([...TECLAS, "Space", "KeyC"]);
   const FOV_LIVRE = 60, PITCH_MAX = 89 * GRAU, VEL_LIVRE = 9;  // graus; limite de olhar para cima/baixo; m/s
+  const PROF_INTERVALO = 120;             // ms entre medidas de profundidade (marcador atrás de parede, câmera livre)
 
   // ---- funções puras (testadas no node) ------------------------------------------------------------
   // Direções no chão (x, z do jogo) para um giro: frente (para onde a câmera olha) e direita da tela.
@@ -65,6 +66,34 @@
   // Direção do olhar da câmera livre (coordenadas do jogo): yaw 0 = norte (+z), como o giro da câmera fixa.
   function direcaoLivre(yaw, pitch) {
     return [Math.sin(yaw) * Math.cos(pitch), Math.sin(pitch), Math.cos(yaw) * Math.cos(pitch)];
+  }
+
+  // Profundidade 0..1 que o packDepthToRGBA do three.js gravou num pixel RGBA8 (bytes 0..255).
+  function profundidadeDoPixel(r, g, b, a) {
+    const k = 1 / 256;  // UnpackDownscale (255/256) com os bytes divididos por 255
+    return k * (r / 16777216 + g / 65536 + b / 256 + a);
+  }
+  // Distância à câmera (metros, no eixo da vista) de uma profundidade 0..1 do depth buffer.
+  function distanciaDaProfundidade(d, near, far, perspectiva) {
+    if (!perspectiva) return near + d * (far - near);
+    return (2 * near * far) / (far + near - (d * 2 - 1) * (far - near));
+  }
+  // O ponto (sx, sy) da tela, a `dist` metros da câmera, está atrás do cenário? prof = { larg, alt, dist } é o mapa de
+  // distâncias em baixa resolução (linha 0 embaixo, como sai do readPixels) de uma tela w x h. Aparece se algum
+  // pixel vizinho (3x3) deixa ver até ele: borda de parede, grade e janela não escondem; fora do mapa não esconde.
+  function atrasDoCenario(prof, w, h, sx, sy, dist) {
+    const px = Math.floor((sx / w) * prof.larg), py = Math.floor((1 - sy / h) * prof.alt);
+    const folga = 0.6 + dist * 0.02;
+    let algum = false;
+    for (let dy = -1; dy <= 1; dy++) {
+      for (let dx = -1; dx <= 1; dx++) {
+        const x = px + dx, y = py + dy;
+        if (x < 0 || y < 0 || x >= prof.larg || y >= prof.alt) continue;
+        algum = true;
+        if (prof.dist[y * prof.larg + x] >= dist - folga) return false;
+      }
+    }
+    return algum;
   }
 
   // Grade de alturas do chão andável: em cada célula, a maior altura dos triângulos que a cobrem (NaN = sem chão).
@@ -392,6 +421,7 @@ float bsAlturaCorte( vec3 g ) {
       for (const subs of (this.geometrias || new Map()).values()) subs.forEach((x) => solta(x.g, x.material));
       for (const { material } of (this.materiais || new Map()).values()) solta(null, material);
       this.mundo.clear();
+      if (this.prof) this.prof.ok = false;
       this.materiais = new Map();
       this.geometrias = new Map();
       this.partes = new Map();
@@ -782,8 +812,62 @@ float bsAlturaCorte( vec3 g ) {
       const v = this._v.set(x, y, -z).project(this.livre ? this.cameraLivre : this.camera);
       const raio = this._raio();
       const d = Math.hypot(x - this.cur.alvo[0], (y - this.cur.alvo[1]) * 0.55, z - this.cur.alvo[2]);
-      return [(v.x + 1) / 2 * w, (1 - v.y) / 2 * h, v.z > -1 && v.z < 1,
-        { cortado: y > this.alturaCorte(x, z) + 0.5, longe: !this.livre && this.focoOn && d > raio * 0.8 }];
+      const sx = (v.x + 1) / 2 * w, sy = (1 - v.y) / 2 * h, vis = v.z > -1 && v.z < 1;
+      return [sx, sy, vis, { cortado: y > this.alturaCorte(x, z) + 0.5, longe: !this.livre && this.focoOn && d > raio * 0.8,
+        atras: vis && this._atras(x, y, z, w, h) }];
+    }
+    // Câmera livre: o ponto (um metro acima, altura do peito) está atrás de parede, chão ou teto já desenhado?
+    _atras(x, y, z, w, h) {
+      const P = this.prof;
+      if (!this.livre || !P || !P.ok) return false;
+      const cam = this.cameraLivre, u = this._v.set(x, y + 1, -z).project(cam);
+      if (u.z <= -1 || u.z >= 1) return false;
+      const dist = distanciaDaProfundidade((u.z + 1) / 2, cam.near, cam.far, true);
+      return atrasDoCenario(P, w, h, (u.x + 1) / 2 * w, (1 - u.y) / 2 * h, dist);
+    }
+    // Mapa de distâncias da cena em 1/4 da resolução (cenário só, sem as formas das entidades): renderiza num alvo com
+    // textura de profundidade (o corte de interior e os recortes de textura valem, como na tela), empacota em RGBA8 e lê.
+    _medirProfundidade() {
+      const { w, h } = this._tela(), r = this.renderer, cam = this.cameraLivre;
+      const larg = Math.max(16, Math.round(w / 4)), alt = Math.max(12, Math.round(h / 4));
+      let P = this.prof;
+      if (!P || P.larg !== larg || P.alt !== alt) {
+        this._soltarProfundidade();
+        const rt = new THREE.WebGLRenderTarget(larg, alt, { depthTexture: new THREE.DepthTexture(larg, alt) });
+        rt.texture.colorSpace = r.outputColorSpace;  // mesmo programa dos materiais da tela: nada a recompilar
+        const rgba = new THREE.WebGLRenderTarget(larg, alt);
+        const mat = new THREE.ShaderMaterial({
+          uniforms: { tProf: { value: rt.depthTexture } }, depthTest: false, depthWrite: false,
+          vertexShader: "varying vec2 vUv;\nvoid main() { vUv = uv; gl_Position = vec4(position.xy, 0.0, 1.0); }",
+          fragmentShader: "#include <packing>\nuniform sampler2D tProf;\nvarying vec2 vUv;\nvoid main() { gl_FragColor = packDepthToRGBA(texture2D(tProf, vUv).x); }",
+        });
+        const quad = new THREE.Scene();
+        quad.add(new THREE.Mesh(new THREE.PlaneGeometry(2, 2), mat));
+        P = this.prof = { larg, alt, rt, rgba, mat, quad, camQuad: new THREE.OrthographicCamera(-1, 1, 1, -1, 0, 1),
+                          bytes: new Uint8Array(larg * alt * 4), dist: new Float32Array(larg * alt), ok: false };
+      }
+      const entVisiveis = this.grupoEnt.visible;
+      this.grupoEnt.visible = false;  // a forma do inimigo não esconde o próprio marcador
+      r.setRenderTarget(P.rt);
+      r.render(this.cena3, cam);
+      r.setRenderTarget(P.rgba);
+      r.render(P.quad, P.camQuad);
+      r.setRenderTarget(null);
+      this.grupoEnt.visible = entVisiveis;
+      r.readRenderTargetPixels(P.rgba, 0, 0, larg, alt, P.bytes);
+      const b = P.bytes;
+      for (let i = 0; i < P.dist.length; i++) {
+        P.dist[i] = distanciaDaProfundidade(profundidadeDoPixel(b[4 * i], b[4 * i + 1], b[4 * i + 2], b[4 * i + 3]), cam.near, cam.far, true);
+      }
+      P.ok = true;
+      this._profEm = performance.now();
+      this._profVelha = false;
+    }
+    _soltarProfundidade() {
+      const P = this.prof;
+      if (!P) return;
+      P.rt.depthTexture.dispose(); P.rt.dispose(); P.rgba.dispose(); P.mat.dispose();
+      this.prof = null;
     }
     // Direção (jogo) do raio da câmera livre que passa pelo pixel (ox, oy); sem pixel, o centro da tela.
     _raioDoPixel(ox, oy) {
@@ -906,10 +990,19 @@ float bsAlturaCorte( vec3 g ) {
         const incl = (T.has("KeyR") ? 1 : 0) - (T.has("KeyF") ? 1 : 0);
         if (incl) { L.pitch = Math.min(PITCH_MAX, Math.max(-PITCH_MAX, L.pitch + incl * 0.9 * dt)); mexeu = true; }
       }
-      if (!mexeu && !this.sujo) return;
+      const agora = performance.now(), medir = () => agora - (this._profEm || 0) > PROF_INTERVALO;
+      if (!mexeu && !this.sujo) {
+        if (this._profVelha && medir()) {  // parou de mexer: os marcadores atrás de parede ficam certos
+          this._medirProfundidade();
+          if (this.opcoes.onMudar) this.opcoes.onMudar();
+        }
+        return;
+      }
       this.sujo = false;
       this._aplicarCamera();
       this.renderer.render(this.cena3, this.cameraLivre);
+      this._profVelha = true;
+      if (medir()) this._medirProfundidade();
       if (this.opcoes.onMudar) this.opcoes.onMudar();
     }
 
@@ -959,12 +1052,13 @@ float bsAlturaCorte( vec3 g ) {
       cancelAnimationFrame(this._raf);
       this._token++;
       this._limpar();
+      this._soltarProfundidade();
       if (this.renderer) { this.renderer.dispose(); this.renderer.domElement.remove(); }
       this.renderer = null;
     }
   }
 
   MapaIsometrico._teste = { eixos, chaoDoPixel, posicaoCamera, gradeAlturas, dilatar, alturaNaGrade, lerDDS, angulo, matrizEntidade,
-    direcaoLivre };
+    direcaoLivre, profundidadeDoPixel, distanciaDaProfundidade, atrasDoCenario };
   return MapaIsometrico;
 });
