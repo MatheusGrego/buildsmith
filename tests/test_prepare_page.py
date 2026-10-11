@@ -318,3 +318,12 @@ def test_vendor_assets_are_copied_to_output(tmp_path):
     assert Path(out["files"]["vendor/three.module.js"]).is_file()
     assert Path(out["files"]["vendor/DDSLoader.js"]).is_file()
 
+
+def test_iso_module_and_styles_included_in_page(tmp_path):
+    out = run(tmp_path, FakeFetch())
+    index_html = Path(out["index"]).read_text(encoding="utf-8")
+    assert "MapaIsometrico" in index_html
+    assert "mp-modo-toggle" in index_html
+    assert "mp-iso-container" in index_html
+    assert ".mp-modo-ativo" in index_html
+
