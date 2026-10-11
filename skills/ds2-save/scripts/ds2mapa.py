@@ -482,15 +482,17 @@ def onde(game_dir, cache_dir, item: str, areas_filtro=None) -> list[dict]:
     return out
 
 
-TIPOS_PONTO = {"fogueira": ("fogueiras", "id"), "item": ("itens", "lote"), "inimigo": ("inimigos", "id")}
+TIPOS_PONTO = {"fogueira": ("fogueiras", "id"), "item": ("itens", "lote"), "inimigo": ("inimigos", "id"),
+               "objeto": ("objetos", "parte")}
 
 
-def ponto_de(area: dict, tipo: str, ref: int) -> list[float]:
-    """Posição de um ponto da área: fogueira pelo ID do jogo, item pelo lote, inimigo pelo gerador."""
+def ponto_de(area: dict, tipo: str, ref) -> list[float]:
+    """Posição de um ponto da área: fogueira pelo ID do jogo, item pelo lote, inimigo pelo gerador, objeto (porta,
+    alavanca...) pelo nome da parte do MSB (o00_0316_0002)."""
     if tipo not in TIPOS_PONTO:
         raise KeyError(f"tipo de ponto desconhecido: {tipo}")
     lista, chave = TIPOS_PONTO[tipo]
-    for p in area[lista]:
+    for p in area.get(lista, []):
         if p[chave] == ref:
             return list(p["pos"])
     raise KeyError(f"ponto {tipo}:{ref} não existe em {area.get('area')}")

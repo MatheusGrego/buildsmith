@@ -10,4 +10,4 @@ __pycache__/
 .venv/
 
 # Executável (release/construir.py)
-build/
+/build/

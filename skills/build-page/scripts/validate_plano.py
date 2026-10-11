@@ -12,8 +12,9 @@ TIPOS_FONTE = {"compra", "troca", "drop", "bau", "farm", "recompensa"}
 ACESSOS = ["agora", "em_breve", "tarde"]
 DESTAQUES = {"mais_cedo", "mais_rentavel"}
 ESTADOS_FEITICO = {"equipado", "tem", "sugerido"}
-TIPOS_NO = {"item", "chefe", "inimigo", "npc", "local", "bau", "almas", "atributo"}
-TIPOS_PONTO = {"fogueira", "item", "inimigo"}  # ponto do mapa do jogo (ds2mapa.py)
+TIPOS_NO = {"item", "chefe", "inimigo", "npc", "local", "bau", "almas", "atributo", "porta"}
+TIPOS_PONTO = {"fogueira", "item", "inimigo", "objeto"}  # ponto do mapa do jogo (ds2mapa.py)
+PARTE_MSB = re.compile(r"^o\d\d_\d{4}_\d{4}$")  # ref do ponto "objeto": a parte do MSB (o00_0316_0002)
 AREA = re.compile(r"^m\d\d_\d\d_\d\d_\d\d$")
 SINAIS = {"+", "-", ""}
 ESTADOS_CHEFE = {"derrotado", "vivo"}
@@ -40,10 +41,14 @@ def _node(where: str, node, problems: list) -> None:
     if "ponto" in node:
         ponto = node["ponto"]
         ok = (isinstance(ponto, dict) and set(ponto) == {"area", "tipo", "ref"} and isinstance(ponto["area"], str)
-              and AREA.match(ponto["area"]) and ponto["tipo"] in TIPOS_PONTO
-              and isinstance(ponto["ref"], int) and not isinstance(ponto["ref"], bool) and ponto["ref"] > 0)
+              and AREA.match(ponto["area"]) and ponto["tipo"] in TIPOS_PONTO)
+        if ok and ponto["tipo"] == "objeto":
+            ok = isinstance(ponto["ref"], str) and bool(PARTE_MSB.match(ponto["ref"]))
+        elif ok:
+            ok = isinstance(ponto["ref"], int) and not isinstance(ponto["ref"], bool) and ponto["ref"] > 0
         if not ok:
-            problems.append(f"{where}.ponto deveria ser {{area: mXX_YY_ZZ_WW, tipo: {'/'.join(sorted(TIPOS_PONTO))}, ref: inteiro}}")
+            problems.append(f"{where}.ponto deveria ser {{area: mXX_YY_ZZ_WW, tipo: {'/'.join(sorted(TIPOS_PONTO))}, "
+                            "ref: inteiro (objeto: parte do MSB, ex. o00_0316_0002)}}")
 
 
 def _flow(where: str, flow, problems: list) -> None:

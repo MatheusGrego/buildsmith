@@ -56,6 +56,13 @@
   }
   const fluxoInline = (nodes, semLink) => `<span class="fi">${(nodes || []).map((n, i) => `<span class="fi-passo">${i ? '<span class="arrow" aria-hidden="true">&#10142;</span>' : ""}${noInline(n, semLink)}</span>`).join("")}</span>`;
   const selo = (text, extra) => `<span class="estado${extra ? " " + extra : ""}">${esc(text)}</span>`;
+  // Portas que a rota do passo atravessa (achadas pelo jogo, sem IA: rota pelo chão × vão da porta, chave pelo script
+  // de evento). Com o save ao vivo, cada uma diz se já está aberta e se você tem a chave.
+  function portasRota(mapa) {
+    const ps = (mapa && Array.isArray(mapa.portas) && mapa.portas) || [];
+    if (!ps.length) return "";
+    return `<div class="portas-rota"><span class="label">Portas no caminho</span>${ps.map((pt) => `<span class="porta-rota" data-porta-area="${esc(mapa.area)}" data-porta-parte="${esc(pt.parte)}"${pt.chave ? ` data-porta-chave="${esc(pt.chave.nome)}"` : ""}>${esc(pt.nome || "Porta")}${pt.chave ? ` · abre com <strong>${esc(pt.chave.nome)}</strong>` : ""}<span class="porta-vivo" hidden></span></span>`).join("")}</div>`;
+  }
 
   function rows(lines, heads) {
     if (!lines || !lines.length) return "";
@@ -139,7 +146,7 @@
       (s) => `<div class="md-l1"><span class="md-fog">${fogueira("data-passo", s.id, "Marcar como feito")}</span><span class="step-no">${numero[s.id]}</span><span class="md-t">${esc(s.titulo)}</span></div>
         <div class="md-l2"><span class="label">${esc(GRUPO[s.tipo] || s.tipo)}</span><span class="confirmado" data-confirma="${esc(s.id)}"></span><span class="vivo-chip" data-vivo-passo="${esc(s.id)}" hidden></span></div>`,
       (s) => `<div class="det-head" id="passo-${esc(s.id)}"><span class="det-tit">${esc(s.titulo)}</span>${selo(GRUPO[s.tipo] || s.tipo)}${s.mapa ? `<button class="pesq" type="button" data-ver-mapa="passo" data-passo-id="${esc(s.id)}">Ver no mapa</button>` : ""}</div>
-        ${flow(s.fluxo)}
+        ${flow(s.fluxo)}${portasRota(s.mapa)}
         ${rows(s.dados, ["Dado", "Agora", "Depois", "Efeito"])}`, "21rem")}</section>`;
   }
 
@@ -161,7 +168,7 @@
           const a = ACESSO[f.acesso] || [f.acesso, ""];
           return `<li class="fonte-v sel" role="button" tabindex="0" data-fonte-item="${esc(it.id)}" data-fonte="${i}">
             <div class="fonte-top"><span class="step-no">${i + 1}</span>${selo(a[0], a[1])}${(f.destaques || []).map((d) => selo(DESTAQUE[d] || d, "destaque")).join("")}<span class="fonte-rend">${esc(f.rendimento || "—")}</span>${f.mapa ? `<button class="pesq" type="button" data-ver-mapa="fonte" data-item="${esc(it.id)}" data-fonte="${i}">Ver rota no mapa</button>` : ""}</div>
-            ${fluxoInline(f.fluxo)}
+            ${fluxoInline(f.fluxo)}${portasRota(f.mapa)}
             <div class="fonte-req"><span class="label">Requisito</span>${requisito(f.requisito, it.item.nome)}</div>
           </li>`;
         }).join("")}</ol>
@@ -851,6 +858,18 @@
       el.className = `vivo-chip${no ? " feito" : ""}`;
       el.textContent = no ? `✓ você tem${no.qtd > 1 ? ` ×${fmt.format(no.qtd)}` : ""}${no.up ? ` (+${no.up})` : ""}` : "";
     });
+    app.querySelectorAll("[data-porta-parte]").forEach((el) => {
+      const mundo = (state.mundos || {})[el.dataset.portaArea], chaveNome = el.dataset.portaChave;
+      const objetos = mundo && mundo.objetos && typeof mundo.objetos === "object" ? mundo.objetos : {};
+      const aberta = Object.prototype.hasOwnProperty.call(objetos, el.dataset.portaParte) ? objetos[el.dataset.portaParte] : null;
+      const tem = chaveNome ? V.itemNoSave(chaveNome, ix) : null;
+      const partes = aberta === true ? ["✓ aberta no seu save"]
+        : [aberta === false ? "fechada no seu save" : "", chaveNome ? (tem ? "✓ você tem a chave" : "você ainda não tem a chave") : ""].filter(Boolean);
+      const vivo = el.querySelector(".porta-vivo");
+      vivo.hidden = !partes.length;
+      vivo.className = `porta-vivo${aberta === true || (aberta !== true && tem) ? " ok" : ""}`;
+      vivo.textContent = partes.join(" · ");
+    });
     const atr = app.querySelector('[data-pane="atributos"]');
     if (atr && v.stats) atr.innerHTML = stats({ ...p, personagem: { ...c, stats: v.stats } });
     const ficha = app.querySelector('[data-pane="ficha"]');
@@ -860,6 +879,20 @@
     }
     if (window.buildsmithMapa && window.buildsmithMapa.setVivo) window.buildsmithMapa.setVivo(v);
     applyState();
+  }
+
+  // Portas, baús e itens já usados no save, só nas áreas das portas que aparecem nas rotas do plano.
+  async function buscarMundos(base) {
+    const areas = new Set([...app.querySelectorAll("[data-porta-area]")].map((el) => el.dataset.portaArea));
+    const out = {};
+    for (const area of areas) {
+      if (!/^m\d\d_\d\d_\d\d_\d\d$/.test(area)) continue;
+      try {
+        const r = await fetch(`${base}/mundo?area=${encodeURIComponent(area)}`, { cache: "no-store" });
+        if (r.ok) out[area] = await r.json();
+      } catch (e) { /* sem estado: a porta fica só com a chave */ }
+    }
+    return out;
   }
 
   function iniciarVivo(base) {
@@ -874,6 +907,7 @@
         if (nova === chave) return;  // o jogo não gravou nada novo
         chave = nova;
         state.vivo = v;
+        state.mundos = await buscarMundos(base);
         aplicarVivo();
       } catch (e) { /* servidor fora: a página fica com o que tinha */ }
     };

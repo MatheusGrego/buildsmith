@@ -562,3 +562,8 @@ def test_rota_devolve_as_portas_no_caminho():
     caixas = {"o00_0308": [[0.0, 0.0, -0.1], [1.4, 2.4, 0.1]]}  # dobradiça em z = 0,5: o vão vai de z 0,5 a -0,9
     r = ds2mapa.rota(area, [0.2, 0, 0.9], [2.9, 0, 0.9], caixas=caixas)
     assert r["portas"] == []  # a rota passa em z = 0,9, fora do vão real (a porta centrada pegaria)
+
+
+def test_ponto_de_objeto_pela_parte_do_msb():
+    area = {**faixa_area(), "objetos": [porta("o00_0316_0002", [1.5, 0.0, 0.5])]}
+    assert ds2mapa.ponto_de(area, "objeto", "o00_0316_0002") == [1.5, 0.0, 0.5]

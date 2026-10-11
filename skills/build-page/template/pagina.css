@@ -301,6 +301,11 @@ a.agora2-t:hover { text-decoration: underline; }
 .fonte-top .step-no { font-size: 20px; min-width: 20px; }
 .fonte-rend { margin-left: auto; color: var(--head); font-size: 13px; }
 .fonte-req { font-size: 13px; display: flex; align-items: center; gap: 4px 8px; flex-wrap: wrap; }
+.portas-rota { font-size: 13px; display: flex; align-items: baseline; gap: 4px 10px; flex-wrap: wrap; margin: 6px 0; }
+.porta-rota { color: var(--head); }
+.porta-vivo { margin-left: 6px; font-size: 12px; color: var(--ember); }
+.porta-vivo.ok { color: var(--pos); }
+.porta-vivo[hidden] { display: none; }
 .mapa-slot[hidden] { display: none; }
 /* Dano em barras */
 .dano { display: grid; }

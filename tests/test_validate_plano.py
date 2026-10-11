@@ -183,3 +183,14 @@ def test_point_on_node_must_be_well_formed():
     plano = example()
     plano["passos"][0]["fluxo"][0]["ponto"] = {"area": "m10_16_00_00", "tipo": "fogueira", "ref": 16675}
     assert validate_plano.validate(plano) == []
+
+
+def test_porta_no_fluxo_aponta_a_parte_do_msb():
+    """Nó "porta" com ponto "objeto": o ref é a parte do MSB (texto), não um número."""
+    plano = example()
+    plano["passos"][0]["fluxo"].append({"tipo": "porta", "nome": "Cela ao lado do Straid", "sub": "Bastille Key",
+                                        "ponto": {"area": "m10_16_00_00", "tipo": "objeto", "ref": "o00_0316_0002"}})
+    assert validate_plano.validate(plano) == []
+    for ref in (10160432, "../o00", "o00_0316", "c1020_0001"):
+        plano["passos"][0]["fluxo"][-1]["ponto"]["ref"] = ref
+        assert any("ponto" in p for p in validate_plano.validate(plano)), ref

@@ -206,9 +206,13 @@ def preparar(plano: dict, out_dir: Path, carregar_area, listar_areas, icone_loca
         caixas = caixas_de(area_id) if caixas_de else None  # vão real das portas, com a cena 3D já extraída
         trechos = [ds2mapa.rota(dados, a["pos"], b["pos"], caixas=caixas) for a, b in zip(pontos, pontos[1:])]
         portas, andado = {}, 0.0
+        objetos = {o["parte"]: o for o in dados.get("objetos", [])}
         for t in trechos:
             for porta in (t or {}).get("portas", []):
-                portas.setdefault(porta["parte"], {**porta, "metros": round(andado + porta["metros"], 1)})
+                o = objetos.get(porta["parte"], {})
+                chave = ({"id": o["chave"][0], "nome": o["chave"][1], "fonte": o.get("chave_fonte") or "modelo"}
+                         if o.get("chave") else None)
+                portas.setdefault(porta["parte"], {**porta, "metros": round(andado + porta["metros"], 1), "chave": chave})
             andado += t["metros"] if t else 0.0
         atribuir.append((alvo, {"area": area_id, "nome": dados["nome"], "pontos": pontos,
                                 "trechos": [t["pontos"] if t else None for t in trechos],
