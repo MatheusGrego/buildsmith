@@ -104,7 +104,10 @@ def claude_command(prompt: str, claude: str | None = None) -> list[str]:
 
 def child_env(home: Path) -> dict:
     # Sem CLAUDE.md: um CLAUDE.md plantado em alguma pasta lida viraria instrução do projeto (testado no CLI).
-    return {**os.environ, "BUILDSMITH_HOME": str(home), "CLAUDE_CODE_DISABLE_CLAUDE_MDS": "1"}
+    env = {**os.environ, "BUILDSMITH_HOME": str(home), "CLAUDE_CODE_DISABLE_CLAUDE_MDS": "1"}
+    if getattr(sys, "frozen", False):  # executável: o `python "<script>"` do Claude é o python.exe da pasta (app/exe.py)
+        env["PATH"] = str(Path(sys.executable).resolve().parent) + os.pathsep + env.get("PATH", "")
+    return env
 
 
 def check_guard(home: Path) -> None:

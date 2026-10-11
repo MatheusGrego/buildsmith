@@ -6,7 +6,8 @@ apontando para `python.exe app/abrir.py`: uma janelinha mostra o git pull, o ser
 sendo refeitas (sem Claude), e fecha sozinha quando o navegador abre. A imagem do jogo fica só na sua máquina;
 nada disso vai para o repositório.
 
-Precisa de Pillow (pip install pillow) só para montar o ícone.
+Precisa de Pillow (pip install pillow) só para montar o ícone. No executável (`Buildsmith.exe atalho`), o atalho
+aponta para o Buildsmith.exe e usa o ícone dele: não baixa nada.
 """
 import argparse
 import io
@@ -40,10 +41,18 @@ def montar_icone(destino: Path, imagem: bytes) -> Path:
     return destino
 
 
-def criar_atalho(icone: Path, nome: str = "Forja de Build") -> Path:
+def alvo_do_atalho() -> tuple[str, str]:
+    """(programa, argumentos) do atalho: o Buildsmith.exe no executável, senão python.exe app/abrir.py."""
+    if getattr(sys, "frozen", False):
+        return str(Path(sys.executable).resolve().with_name("Buildsmith.exe")), ""
     python = str(Path(sys.executable).with_name("python.exe"))
     if not Path(python).exists():
         python = shutil.which("python") or sys.executable
+    return python, f'"{REPO / "app" / "abrir.py"}"'
+
+
+def criar_atalho(icone: Path, nome: str = "Forja de Build") -> Path:
+    programa, argumentos = alvo_do_atalho()
     desktop = Path(subprocess.run(["powershell", "-NoProfile", "-Command", "[Environment]::GetFolderPath('Desktop')"],
                                   capture_output=True, text=True, check=True).stdout.strip())
     lnk = desktop / f"{nome}.lnk"
@@ -53,7 +62,7 @@ def criar_atalho(icone: Path, nome: str = "Forja de Build") -> Path:
         "$s.IconLocation = $env:BS_ICO + ',0'; $s.Description = 'Atualiza e abre a Forja de Build (buildsmith) no navegador';"
         "$s.Save()"
     )
-    env = {**os.environ, "BS_LNK": str(lnk), "BS_PYW": python, "BS_ARGS": f'"{REPO / "app" / "abrir.py"}"',
+    env = {**os.environ, "BS_LNK": str(lnk), "BS_PYW": programa, "BS_ARGS": argumentos,
            "BS_REPO": str(REPO), "BS_ICO": str(icone)}
     subprocess.run(["powershell", "-NoProfile", "-Command", script], env=env, check=True)
     return lnk
@@ -64,6 +73,9 @@ def main(argv=None) -> int:
     parser.add_argument("--home", default=str(Path.home() / ".buildsmith"))
     parser.add_argument("--so-icone", action="store_true", help="só monta o ícone (sem criar atalho)")
     args = parser.parse_args(argv)
+    if getattr(sys, "frozen", False):  # o Buildsmith.exe já traz o ícone
+        print("atalho:", criar_atalho(Path(alvo_do_atalho()[0])))
+        return 0
     req = urllib.request.Request(FONTE, headers={"User-Agent": "Mozilla/5.0 (buildsmith)"})
     with urllib.request.urlopen(req, timeout=20) as resp:
         imagem = resp.read()

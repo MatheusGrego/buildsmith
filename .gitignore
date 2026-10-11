@@ -8,3 +8,6 @@ cache/
 __pycache__/
 *.pyc
 .venv/
+
+# Executável (release/construir.py)
+build/
