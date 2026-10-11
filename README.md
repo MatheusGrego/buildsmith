@@ -1,6 +1,6 @@
 # Forja de Build (buildsmith)
 
-Companion para jogar com o plano de build do lado. O buildsmith é um programa que roda na sua máquina, lê o seu save e os arquivos do jogo instalado e mostra uma página no navegador: seu personagem, o equipamento, o plano de build e o mapa 2D/3D de cada área com o que importa (itens, inimigos, portas e chaves, fogueiras, a rota pelo chão). Tudo isso se atualiza sozinho enquanto você joga.
+Companion para jogar com o plano de build do lado. O buildsmith é um programa que roda na sua máquina, lê o seu save e os arquivos do jogo instalado e mostra uma página no navegador: seu personagem, o equipamento, um catálogo com todos os itens do jogo (marque o que você quer e veja onde pegar e os passos), o plano de build e o mapa 2D/3D de cada área com o que importa (itens, inimigos, portas e chaves, fogueiras, a rota pelo chão). Tudo isso se atualiza sozinho enquanto você joga, e quase tudo funciona sem IA.
 
 Primeiro jogo: **Dark Souls II: Scholar of the First Sin** (Steam, Windows).
 
@@ -16,6 +16,13 @@ A pasta traz o Python embutido (`python.exe`, `pythonw.exe` e `runtime\`). Nada 
 
 ## O que ele faz sozinho (sem IA)
 
+- **Catálogo:** todos os itens do jogo (armas, escudos, catalisadores, feitiços, milagres, hexes, piromancias, armaduras, anéis e o resto), com filtro, busca, requisito e quantas fontes cada um tem. Marque com ★ e **Onde pegar** e **Passos** mostram o item:
+  - quem vende (preço e estoque), troca de alma de chefe (e qual chefe dá a alma), chão/baú/cadáver, drop de inimigo e recompensa de chefe, tudo pelas tabelas do jogo;
+  - **agora** (área com fogueira acesa no seu save), **em breve** (a próxima da rota de progressão) e **tarde**, com o **mais cedo** (mais perto da fogueira acesa) e o **mais rentável** (loja ilimitada ou drop que repete);
+  - rota pelo chão da fogueira até o ponto, com as portas do caminho e a chave de cada uma;
+  - o que falta: almas, chave, alma de chefe, níveis e almas para o requisito; item já pego e chefe já derrotado vão para o fim;
+  - passos de comprar, trocar, pegar, farmar, upar e equipar; o que só a wiki diz (loja que abre por evento, chance de drop) aparece como "ver na wiki".
+- **Página de cada personagem** do save, mesmo sem plano (criada pelo `Buildsmith.exe`, sem IA).
 - **Save ao vivo:** relê o save sempre que o jogo grava. Nível e almas no topo, atributos, inventário ("✓ você tem" nos itens do plano), passos que o jogo já mostra feitos (anel equipado, chefe derrotado, compra, reforço, atributo no alvo), fogueiras acesas e áreas liberadas.
 - **Equipamento:** igual ao menu do DS2 (mãos, armadura, anéis, sintonia), com o melhor do plano ao lado, o ganho de AR por slot e por feitiço e a letra de escala de cada peça.
 - **Mapa 2D e 3D** com o cenário real do jogo (peças de mapa, objetos e inimigos com os modelos e texturas originais):
@@ -30,13 +37,13 @@ O cenário de cada área é extraído na primeira vez que você abre o 3D (de 5 
 
 ## O que usa IA
 
-O **plano de build** (o que buscar, em que ordem, onde pegar, quanto upar) é escrito pelo Claude a partir do save e da wiki. Na página, **Atualizar plano** e **Responder fila** rodam o Claude Code em segundo plano (`claude -p`), uma execução por vez, com etapas e custo na tela. Precisa do `claude` instalado e logado (`claude`, depois `/login`).
+Só o **plano de build**, que é opcional: qual build seguir, quais itens buscar e por quê, o objetivo e a comparação com builds da comunidade. Onde pegar e os passos dos itens do plano saem do mesmo código do Catálogo (a IA não escreve fonte nem rota). Na página, **Atualizar plano** e **Responder fila** rodam o Claude Code em segundo plano (`claude -p`), uma execução por vez, com etapas e custo na tela. Precisa do `claude` instalado e logado (`claude`, depois `/login`).
 
 Essa execução lê a wiki sem ninguém olhando, então roda trancada: sem as suas configurações do Claude Code, em modo `dontAsk`, e com `app/guard.py` decidindo cada ferramenta (só os scripts do buildsmith, gravação só em `~/.buildsmith/`, WebFetch só na wiki). O que o guarda bloqueia aparece na barra de progresso.
 
 ## Seus dados
 
-Perfil, páginas, histórico e cache (wiki, mapas, cenas 3D) ficam em `%USERPROFILE%\.buildsmith\`. O save do jogo só é lido, nunca gravado.
+Perfil, páginas, itens marcados, histórico e cache (wiki, mapas, índice de itens, cenas 3D) ficam em `%USERPROFILE%\.buildsmith\`. O save do jogo só é lido, nunca gravado.
 
 Parar ou reiniciar o servidor (na pasta do programa; pelo código-fonte, troque `python.exe` por `python`):
 
@@ -52,7 +59,7 @@ pip install pycryptodome
 python app/abrir.py
 ```
 
-`app/abrir.py` é o que o `Buildsmith.exe` roda: com o repositório, faz `git pull` (só avança; com alteração local, pula), reinicia o servidor se o código mudou e refaz as páginas a partir do `plano.json` de cada uma (sem Claude). `python app/instalar_atalho.py` (precisa de `pip install pillow`) cria o atalho apontando para o repositório.
+`app/abrir.py` é o que o `Buildsmith.exe` roda: com o repositório, faz `git pull` (só avança; com alteração local, pula), reinicia o servidor se o código mudou, refaz as páginas a partir do `plano.json` de cada uma e cria a página sem IA de quem ainda não tem (sem Claude). `python app/instalar_atalho.py` (precisa de `pip install pillow`) cria o atalho apontando para o repositório.
 
 O mesmo código também é um plugin do Claude Code (`.claude-plugin/`, `skills/`): é assim que o plano é gerado. Para usar direto no Claude Code: `claude plugin marketplace add <pasta do repositório>`, `claude plugin install buildsmith@buildsmith` e `/buildsmith:build ds2`. Para ver no celular, publique no Artifact: `/buildsmith:build ds2 publicar`.
 

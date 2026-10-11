@@ -1,7 +1,7 @@
 # buildsmith — companion com ≥ 90% sem IA
 
 Data: 2026-10-11
-Status: proposta (pedido: "antes de documentar a final, pensar em como tirar a dependência de IA em pelo menos 90%")
+Status: implementado na 0.26.0 (pedido: "antes de documentar a final, pensar em como tirar a dependência de IA em pelo menos 90%")
 
 ## Por quê
 

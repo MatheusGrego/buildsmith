@@ -106,8 +106,9 @@ def icone(destino: Path, lados=(16, 24, 32, 48, 64, 128, 256)) -> Path:
 LEIA_ME = """Forja de Build (buildsmith) {versao} — early alpha, Windows 64 bits
 
 Companion do Dark Souls II: Scholar of the First Sin. Lê o seu save e os arquivos do jogo instalado e mostra a sua
-página: nível, atributos, equipamento, o plano de build e o mapa 2D/3D de cada área (itens, inimigos, portas e chaves,
-fogueiras, rota pelo chão), tudo atualizado enquanto você joga.
+página: nível, atributos, equipamento, o Catálogo com todos os itens do jogo (marque com a estrela e veja onde pegar
+e os passos), o plano de build e o mapa 2D/3D de cada área (itens, inimigos, portas e chaves, fogueiras, rota pelo
+chão), tudo atualizado enquanto você joga.
 
 COMO ABRIR
   1. Descompacte esta pasta onde quiser (ex.: Documentos\\Buildsmith).
@@ -118,11 +119,13 @@ COMO ABRIR
 PRECISA
   - Dark Souls II: Scholar of the First Sin instalado pela Steam (os mapas e modelos são lidos dos arquivos do jogo,
     na sua máquina; nada do jogo vem nesta pasta).
-  - Gerar ou atualizar o PLANO de build usa o Claude Code (comando `claude` instalado e logado). Ler o save, a página,
-    o mapa e o progresso ao vivo não usam IA.
+  - Só o PLANO de build (opcional: objetivo, quais itens e por quê, comparação com builds) usa o Claude Code (comando
+    `claude` instalado e logado). O save, a página de cada personagem, o Catálogo, Onde pegar e Passos dos itens
+    marcados, o mapa e o progresso ao vivo não usam IA.
 
 ONDE FICAM SEUS DADOS
-  %USERPROFILE%\\.buildsmith (perfil, páginas, cache dos mapas). O save do jogo só é lido, nunca gravado.
+  %USERPROFILE%\\.buildsmith (perfil, páginas, itens marcados, cache dos mapas e dos itens). O save do jogo só é
+  lido, nunca gravado.
 
 PARAR O SERVIDOR
   python.exe app\\serve.py parar   (nesta pasta)
