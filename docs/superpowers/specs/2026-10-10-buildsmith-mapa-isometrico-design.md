@@ -255,3 +255,39 @@ nível/atributos". O servidor já relia o save para a posição; agora também p
   menos para o que está acima do corte de Interior.
 - **Pose T:** os modelos vêm sem animação; plano em `docs/superpowers/plans/2026-10-11-buildsmith-mapa-estado-chaves-animacao.md`
   (Parte C), junto com o estado do mundo pelo save (Parte A) e a chave das portas comuns (Parte B).
+
+## Estado do mundo no save — fatos descobertos (2026-10-11, spike do Task 1)
+
+Fonte: 16 cópias do save do mesmo personagem (os backups automáticos `*.co2.bak` e os nomeados `antes-do-*`), de
+2026-10-06 a 2026-10-11, comparadas em pares com `ds2save.py blocos-diff` e com o inventário de cada uma. Nenhum valor
+vem de outro programa; o que está abaixo foi conferido nessas cópias.
+
+- **Onde**: no bloco de mundo do slot (`USER_DATA0(10+slot)`, 501.936 bytes), uma **tabela de eventos por área**: 28
+  registros seguidos de `0xC08` bytes, na mesma ordem (Majula, Forest of Fallen Giants, Heide's, Lost Bastille...).
+  A posição da tabela **muda** entre gravações (0x2EF2C, 0x34F34, 0x3AF3C nas cópias): é achada procurando 3 registros
+  seguidos com o ID do mapa no cabeçalho.
+- **Registro** (`0xC08`): `u32` mapa (`0x0A110000` = m10_17), `u32` n, **192 pares** `(u32 evento, u32 estado)` (os n
+  primeiros valem), **192 `u32` de lote** em `+0x608` e **192 `u32` de estado do lote** em `+0x908` (paralelo ao de lote).
+- **Evento = `ref` da parte do MSB** (a linha do `mapobjectinstanceparam`): baú `ref` = o lote (10045000), porta, alavanca,
+  elevador, Pharros com `ref` 8 dígitos do mapa (10160432). 315 dos 768 objetos das áreas extraídas estão na tabela.
+- **Estados dos objetos** (só os que se repetiram com a ação certa no intervalo):
+  - Porta: `10` fechada (como no começo); `20` ou `30` aberta. Nunca volta. Prison Door da Lost Bastille 10→30 no mesmo
+    intervalo em que a Bastille Key entrou no inventário; Arch Gate do Executioner's Chariot 10→20 no intervalo da alma do
+    chefe; Iron Door de Huntsman's Copse e três Iron Gates de m10_29 10→30. Outros valores (21, 32, 40, 50: portas
+    giratórias e as de madeira de Heide) ficam **sem estado**.
+  - Alavanca: `10` não puxada; `20`/`30` puxada (13 transições 10→20/30 só quando o personagem estava na área).
+  - Baú: `≥ 80` aberto (`80`, `84`, `100`); `10`, `20`, `21`, `24` fechado. Fire Seed, Poison Stone, Heavy Crossbow
+    (Harvest Valley) e Ricard's Rapier, Sublime Bone Dust (Huntsman's Copse): 20/10 → 80 no intervalo em que o item
+    entrou. A Bonfire Ascetic fecha de novo (80 → 20 e 100 → 20).
+- **Item pego (baú e cadáver/chão)**: o lote aparece no vetor de lotes da área quando o jogo carrega aquele trecho (antes
+  de pegar) e o estado paralelo tem o bit `0x1000000` **ligado quando foi pego** (`0x100c03` → `0x1100003`; os bits
+  `0x3FF << 10` são os itens que ainda estão lá, os de baixo os itens do lote). 155 lotes viraram "pego" entre as cópias e
+  137 tinham um item que entrou no inventário no mesmo intervalo (os outros 18: Torch, Lifegem, Estus Flask Shard, Fire
+  Seed, Human Effigy, gastos ou entregues no mesmo intervalo), em 9 áreas. Lote fora do vetor = **sem estado** (a área ou
+  o trecho ainda não foi carregado). A Bonfire Ascetic desliga o bit e troca o lote pelo do NG+ (`10186020` → `10186021`):
+  o lote do mapa casa pelo número sem o último dígito.
+- **Outra tabela** (início do bloco, registros de `0xB10`): por área, a lista ordenada dos **geradores** de inimigo (os
+  IDs são os mesmos do `generatorlocation`), base para "inimigo que não volta mais" (12 mortes) num passo futuro.
+- **Não achado**: porta que só abre por evento sem mudar o estado (alguns 10 continuam 10 depois de abertos? nenhum caso
+  visto), elevador (32/33 = andar em que está; não é "aberto"), Pharros (10→20 nove vezes, sem confirmação de qual
+  pedra foi usada): ficam **sem estado**.

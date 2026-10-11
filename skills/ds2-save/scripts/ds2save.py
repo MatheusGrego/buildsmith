@@ -286,6 +286,26 @@ def _read_entries(path) -> dict[str, bytes]:
             time.sleep(1)
 
 
+def blocos(path) -> dict[str, bytes]:
+    """Cada arquivo do save (USER_DATA000..) já decifrado: para comparar dois saves e achar onde o jogo guarda algo."""
+    return _read_entries(path)
+
+
+def diff_blocos(antes: dict[str, bytes], depois: dict[str, bytes]) -> list[dict]:
+    """Bytes que mudaram entre dois saves, por bloco e offset. `bit` é o bit que mudou (0 = o mais alto, como nas
+    flags do jogo) quando só um mudou; None quando o byte inteiro mudou (contador, quantidade, posição)."""
+    out = []
+    for nome in sorted(set(antes) & set(depois)):
+        a, b = antes[nome], depois[nome]
+        for off in range(min(len(a), len(b))):
+            if a[off] == b[off]:
+                continue
+            x = a[off] ^ b[off]
+            bit = 7 - x.bit_length() + 1 if x & (x - 1) == 0 else None
+            out.append({"bloco": nome, "offset": off, "bit": bit, "antes": a[off], "depois": b[off]})
+    return out
+
+
 def _occupied(entries) -> list[tuple[int, bytes]]:
     found = []
     for number in range(1, 11):
@@ -465,6 +485,10 @@ def main(argv=None) -> int:
     fd = sub.add_parser("flags-diff", help="flags globais que ligaram/desligaram entre dois snapshots")
     fd.add_argument("--antes", required=True)
     fd.add_argument("--depois", required=True)
+    bd = sub.add_parser("blocos-diff", help="bytes e bits que mudaram entre dois saves (para achar portas, baús, itens)")
+    bd.add_argument("--antes", required=True)
+    bd.add_argument("--depois", required=True)
+    bd.add_argument("--bloco", help="só este bloco (ex. USER_DATA011, o mundo do slot 1)")
     lv = sub.add_parser("levels", help="custo de cada nível entre --from e --to")
     lv.add_argument("--from", dest="frm", type=int, required=True)
     lv.add_argument("--to", type=int, required=True)
@@ -472,6 +496,11 @@ def main(argv=None) -> int:
     try:
         if args.cmd == "levels":
             out = levels_cost(args.frm, args.to)
+        elif args.cmd == "blocos-diff":
+            out = {}
+            for m in diff_blocos(blocos(args.antes), blocos(args.depois)):
+                if not args.bloco or m["bloco"] == args.bloco:
+                    out.setdefault(m["bloco"], []).append({k: m[k] for k in ("offset", "bit", "antes", "depois")})
         elif args.cmd == "flags-diff":
             before, after = (set(json.loads(Path(p).read_text(encoding="utf-8"))["progresso"]["flags"])
                              for p in (args.antes, args.depois))
