@@ -53,3 +53,11 @@ def test_door_key_from_model_name_only_if_the_item_exists():
     assert ds2nomes.objeto("o00_0300", None, ITENS, TABELAS)["chave"] is None
     assert ds2nomes.objeto("o04_0470", None, {1: "Dagger"}, TABELAS)["chave"] is None
     assert ds2nomes.chave_do_nome("A-san House Key Door", ITENS) == (50860000, "House Key")
+
+
+def test_lapide_de_npc_e_ajudante_ficam_fora_do_cenario():
+    t = {"objetos": {"o00_9050": "Tombstone", "o34_9003": "Dummy for SFX - Grave of Saints",
+                     "o24_9000": "Tombstone - Undead Crypt", "o00_0200": "Wooden Treasure Chest"}}
+    assert ds2nomes.fora_da_cena("o00_9050", t) and ds2nomes.fora_da_cena("o34_9003", t)
+    assert ds2nomes.fora_da_cena("o24_9000", t) is None  # a lápide do cemitério é cenário
+    assert ds2nomes.fora_da_cena("o00_0200", t) is None and ds2nomes.fora_da_cena("o99_9999", t) is None

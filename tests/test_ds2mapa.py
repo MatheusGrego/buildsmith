@@ -471,3 +471,13 @@ def test_enemy_report_lists_names_and_the_unnamed():
     r = ds2mapa.relatorio_inimigos([dados])
     assert [(t["tipo"], t["n"], t["nome"]) for t in r["areas"][0]["tipos"]] == [(999901, 2, None), (318030, 1, "The Pursuer")]
     assert [(x["area"], x["tipo"]) for x in r["sem_nome"]] == [("m10_16_00_00", 999901)]
+
+
+def test_npc_gets_its_own_model_from_the_nearest_generator():
+    npcs = [{"id": 7680, "nome": "Straid of Olaphis", "pos": [0.0, 0.0, 0.0]}, {"id": 7520, "nome": "Lucatiel", "pos": [9, 0, 9]}]
+    gens = [{"personagem": 76800000, "tipo": 768000, "papel": "npc", "pos": [0.5, 0, 0], "rot": [0, 45, 0]},
+            {"personagem": 76800001, "tipo": 768001, "papel": "npc", "pos": [40, 0, 0], "rot": [0, 0, 0]},
+            {"personagem": 31802000, "tipo": 318030, "papel": None, "pos": [0, 0, 0]}]
+    ds2mapa.modelos_npcs(npcs, gens)
+    assert npcs[0]["modelo"] == "c7680" and npcs[0]["rot"] == [0, 45, 0]
+    assert "modelo" not in npcs[1]  # sem gerador: fica só o retrato

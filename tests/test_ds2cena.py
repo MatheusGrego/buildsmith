@@ -487,3 +487,21 @@ def test_extrair_cena_lost_bastille_objetos_e_inimigos(tmp_path):
     assert sum(1 for i in cena["instancias"] if i.get("obj")) >= 20, cena["avisos"]
     assert "c3180" in cena["personagens"], cena["avisos"]  # o Pursuer perto do McDuff
     assert 2.0 < cena["personagens"]["c3180"]["altura"] < 6.0
+
+
+def test_flver_rigido_com_varias_malhas_mantem_os_materiais():
+    """Bug do baú: a malha rígida por vértice não pode estragar o material da malha seguinte."""
+    ossos = [{"t": (0, 0, 0)}, {"t": (0, 1, 0)}]
+    rigida = {**tri_malha(mtd="Tampa.mtd"), "ossos_malha": [0, 1],
+              "vertices": [((0.0, 0.0, 0.0), [127, 254, 127, 1], (0, 0)), ((1.0, 0.0, 0.0), [127, 254, 127, 1], (0, 0)),
+                           ((1.0, 0.0, 1.0), [127, 254, 127, 0], (0, 0))]}
+    flv = build_flver([rigida, tri_malha(mtd="Caixa.mtd"), tri_malha(mtd="Caixa.mtd")], ossos=ossos)
+    malhas = ds2cena.ler_flver(flv, ossos=True)["malhas"]
+    assert [m["mtd"] for m in malhas] == ["Tampa.mtd", "Caixa.mtd", "Caixa.mtd"]
+    assert malhas[0]["vertices"][0] == pytest.approx((0, 1, 0))
+
+
+def test_motivo_sem_malha():
+    assert ds2cena.motivo_sem_malha({"malhas": [{"tipo": "opaco", "mtd": "a"}]}) is None
+    assert "NoLit" in ds2cena.motivo_sem_malha({"malhas": [{"tipo": "ignorar", "mtd": "NoLit.mtd"}]})
+    assert "índice" in ds2cena.motivo_sem_malha({"malhas": [], "puladas": ["índice fora dos vértices (9 ≥ 3)"]})

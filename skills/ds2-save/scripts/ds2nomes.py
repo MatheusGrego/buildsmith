@@ -119,3 +119,13 @@ def objeto(modelo: str, tipo_instancia: int | None, itens: dict[int, str], tabel
         return None
     chave = chave_do_nome(nome, itens) if cat == "porta" else None
     return {"cat": cat, "nome": nome or "", "chave": list(chave) if chave else None}
+
+
+# fora do cenário 3D: ajudantes invisíveis (efeito, colisão) e a lápide de NPC, que o jogo só mostra quando o NPC morre
+FORA_DA_CENA = re.compile(r"^dummy\b|\bdummy for\b|^tombstone$", re.I)
+
+
+def fora_da_cena(modelo: str, tabelas: dict | None = None) -> str | None:
+    """Motivo para o objeto não entrar no cenário (None = entra)."""
+    nome = (tabelas or _tabelas())["objetos"].get((modelo or "").lower(), "")
+    return "objeto que o jogo só mostra em evento ou nunca desenha" if nome and FORA_DA_CENA.search(nome) else None

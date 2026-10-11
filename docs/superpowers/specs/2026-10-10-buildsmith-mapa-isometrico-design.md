@@ -238,3 +238,20 @@ nível/atributos". O servidor já relia o save para a posição; agora também p
   feitos" contando o que o jogo mostra, e no mapa o item do plano que você já tem ganha um ✓.
 - Nada é gravado no estado da página: a marca sai sozinha se o save voltar atrás. A fogueira (marcar feito à mão)
   continua igual.
+
+## Retorno do primeiro teste no jogo e realce (2026-10-11)
+
+- **Baú virava a caixa de reserva:** bug no leitor de FLVER com ossos: a lista de matrizes de osso de uma malha rígida
+  sobrescrevia a lista de materiais, e a malha seguinte quebrava o modelo inteiro (baú tem tampa e caixa). Corrigido,
+  com teste; `CENA_VERSAO` 4. O leitor também tenta índices de 16 bits quando os de 32 saem fora dos vértices.
+- **Motivo da forma de reserva:** `cena.json` → `sem_modelo` (modelo → motivo); o popover do objeto no 3D mostra;
+  `ds2cena.py modelo --modelo <m>` dá o diagnóstico completo.
+- **NPC virava lápide:** a lápide `o00_9050` é um objeto de evento (aparece quando o NPC morre) e entrava no cenário com
+  os outros objetos. Fica fora, junto dos ajudantes "Dummy" (`ds2nomes.fora_da_cena`), até o estado vir do save. O NPC
+  com modelo próprio no jogo (linha do EnemyParam // 100: Straid `c7680`, McDuff `c7643`, Lucatiel `c7520`) aparece com
+  ele no 3D (`EXTRACAO_VERSAO` 7: `npcs[].modelo` e `rot`).
+- **Realçar inimigos** (botão ou H): inimigos em vermelho forte com anel pulsando (2D e 3D), o resto dos marcadores
+  apagado, e no 3D uma segunda passada em cor chapada que ignora a profundidade (dá para ver através das paredes),
+  menos para o que está acima do corte de Interior.
+- **Pose T:** os modelos vêm sem animação; plano em `docs/superpowers/plans/2026-10-11-buildsmith-mapa-estado-chaves-animacao.md`
+  (Parte C), junto com o estado do mundo pelo save (Parte A) e a chave das portas comuns (Parte B).

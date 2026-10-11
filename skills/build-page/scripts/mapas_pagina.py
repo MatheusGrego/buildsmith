@@ -127,7 +127,7 @@ def objetos_para_pagina(dados: dict, onde_chave, pagina_wiki=None, icone_local=N
     """Objetos da área para a página; porta com chave leva o nome, o ícone e onde a chave está no chão do jogo."""
     out = []
     for o in dados.get("objetos", []):
-        item = {k: o.get(k) for k in ("parte", "cat", "nome", "pos", "rot", "andar", "zona", "lote")}
+        item = {k: o.get(k) for k in ("parte", "modelo", "cat", "nome", "pos", "rot", "andar", "zona", "lote")}
         if o.get("chave"):
             cid, cnome = o["chave"]
             item["chave"] = {"id": cid, "nome": cnome, "icone": icone_local(cnome) if icone_local else None,
@@ -158,6 +158,7 @@ def area_para_pagina(dados: dict, nomes_plano: dict, icone_local, precisa: dict 
         "tipos_inimigo": tipos_para_pagina(dados, nomes_inimigo or {}, pagina_wiki, icone_local, chefes_jogo),
         "objetos": objetos_para_pagina(dados, onde_chave or (lambda _id: []), pagina_wiki, icone_local),
         "npcs": [{"id": n["id"], "nome": n["nome"], "pos": n["pos"], "andar": n.get("andar"), "zona": n.get("zona"),
+                  "modelo": n.get("modelo"), "rot": n.get("rot"),
                   "retrato": icone_local(n["nome"]), "plano": bool(precisa.get(n["nome"].casefold())),
                   "precisa": precisa.get(n["nome"].casefold(), [])} for n in dados.get("npcs", [])],
         "chefes": [{"flag": c["flag"], "nome": c["nome"], "wiki": (pagina_wiki(c["nome"]) if pagina_wiki else None) or c.get("wiki", ""), "pos": c["pos"], "andar": c.get("andar"),

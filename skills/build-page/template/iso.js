@@ -442,6 +442,8 @@ float bsAlturaCorte( vec3 g ) {
     temParte(parte) { return !!(parte && this.partes && this.partes.has(parte)); }
     temModelo(modelo) { return !!(modelo && this.geometrias && this.geometrias.has(modelo) && this.personagens && this.personagens[modelo]); }
     alturaModelo(modelo) { return (this.personagens && this.personagens[modelo] && this.personagens[modelo].altura) || null; }
+    // Por que o modelo do jogo não entrou na cena (o objeto fica com a forma de reserva); null se não se sabe.
+    motivoModelo(modelo) { return (this.cena && this.cena.sem_modelo && this.cena.sem_modelo[modelo]) || null; }
 
     // Realça objetos reais da cena pela cor (multiplica a textura): { parte: 0xRRGGBB }; o resto volta ao normal.
     realcar(cores) {
@@ -456,7 +458,8 @@ float bsAlturaCorte( vec3 g ) {
     }
 
     // lista: [{ forma: "caixa"|"capsula"|"cilindro"|"losango", pos, rot?, dims: [larg, alt, prof], base?, cor, transp?,
-    //           modelo?: "cXXXX", tinta? }] — com o modelo na cena, desenha o modelo (tingido por `tinta`); senão a forma.
+    //           modelo?: "cXXXX", tinta?, xray? }] — com o modelo na cena, desenha o modelo (tingido por `tinta`); senão a
+    // forma. xray: uma segunda passada em cor chapada que atravessa paredes (o realce dos inimigos).
     async setEntidades(lista) {
       this.entidades = lista || [];
       await this.iniciar();
@@ -469,18 +472,34 @@ float bsAlturaCorte( vec3 g ) {
         grupos.get(k).push(e);
       }
       const m4 = new THREE.Matrix4(), cor = new THREE.Color();
+      const xray = (g, es, matriz) => {  // por cima de tudo, meio transparente: dá para ver o inimigo atrás da parede
+        const vistos = es.filter((e) => e.xray);
+        if (!vistos.length) return;
+        if (!this.matXray) {
+          this.matXray = new THREE.MeshBasicMaterial({ color: 0xff3b2b, transparent: true, opacity: 0.42, depthTest: false,
+                                                       depthWrite: false, side: THREE.DoubleSide });
+        }
+        const malha = new THREE.InstancedMesh(g, this.matXray, vistos.length);
+        vistos.forEach((e, i) => malha.setMatrixAt(i, m4.fromArray(matriz(e))));
+        malha.instanceMatrix.needsUpdate = true;
+        malha.computeBoundingSphere();
+        malha.renderOrder = 10;
+        this.grupoEnt.add(malha);
+      };
       for (const [k, es] of grupos) {
         if (k.startsWith("modelo|")) {
+          const matriz = (e) => matrizEntidade(e.pos, e.rot, [1, 1, 1], 0);
           for (const { g, material } of this.geometrias.get(k.slice(7))) {
             const malha = new THREE.InstancedMesh(g, material, es.length);
             es.forEach((e, i) => {
-              malha.setMatrixAt(i, m4.fromArray(matrizEntidade(e.pos, e.rot, [1, 1, 1], 0)));
+              malha.setMatrixAt(i, m4.fromArray(matriz(e)));
               malha.setColorAt(i, cor.set(e.tinta ?? 0xffffff));
             });
             malha.instanceMatrix.needsUpdate = true;
             malha.instanceColor.needsUpdate = true;
             malha.computeBoundingSphere();
             this.grupoEnt.add(malha);
+            xray(g, es, matriz);
           }
           continue;
         }
@@ -501,6 +520,7 @@ float bsAlturaCorte( vec3 g ) {
         malha.computeBoundingSphere();
         if (transp === "1") malha.renderOrder = 3;
         this.grupoEnt.add(malha);
+        xray(this.formas[forma], es, (e) => matrizEntidade(e.pos, e.rot, e.dims, e.base ?? 0.5));
       }
       this.sujo = true;
     }

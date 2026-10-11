@@ -631,3 +631,12 @@ a.agora2-t:hover { text-decoration: underline; }
 .mp-ja-tem-k circle { fill: #10240f; stroke: #7bc96f; stroke-width: 1.5; }
 .mp-ja-tem-k path { fill: none; stroke: #7bc96f; stroke-width: 1.8; stroke-linecap: round; stroke-linejoin: round; }
 .mp-pop-tem { color: #9bd88f; }
+
+/* realçar inimigos: vermelho forte, anel pulsando, resto do mapa apagado */
+.mp-realce-bt[aria-pressed="true"] { color: #fff; border-color: #ff3b2b; background: linear-gradient(90deg, rgba(255, 59, 43, 0.35), var(--th) 85%); }
+.mp-inimigo.mp-inimigo-forte { fill: #ff3b2b; stroke: #fff2ee; stroke-width: 1.6; filter: drop-shadow(0 0 4px rgba(255, 59, 43, 0.9)); }
+.mp-realce-anel { fill: none; stroke: #ff3b2b; stroke-width: 2; pointer-events: none; transform-box: fill-box; transform-origin: center; animation: mp-realce 1.4s ease-out infinite; }
+@keyframes mp-realce { from { transform: scale(0.7); opacity: 1; } to { transform: scale(1.9); opacity: 0; } }
+.mp-realce-on .mp-item, .mp-realce-on .mp-fog, .mp-realce-on .mp-obj, .mp-realce-on .mp-npc, .mp-realce-on .mp-passo { opacity: 0.45; }
+@media (prefers-reduced-motion: reduce) { .mp-realce-anel { animation: none; opacity: 0.8; } }
+.mp-alvo3d.mp-inimigo.mp-inimigo-forte { fill: transparent; stroke: transparent; filter: none; }

@@ -36,7 +36,8 @@ from pathlib import Path
 import ds2arquivos
 import ds2mapa
 
-CENA_VERSAO = 3  # 2: UV int16, normais por tipo, LOD0, céu/NoLit fora, matriz, chão andável; 3: objetos e inimigos
+CENA_VERSAO = 4  # 2: UV int16, normais por tipo, LOD0, céu/NoLit fora, matriz, chão andável; 3: objetos e inimigos;
+                 # 4: modelo rígido com várias malhas (baú), lápide/ajudantes fora, motivo de quem ficou sem modelo
 TEX_MAX = 512  # lado máximo das texturas (descarta os mipmaps maiores)
 FORA_M = 40.0  # peças além desta margem do chão andável (céu, montanhas de fundo) ficam de fora
 LOD_FLAGS = 0x01000000 | 0x02000000
@@ -356,22 +357,27 @@ def ler_flver(data: bytes, ossos: bool = False) -> dict:
         p_o, t_o = struct.unpack_from("<2i", data, off + i * 0x20)
         texs.append((_cstr(data, p_o, unicode_flv), _cstr(data, t_o, unicode_flv)))
 
-    malhas_saida = []
+    malhas_saida, puladas = [], []
     for m in meshes:
         if not m["fs"] or not m["vb"]:
+            puladas.append("malha sem faceset ou vertex buffer")
             continue
         mat_info = mats[m["mat"]] if 0 <= m["mat"] < len(mats) else {"mtd": "", "tcount": 0, "tidx": 0}
         tipo = classe_material(mat_info["mtd"])
         cand = [fsets[k] for k in m["fs"] if 0 <= k < len(fsets)]
         fs = next((f for f in cand if not f["flags"] & LOD_FLAGS), cand[0] if cand else None)
         if fs is None:
+            puladas.append("malha sem faceset")
             continue
+
+        def ler_indices(largura):
+            brutos = list(struct.unpack_from(f"<{fs['count']}{'H' if largura == 2 else 'I'}", data, fs["off"]))
+            if fs["strip"]:
+                return triangulos_de_strip(brutos, restart=largura == 2)
+            return brutos[:len(brutos) - len(brutos) % 3]
+
         largura = 2 if fs["size"] in (16, 2) else 4
-        indices = list(struct.unpack_from(f"<{fs['count']}{'H' if largura == 2 else 'I'}", data, fs["off"]))
-        if fs["strip"]:
-            indices = triangulos_de_strip(indices, restart=largura == 2)
-        else:
-            indices = indices[:len(indices) - len(indices) % 3]
+        indices = ler_indices(largura)
 
         # posição/normal/UV podem vir em buffers diferentes da mesma malha
         attrs = {}
@@ -379,7 +385,13 @@ def ler_flver(data: bytes, ossos: bool = False) -> dict:
             vb = vbs[k]
             for nome, valores in _ler_vertices(data, vb, lays[vb["lay"]], uv_fator, exigir_pos=False).items():
                 attrs.setdefault(nome, valores)
-        if "pos" not in attrs or not indices or max(indices) >= len(attrs["pos"]):
+        if "pos" not in attrs:
+            puladas.append("malha sem posição legível")
+            continue
+        if indices and max(indices) >= len(attrs["pos"]) and largura == 4:  # tamanho de índice 0/errado no arquivo
+            indices = ler_indices(2)
+        if not indices or max(indices) >= len(attrs["pos"]):
+            puladas.append(f"índice fora dos vértices ({max(indices) if indices else 'nenhum'} ≥ {len(attrs['pos'])})")
             continue
         normais = attrs.get("nrm", [])
         osso_vertice = [n[3] for n in normais] if normais and len(normais[0]) > 3 else []
@@ -387,8 +399,8 @@ def ler_flver(data: bytes, ossos: bool = False) -> dict:
         if mundo_ossos and not m["dinamica"]:
             tipo_nrm = next((mb["type"] for k in m["vb"] for mb in lays[vbs[k]["lay"]] if mb["semantic"] == 3), None)
             if tipo_nrm in (0x11, 0x2F) and m["ossos"] and osso_vertice:  # cada vértice no espaço do seu osso
-                mats = [mundo_ossos[b] if 0 <= b < len(mundo_ossos) else IDENTIDADE for b in m["ossos"]]
-                por_vertice = [mats[w] if w < len(mats) else IDENTIDADE for w in osso_vertice]
+                mats_osso = [mundo_ossos[b] if 0 <= b < len(mundo_ossos) else IDENTIDADE for b in m["ossos"]]
+                por_vertice = [mats_osso[w] if w < len(mats_osso) else IDENTIDADE for w in osso_vertice]
             elif 0 <= m["no"] < len(mundo_ossos):
                 por_vertice = [mundo_ossos[m["no"]]] * len(attrs["pos"])
             else:
@@ -421,7 +433,7 @@ def ler_flver(data: bytes, ossos: bool = False) -> dict:
         pts = [v for ms in malhas_saida if ms["tipo"] != "ignorar" for v in ms["vertices"]] or [v for ms in malhas_saida for v in ms["vertices"]]
         bb_min = tuple(min(p[k] for p in pts) for k in range(3))
         bb_max = tuple(max(p[k] for p in pts) for k in range(3))
-    return {"version": hex(version), "bb": (bb_min, bb_max), "materiais": mats, "malhas": malhas_saida}
+    return {"version": hex(version), "bb": (bb_min, bb_max), "materiais": mats, "malhas": malhas_saida, "puladas": puladas}
 
 
 def limitar_dds(dds: bytes, max_dim: int = TEX_MAX) -> bytes:
@@ -626,6 +638,12 @@ def pacotes(game_dir) -> Pacotes:
         return _pacotes[chave]
 
 
+def ds2nomes_fora_da_cena(modelo: str) -> str | None:
+    import ds2nomes
+
+    return ds2nomes.fora_da_cena(modelo)
+
+
 def modelo_do_binder(ler, caminho: str, caminho_tex: str | None = None, preferido: str | None = None):
     """(modelo, {textura: dds}, aviso) de um modelo de objeto ou personagem: o .flv do binder (o de nome igual ao modelo,
     senão o primeiro) com os ossos aplicados, e as texturas dos .tpf do binder e do binder de texturas.
@@ -657,14 +675,25 @@ def modelo_do_binder(ler, caminho: str, caminho_tex: str | None = None, preferid
         return None, {}, f"{type(err).__name__}: {err}"[:120]
 
 
+def motivo_sem_malha(modelo: dict) -> str | None:
+    """Por que um modelo lido não tem nada para desenhar (None se tem): malhas puladas ou só materiais ignorados."""
+    if any(m["tipo"] != "ignorar" for m in modelo.get("malhas", [])):
+        return None
+    if modelo.get("malhas"):
+        mtds = sorted({m["mtd"] for m in modelo["malhas"]})
+        return f"só malhas que o jogo não desenha ({', '.join(mtds[:3])})"
+    return "nenhuma malha lida: " + "; ".join(sorted(set(modelo.get("puladas", [])))[:3]) if modelo.get("puladas") else "nenhuma malha"
+
+
 def modelos_inimigos(game_dir, area: str, cache_base) -> list[str]:
-    """Modelos (cXXXX) dos inimigos comuns da área: linha do EnemyParam // 100 (pela extração do mapa, ds2mapa)."""
+    """Modelos (cXXXX) dos inimigos comuns e dos NPCs da área: linha do EnemyParam // 100 (pela extração do mapa)."""
     try:
         dados = ds2mapa.extrair_area(game_dir, area, cache_base)
     except Exception:  # sem navmesh/params: a área fica sem inimigos no 3D (as formas de reserva cobrem)
         return []
     tipos = {int(e["tipo"]) for e in dados.get("inimigos", []) if e.get("tipo") and not e.get("papel")}
-    return sorted({f"c{t // 100:04d}" for t in tipos})
+    npcs = {n["modelo"] for n in dados.get("npcs", []) if n.get("modelo")}  # NPC com modelo próprio (Straid = c7680)
+    return sorted({f"c{t // 100:04d}" for t in tipos} | npcs)
 
 
 def chao_area(arq, area: str, msb_bytes: bytes) -> tuple[list[float], list[int]]:
@@ -774,11 +803,14 @@ def extrair_cena(game_dir=None, area: str = "m10_04_00_00", cache_dir=None, forc
         avisa("Lendo objetos e inimigos...", 0.4)
         pac = pacotes(game_dir)
         objetos, modelos_obj = msb_instancias(msb_bytes, tipo_parte=1)
-        tex_extra, sem_modelo = {}, []
-        for nome in sorted(modelos_obj):
+        tex_extra, sem_modelo = {}, {}
+        fora_cena = {o["modelo"] for o in objetos if ds2nomes_fora_da_cena(o["modelo"])}
+        objetos = [o for o in objetos if o["modelo"] not in fora_cena]
+        for nome in sorted(modelos_obj - fora_cena):
             mod, tex, aviso = modelo_do_binder(pac.ler, f"/model/obj/{nome}.bnd", preferido=nome)
-            if mod is None:
-                sem_modelo.append(f"{nome} ({aviso})")
+            aviso = aviso or (motivo_sem_malha(mod) if mod else None)
+            if aviso:
+                sem_modelo[nome] = aviso
                 continue
             modelos[nome] = mod
             for k, v in tex.items():
@@ -795,8 +827,9 @@ def extrair_cena(game_dir=None, area: str = "m10_04_00_00", cache_dir=None, forc
         personagens = {}
         for cid in modelos_inimigos(game_dir, area, cache_base):
             mod, tex, aviso = modelo_do_binder(pac.ler, f"/model/chr/{cid}.bnd", f"/model/chr/{cid}.texbnd", preferido=cid)
-            if mod is None or not any(m["tipo"] != "ignorar" for m in mod["malhas"]):
-                sem_modelo.append(f"{cid} ({aviso or 'só malhas ignoradas'})")
+            aviso = aviso or (motivo_sem_malha(mod) if mod else None)
+            if aviso:
+                sem_modelo[cid] = aviso
                 continue
             modelos[cid] = mod
             personagens[cid] = {"altura": round(mod["bb"][1][1] - mod["bb"][0][1], 2)}
@@ -804,7 +837,7 @@ def extrair_cena(game_dir=None, area: str = "m10_04_00_00", cache_dir=None, forc
                 tex_extra.setdefault(k, v)
         if sem_modelo:
             avisos.append(f"{len(sem_modelo)} modelos de objeto/inimigo sem FLVER legível (ficam com a forma de reserva): "
-                          + ", ".join(sem_modelo[:8]))
+                          + ", ".join(f"{k} ({v})" for k, v in list(sem_modelo.items())[:8]))
 
         usados = {i["modelo"] for i in mantidas} | set(personagens)
         modelos = {k: v for k, v in modelos.items() if k in usados}
@@ -864,6 +897,7 @@ def extrair_cena(game_dir=None, area: str = "m10_04_00_00", cache_dir=None, forc
             "instancias": [{**{k: i[k] for k in ("nome", "modelo", "matriz", "caixa")}, **({"obj": True} if i.get("obj") else {})}
                            for i in mantidas],
             "personagens": personagens,
+            "sem_modelo": sem_modelo,
             "modelos": catalogo["modelos"],
             "texturas": sorted(tex_salvas),
             "chao": chao,
@@ -889,6 +923,36 @@ def extrair_cena(game_dir=None, area: str = "m10_04_00_00", cache_dir=None, forc
         return cena
 
 
+def diagnostico_modelo(game_dir, modelo: str) -> dict:
+    """O que o binder do modelo tem e o que o leitor fez com cada malha (para entender uma forma de reserva)."""
+    modelo = modelo.strip().lower()
+    if not (modelo[:1] in ("o", "c") and modelo[1:].replace("_", "").isdigit()):
+        raise CenaError("modelo inválido (use oXX_XXXX ou cXXXX)")
+    pac = pacotes(game_dir)
+    pasta = "obj" if modelo.startswith("o") else "chr"
+    data = pac.ler(f"/model/{pasta}/{modelo}.bnd")
+    if data is None:
+        return {"modelo": modelo, "erro": "sem arquivo no jogo"}
+    out = {"modelo": modelo, "binder": data[:4].decode("latin-1"), "arquivos": {}}
+    try:
+        arqs = ler_binder(data)
+    except Exception as err:
+        return {**out, "erro": f"{type(err).__name__}: {err}"}
+    for nome, conteudo in arqs.items():
+        info = {"bytes": len(conteudo), "inicio": conteudo[:8].hex()}
+        if nome.lower().endswith((".flv", ".flver")):
+            try:
+                flv = ler_flver(conteudo, ossos=True)
+                info.update({"versao": flv["version"], "caixa": flv["bb"], "puladas": flv.get("puladas", []),
+                             "malhas": [{"mtd": m["mtd"], "tipo": m["tipo"], "vertices": len(m["vertices"]),
+                                         "triangulos": len(m["indices"]) // 3, "textura": m["textura_difusa"]} for m in flv["malhas"]],
+                             "motivo": motivo_sem_malha(flv)})
+            except Exception as err:
+                info["erro"] = f"{type(err).__name__}: {err}"
+        out["arquivos"][nome] = info
+    return out
+
+
 def main():
     import argparse
     import sys
@@ -901,7 +965,13 @@ def main():
     p_ext.add_argument("--game-dir", default=None, help="Caminho do jogo")
     p_ext.add_argument("--cache-dir", default=None, help="Caminho do cache")
     p_ext.add_argument("--forcar", action="store_true", help="Força re-extração mesmo se em cache")
+    p_mod = subparsers.add_parser("modelo", help="Diagnóstico de um modelo de objeto (oXX_XXXX) ou personagem (cXXXX)")
+    p_mod.add_argument("--modelo", required=True)
+    p_mod.add_argument("--game-dir", default=None)
     args = parser.parse_args()
+    if args.comando == "modelo":
+        print(json.dumps(diagnostico_modelo(args.game_dir or ds2arquivos.game_dir_padrao(), args.modelo), ensure_ascii=False, indent=2))
+        return
     if args.comando != "extrair":
         parser.print_help()
         return

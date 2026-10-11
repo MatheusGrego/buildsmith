@@ -124,7 +124,7 @@
   const st = { raiz: null, plano: null, indice: null, docs: {}, doc: null, andar: "todos", vista: null, rota: null,
                destaque: null, zonaSel: null, pop: null, jogador: null, tipoSel: null, poll: null,
                modo: "2d", iso: null, interior: false, foco: true, acesas: null, fogChave: undefined, escolhida: false,
-               entChave: null, vivo: null,
+               entChave: null, vivo: null, realce: false,
                filtros: { zonas: true, fogueiras: true, chefes: true, npcs: true, plano: true, outros: true, chaves: true,
                           baus: false, objetos: false, inimigos: false } };
   const em3d = () => st.modo === "iso" && st.iso;
@@ -162,6 +162,7 @@
         </div>
         <div class="mp-filtros" role="group" aria-label="Mostrar no mapa">
           ${FILTROS.map(([k, l]) => `<button type="button" class="mp-filtro" data-filtro="${k}" aria-pressed="${st.filtros[k]}">${l}</button>`).join("")}
+          <button type="button" class="mp-filtro mp-realce-bt" data-realce aria-pressed="false" title="Inimigos em vermelho forte, com anel pulsando e visíveis através das paredes no 3D (H)">Realçar inimigos</button>
         </div>
       </div>
       <div class="mp-corpo">
@@ -497,10 +498,18 @@
     const out = [];
     if (st.filtros.inimigos) st.doc.inimigos.forEach((e) => {
       const t = tipoInimigo(e.tipo), h = alturaInimigo(t), igual = st.tipoSel && e.tipo === st.tipoSel;
-      out.push({ modelo: modeloInimigo(e.tipo), rot: e.rot ? [0, e.rot[1], 0] : null,
-                 tinta: igual ? 0xffd27a : st.tipoSel ? 0x5a4a48 : 0xffffff,
+      const forte = st.realce && (!st.tipoSel || igual);
+      // realce: cor forte e a passada que atravessa parede, menos no que está acima do corte de interior
+      const xray = forte && !(e.pos[1] > st.iso.alturaCorte(e.pos[0], e.pos[2]) + 0.5);
+      out.push({ modelo: modeloInimigo(e.tipo), rot: e.rot ? [0, e.rot[1], 0] : null, xray,
+                 tinta: igual ? 0xffd27a : st.tipoSel ? 0x5a4a48 : forte ? 0xff7a62 : 0xffffff,
                  forma: "capsula", pos: e.pos, dims: [h * 0.36, h, h * 0.36],
-                 cor: igual ? 0xf2c14e : st.tipoSel ? 0x4a2420 : t.chefe ? 0xd1572f : 0xb8352a });
+                 cor: igual ? 0xf2c14e : st.tipoSel ? 0x4a2420 : forte ? 0xff3b2b : t.chefe ? 0xd1572f : 0xb8352a });
+    });
+    // NPC com modelo próprio na cena (Straid, McDuff...): pelo filtro NPCs; sem modelo, só o retrato por cima
+    if (st.filtros.npcs) (st.doc.npcs || []).forEach((n) => {
+      if (!n.modelo || !st.iso.temModelo(n.modelo)) return;
+      out.push({ modelo: n.modelo, pos: n.pos, rot: n.rot ? [0, n.rot[1], 0] : null, tinta: n.plano ? 0xffe2a0 : 0xffffff });
     });
     (st.doc.objetos || []).forEach((o) => {
       const c = OBJ[o.cat];
@@ -521,7 +530,7 @@
     if (!st.iso || !st.doc) return;
     const tres = em3d(), lista = tres ? entidades3d() : [];
     const cena = st.iso.cena ? st.iso.area : "-";
-    const chave = `${st.doc.area}|${cena}|${JSON.stringify(st.filtros)}|${st.tipoSel}|${lista.length}`;
+    const chave = `${st.doc.area}|${cena}|${JSON.stringify(st.filtros)}|${st.tipoSel}|${st.realce}|${st.interior}|${st.andar}|${lista.length}`;
     if (chave === st.entChave) return;
     st.entChave = chave;
     st.iso.setEntidades(lista);
@@ -685,19 +694,21 @@
       if (!p) return;
       const [sx, sy, longe] = p;
       const t = tipoInimigo(e.tipo), igual = st.tipoSel && e.tipo === st.tipoSel;
-      const classe = `mp-inimigo ${estadoAndar(e.andar, andarSel)}${longe}${igual ? " mp-inimigo-sel" : st.tipoSel ? " mp-inimigo-fora" : ""}${t.chefe ? " mp-inimigo-chefe" : ""}`;
+      const forte = st.realce && (!st.tipoSel || igual);
+      const classe = `mp-inimigo ${estadoAndar(e.andar, andarSel)}${longe}${igual ? " mp-inimigo-sel" : st.tipoSel ? " mp-inimigo-fora" : ""}${t.chefe ? " mp-inimigo-chefe" : ""}${forte ? " mp-inimigo-forte" : ""}`;
       const titulo = `<title>${esc(t.nome || "Inimigo (nome não confirmado)")}</title>`;
+      const anel = (x, y, r) => (forte ? `<circle class="mp-realce-anel" cx="${f1(x)}" cy="${f1(y)}" r="${f1(r)}"/>` : "");
       if (tres) {
         const [cx, cy, r] = alvo3d(e.pos, st.iso.alturaModelo(modeloInimigo(e.tipo)) || alturaInimigo(t));
-        partes.push(`<circle class="mp-alvo3d ${classe}" data-tipo="inimigo" data-i="${i}" tabindex="0" cx="${f1(cx)}" cy="${f1(cy)}" r="${f1(r)}">${titulo}</circle>`);
+        partes.push(`${anel(cx, cy, Math.max(9, r))}<circle class="mp-alvo3d ${classe}" data-tipo="inimigo" data-i="${i}" tabindex="0" cx="${f1(cx)}" cy="${f1(cy)}" r="${f1(r)}">${titulo}</circle>`);
         return;
       }
-      const r = raioInimigo(s, t) * (igual ? 1.25 : 1);
+      const r = raioInimigo(s, t) * (igual ? 1.25 : 1) * (forte ? 1.35 : 1) + (forte ? 1.5 : 0);
       if (r >= 11 && t.retrato && ICONE_OK.test(t.retrato)) {
-        partes.push(retrato(`e${i}`, sx, sy, r, t.retrato, `${classe} mp-inimigo-ret`, t.nome || "Inimigo", "", `data-tipo="inimigo" data-i="${i}"`));
+        partes.push(anel(sx, sy, r + 3) + retrato(`e${i}`, sx, sy, r, t.retrato, `${classe} mp-inimigo-ret`, t.nome || "Inimigo", "", `data-tipo="inimigo" data-i="${i}"`));
         return;
       }
-      partes.push(`<circle class="${classe}" data-tipo="inimigo" data-i="${i}" tabindex="0" cx="${f1(sx)}" cy="${f1(sy)}" r="${f1(r)}">${titulo}</circle>`);
+      partes.push(`${anel(sx, sy, r + 4)}<circle class="${classe}" data-tipo="inimigo" data-i="${i}" tabindex="0" cx="${f1(sx)}" cy="${f1(sy)}" r="${f1(r)}">${titulo}</circle>`);
     });
     st.doc.itens.forEach((p, i) => {
       const destaque = p.plano || (st.destaque && p.item_id === st.destaque);
@@ -775,6 +786,7 @@
         partes.push(`<g class="mp-eu ${estado}"><title>Você (última gravação do save)</title><circle class="mp-eu-pulso" cx="${f1(sx)}" cy="${f1(sy)}" r="9"/><circle class="mp-eu-ponto" cx="${f1(sx)}" cy="${f1(sy)}" r="7"/><text class="mp-rotulo mp-rotulo-eu" x="${f1(sx)}" y="${f1(sy - 13)}">Você</text></g>`);
       }
     }
+    st.raiz.querySelector(".mp-tela").classList.toggle("mp-realce-on", st.realce && st.filtros.inimigos);
     st.raiz.querySelector(".mp-defs").innerHTML = defs.join("");
     st.raiz.querySelector(".mp-pontos").innerHTML = `<defs>${clips.join("")}</defs>${partes.join("")}`;
     const m = regua(s);
@@ -829,7 +841,9 @@
         extra = conteudo.length ? `<ul>${conteudo.map((it) => `<li>${esc(it.nome)}${it.qtd > 1 ? ` <span class="mp-qtd">×${it.qtd}</span>` : ""}</li>`).join("")}</ul>`
           : '<p class="mp-pop-sub">O jogo não liga item a este baú.</p>';
       }
-      corpo = `<p class="mp-pop-tit">${esc(c.nome)}</p>${p.nome ? `<p class="mp-pop-sub">${esc(p.nome)} <span class="mp-fonte">(modelo do jogo)</span></p>` : ""}<p class="mp-pop-sub">${esc(OBJ_TEXTO[p.cat] || "")}</p>${extra}`;
+      const reserva = em3d() && st.iso.cena && !st.iso.temParte(p.parte)
+        ? `<p class="mp-prova">Forma de reserva: o modelo do jogo${p.modelo ? ` (${esc(p.modelo)})` : ""} não entrou na cena${st.iso.motivoModelo(p.modelo) ? `: ${esc(st.iso.motivoModelo(p.modelo))}` : ""}.</p>` : "";
+      corpo = `<p class="mp-pop-tit">${esc(c.nome)}</p>${p.nome ? `<p class="mp-pop-sub">${esc(p.nome)} <span class="mp-fonte">(modelo do jogo)</span></p>` : ""}<p class="mp-pop-sub">${esc(OBJ_TEXTO[p.cat] || "")}</p>${extra}${reserva}`;
     } else if (tipo === "fogueira") {
       const acesa = st.acesas ? (st.acesas.has(p.id) ? " · acesa no save" : " · ainda apagada") : "";
       corpo = `<p class="mp-pop-tit">${esc(p.nome)}</p><p class="mp-pop-sub">Fogueira${p.zona ? ` da zona ${esc(nomeZona(p.zona))}` : ""}${acesa}</p>`;
@@ -969,6 +983,7 @@
                           Home: () => enquadrarTudo() };
         if (acoes3d[ev.code] && !ev.ctrlKey && !ev.metaKey && !ev.altKey) { ev.preventDefault(); acoes3d[ev.code](); return; }
       }
+      if ((ev.key === "h" || ev.key === "H") && !ev.ctrlKey && !ev.metaKey && !ev.altKey) { ev.preventDefault(); alternarRealce(); return; }
       const passo = 40 / (st.vista ? st.vista.s : 1);
       const acoes = { "+": () => zoom(1.25), "=": () => zoom(1.25), "-": () => zoom(0.8), ArrowLeft: () => mover(-passo, 0),
                       ArrowRight: () => mover(passo, 0), ArrowUp: () => mover(0, passo), ArrowDown: () => mover(0, -passo), Escape: fecharPop };
@@ -1009,6 +1024,7 @@
       }
       const zona = ev.target.closest("[data-zona]");
       if (zona) { focarZona(Number(zona.dataset.zona)); return; }
+      if (ev.target.closest("[data-realce]")) { alternarRealce(); return; }
       const f = ev.target.closest("[data-filtro]");
       if (f) {
         st.filtros[f.dataset.filtro] = !st.filtros[f.dataset.filtro];
@@ -1039,6 +1055,18 @@
     });
     raiz.querySelector(".mp-area").addEventListener("change", (ev) => { st.escolhida = true; abrirArea(ev.target.value); });
     if (window.ResizeObserver) new ResizeObserver(() => { if (st.iso) st.iso.redimensionar(); atualizar(); }).observe(tela);
+  }
+
+  // Realçar inimigos: liga o filtro Inimigos junto; desligar o filtro não apaga a escolha do realce.
+  function alternarRealce() {
+    st.realce = !st.realce;
+    if (st.realce && !st.filtros.inimigos) {
+      st.filtros.inimigos = true;
+      st.raiz.querySelector('[data-filtro="inimigos"]').setAttribute("aria-pressed", "true");
+    }
+    st.raiz.querySelector("[data-realce]").setAttribute("aria-pressed", String(st.realce));
+    sincronizarEntidades();
+    atualizar();
   }
 
   function alternarLivre() {

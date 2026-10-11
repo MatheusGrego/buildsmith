@@ -29,7 +29,8 @@ from pathlib import Path
 from ds2planta import PLANTA_VERSAO  # noqa: F401 (versão da planta guardada no cache)
 
 AREA = re.compile(r"^m(\d\d)_(\d\d)_(\d\d)_(\d\d)$")
-EXTRACAO_VERSAO = 6  # 2: NPCs e chefes; 3: início do mapa (zonas); 4: tipo de inimigo; 5: objetos; 6: rotação do inimigo
+EXTRACAO_VERSAO = 7  # 2: NPCs e chefes; 3: início do mapa (zonas); 4: tipo de inimigo; 5: objetos; 6: rotação do inimigo;
+                     # 7: modelo do NPC
 EP_HP, EP_ALMAS, EP_LOTES = 0x28, 0xD0, (0x4C, 0x134)  # EnemyParam
 INICIO_MAPA = "マップ開始地点"  # nome do ponto de início no MSB (texto do próprio jogo)
 JUNTAR_NPC = 15.0  # metros: geradores do mesmo NPC mais perto que isso viram um marcador só
@@ -287,6 +288,15 @@ def papel_gerador(personagem: int, tipo: int | None, nomes_npc: dict, chefes: li
     return None
 
 
+def modelos_npcs(npcs: list[dict], geradores: list[dict]) -> None:
+    """Modelo (cXXXX = linha do EnemyParam // 100) e rotação de cada NPC, pelo gerador dele mais perto do marcador."""
+    for n in npcs:
+        gens = [e for e in geradores if e.get("papel") == "npc" and e.get("tipo") and e.get("personagem", 0) // 10000 == n["id"]]
+        if gens:
+            g = min(gens, key=lambda e: _dist(e["pos"], n["pos"]))
+            n["modelo"], n["rot"] = f"c{int(g['tipo']) // 100:04d}", g.get("rot")
+
+
 def montar_objetos(partes: list[dict], instancias: dict[int, dict], nomes_itens: dict[int, str], tabelas=None) -> list[dict]:
     """Objetos do mapa que importam para andar pela área: portas (com a chave, quando o modelo diz), névoas,
     alavancas, elevadores, pontes, escadas, mecanismos de Pharros, baús e cadáveres com item."""
@@ -398,6 +408,7 @@ def extrair_area(game_dir, area: str, cache_dir, names=None) -> dict:
         e["personagem"] = personagens.get(e["id"], 0)
         e["tipo"] = registro.get(e["personagem"])
         e["papel"] = papel_gerador(e["personagem"], e["tipo"], nomes_npc, out["chefes"])
+    modelos_npcs(out["npcs"], out["inimigos"])
     out["tipos_inimigo"] = tipos_inimigo(params["EnemyParam"], lotes_itens(params["ItemLotParam2_Chr"]), nomes_itens,
                                          [e["tipo"] for e in out["inimigos"] if e["tipo"] and not e["papel"]])
     out["objetos"] = montar_objetos(partes, inst_obj, nomes_itens)
