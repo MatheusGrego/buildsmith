@@ -91,7 +91,16 @@ class EscalaWiki:
 
     def letras(self, nome: str, nivel: int) -> dict | None:
         """Letras do nível pedido; sem a linha desse nível, as do maior nível listado abaixo dele."""
-        g = self._entrada(nome)
+        return self._do_nivel(self._entrada(nome), nivel)
+
+    def letras_guardadas(self, nome: str, nivel: int) -> dict | None:
+        """Como `letras`, só com o que já está no cache: sem rede e sem gravar (o servidor ao vivo usa isso; uma falta
+        gravada sem buscar valeria por 30 dias)."""
+        g = self.cache["itens"].get(nome.strip().casefold())
+        return self._do_nivel(g, nivel) if g else None
+
+    @staticmethod
+    def _do_nivel(g: dict, nivel: int) -> dict | None:
         abaixo = sorted((int(n) for n in g["niveis"] if int(n) <= nivel), reverse=True)
         if not abaixo:
             return None

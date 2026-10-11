@@ -26,7 +26,8 @@ Prefere sem descompactar nada sozinho? A release também traz o `buildsmith-<ver
   - passos de comprar, trocar, pegar, farmar, upar e equipar; o que só a wiki diz (loja que abre por evento, chance de drop) aparece como "ver na wiki".
 - **Página de cada personagem** do save, mesmo sem plano (criada pelo `Buildsmith.exe`, sem IA).
 - **Save ao vivo:** relê o save sempre que o jogo grava. Nível e almas no topo, atributos, inventário ("✓ você tem" nos itens do plano), passos que o jogo já mostra feitos (anel equipado, chefe derrotado, compra, reforço, atributo no alvo), fogueiras acesas e áreas liberadas.
-- **Equipamento:** igual ao menu do DS2 (mãos, armadura, anéis, sintonia), com o melhor do plano ao lado, o ganho de AR por slot e por feitiço e a letra de escala de cada peça.
+- **Equipamento:** igual ao menu do DS2 (mãos, armadura, anéis, sintonia), o que está equipado no save ao lado do melhor (a arma e o catalisador de maior AR que dá para pegar agora com os seus atributos, ou as trocas do plano, se houver), com o ganho de AR por slot e por feitiço e a letra de escala de cada peça.
+- **Feitiços, Dano e Progresso pelo save:** sintonia com o AR no catalisador da mão, reforço seguinte e máximo de cada arma (almas e materiais que faltam), chefes derrotados e compras, relidos quando o jogo grava.
 - **Mapa 2D e 3D** com o cenário real do jogo (peças de mapa, objetos e inimigos com os modelos e texturas originais):
   - câmera fixa ou **livre** (V); **Interior** (I) corta o que está acima do andar; **Foco** (O) escurece o resto;
   - itens, fogueiras, NPCs, chefes e inimigos com o nome do próprio jogo; **Realçar inimigos** (H) mostra os inimigos através das paredes;

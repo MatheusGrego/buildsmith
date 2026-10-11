@@ -221,9 +221,12 @@ def coords(texto) -> tuple[float, float, float] | None:
 class MapaVivo:
     """Posição do personagem (relê o save só quando o arquivo muda) e rota pelo chão (grafo do navmesh em memória)."""
 
-    def __init__(self, home: Path, save=None, carregar_area=None):
+    def __init__(self, home: Path, save=None, carregar_area=None, calcular_combate=None):
         self.home, self.save = Path(home), save
         self.carregar_area = carregar_area  # área -> dados com malhas; None = jogo instalado + cache de ~/.buildsmith
+        self.calcular_combate = calcular_combate  # (save, slot, índice, plano) -> combate; None = ds2combate com o jogo
+        self._combate: dict = {}
+        self._regras = None  # (ds2calc, ds2data) do jogo instalado, lidos uma vez
         self._save = (None, {})
         self._vivo = (None, {})
         self._mundos = (None, {})
@@ -321,6 +324,45 @@ class MapaVivo:
         dados, grafo = self._area(area)
         return ds2mapa.rota(dados, de, ate, grafo, ds2mapa.caixas_da_cena(self.home / "cache" / "ds2", area))
 
+    def combate(self, slug_: str, indice: dict | None = None) -> dict | None:
+        """Equipamento (agora × melhor), feitiços, dano e compras pelo save (ds2combate); refeito quando o save, o plano
+        ou o índice de itens mudam."""
+        import ds2save
+
+        pos = self.posicao(slug_)
+        if pos is None:
+            return None
+        path = Path(self.save) if self.save else ds2save.find_save()
+        st = path.stat()
+        plano_path = self.home / "paginas" / "ds2" / slug_ / "plano.json"
+        chave = (str(path), st.st_mtime_ns, st.st_size, plano_path.stat().st_mtime_ns if plano_path.is_file() else None,
+                 indice is not None)
+        with self._lock:
+            if slug_ in self._combate and self._combate[slug_][0] == chave:
+                return self._combate[slug_][1]
+        try:
+            plano = json.loads(plano_path.read_text(encoding="utf-8")) if plano_path.is_file() else None
+        except (OSError, ValueError):
+            plano = None
+        plano = plano if isinstance(plano, dict) else None
+        if self.calcular_combate:
+            out = self.calcular_combate(path, pos["slot"], indice, plano)
+        else:
+            import ds2calc
+            import ds2combate
+            import ds2data
+
+            with self._lock:
+                if self._nomes is None:
+                    self._nomes = ds2save.load_item_names()
+                if self._regras is None:
+                    self._regras = (ds2calc.load(), ds2data.load())
+            snap = ds2save.snapshot(path, pos["slot"], self._nomes)
+            out = ds2combate.combate(*self._regras, self._nomes, snap, indice, plano)
+        with self._lock:
+            self._combate[slug_] = (chave, out)
+        return out
+
     def fontes(self, slug_: str, item: dict, indice: dict) -> dict | None:
         """Onde pegar o item para este personagem (ds2fontes): fontes no formato do plano e os passos."""
         import ds2fontes
@@ -395,6 +437,46 @@ def icone_local(home: Path, url) -> str | None:
         return None
     nome = prepare_page.icon_name(url)
     return f"icons/{nome}" if (Path(home) / "cache" / "ds2" / "icons" / nome).is_file() else None
+
+
+def completar_combate(home: Path, out: dict) -> dict:
+    """Ícones e letras de escala do que já está no cache da wiki (sem rede): o equipamento como o prepare_page faz, e
+    os nós de feitiços, dano e compras."""
+    scripts = str(REPO / "skills" / "build-page" / "scripts")
+    if scripts not in sys.path:
+        sys.path.insert(0, scripts)
+    import escala_wiki
+    import prepare_page
+
+    cache = Path(home) / "cache" / "ds2"
+    try:
+        icones = json.loads((cache / "icones.json").read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        icones = {}
+    icones = icones if isinstance(icones, dict) else {}
+
+    def icone_de(nome: str) -> str | None:
+        return icone_local(home, (icones.get(str(nome).strip().casefold()) or {}).get("url"))
+
+    escala = escala_wiki.EscalaWiki(cache / "escala.json", fetch=None)
+    so_cache = type("EscalaSoCache", (), {"letras": staticmethod(escala.letras_guardadas)})()
+    if isinstance(out.get("equipamento"), dict):
+        prepare_page.completar_equipamento(out["equipamento"], so_cache, icone_de)
+    nos = []
+    f = out.get("feiticos") or {}
+    nos += [f.get("catalisador")] + [s.get("no") for s in f.get("lista", []) if isinstance(s, dict)]
+    for d in out.get("dano") or []:
+        nos += [d.get("arma")] + list(d.get("por_causa") or [])
+    for c in out.get("compras") or []:
+        nos += [c.get("item")]
+    for no in nos:
+        if isinstance(no, dict) and no.get("tipo") == "item" and no.get("nome") and not str(no.get("icone", "")).startswith("icons/"):
+            icone = icone_de(no["nome"])
+            if icone:
+                no["icone"] = icone
+            else:
+                no.pop("icone", None)
+    return out
 
 
 def resumo_catalogo(home: Path, item: dict) -> dict:
@@ -546,6 +628,8 @@ class Handler(BaseHTTPRequestHandler):
             return self._catalogo()
         if len(parts) == 4 and parts[:2] == ["api", "ds2"] and parts[3] == "fontes" and SEGMENT.match(parts[2]):
             return self._fontes(parts[2])
+        if len(parts) == 4 and parts[:2] == ["api", "ds2"] and parts[3] == "combate" and SEGMENT.match(parts[2]):
+            return self._combate(parts[2])
         if len(parts) == 4 and parts[:2] == ["api", "ds2"] and parts[3] == "posicao" and SEGMENT.match(parts[2]):
             return self._posicao(parts[2])
         if len(parts) == 4 and parts[:2] == ["api", "ds2"] and parts[3] == "save" and SEGMENT.match(parts[2]):
@@ -713,6 +797,18 @@ class Handler(BaseHTTPRequestHandler):
             return None
         itens = sorted(indice["itens"].values(), key=lambda i: (i["cat"], i["nome"]))
         return self._json({"itens": [resumo_catalogo(self.home, i) for i in itens]})
+
+    def _combate(self, personagem: str):
+        indice = self.catalogo.indice()
+        if indice is None:
+            self.catalogo.iniciar()  # o melhor por código entra quando o índice ficar pronto
+        try:
+            r = self.mapa.combate(personagem, indice)
+        except Exception as err:  # sem save, save sendo gravado, jogo ausente
+            return self._json({"erro": f"não consegui calcular o combate ({type(err).__name__})"}, status=503)
+        if r is None:
+            return self._json({"erro": "personagem não está no save"}, status=404)
+        return self._json(completar_combate(self.home, json.loads(json.dumps(r))))
 
     def _fontes(self, personagem: str):
         item_id = parse_qs(urlsplit(self.path).query).get("item", [""])[0]

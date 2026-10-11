@@ -631,3 +631,49 @@ def test_page_without_ai_does_not_take_the_main_page(server):
     with pytest.raises(urllib.error.HTTPError) as err:
         opener.open(urllib.request.Request(f"{base}/"), timeout=5)
     assert err.value.headers["Location"] == "/p/ds2/personagem-um/"
+
+
+@pytest.fixture
+def server_combate(tmp_path):
+    slot = make_slot(name="Personagem (teste)")
+    save = tmp_path / "DS2SOFS0000.co2"
+    save.write_bytes(build_bnd4({"USER_DATA001": bytes(slot), "USER_DATA011": bytes(0x30000)}))
+    page = tmp_path / "paginas" / "ds2" / "personagem-teste"
+    page.mkdir(parents=True)
+    (page / "plano.json").write_text(json.dumps({"equipamento": {"slots": []}}), encoding="utf-8")
+    chamadas = []
+
+    def calcular(path, slot_n, indice, plano):
+        chamadas.append((slot_n, indice is not None, plano))
+        if (tmp_path / "quebrar").exists():
+            raise OSError("save sendo gravado")
+        return {"equipamento": {"slots": [{"slot": "R1", "agora": {"nome": "Uchigatana", "nivel": 5, "tipo": "arma"}, "plano": None,
+                                           "muda": False}], "sintonia": {}}, "feiticos": {"lista": []}, "dano": [],
+                "compras": [{"loja": {"tipo": "npc", "nome": "Steady Hand McDuff"}, "item": {"tipo": "item", "nome": "Uchigatana"}, "qtd": 1}]}
+
+    httpd = serve.make_server(tmp_path, port=0, runner=serve.Runner(command=lambda p: [sys.executable, "-c", "0"], cwd=tmp_path),
+                              save=save, mapa=serve.MapaVivo(tmp_path, save, calcular_combate=calcular),
+                              catalogo=serve.Catalogo(tmp_path, lambda: {"itens": {}, "areas": {}}))
+    threading.Thread(target=httpd.serve_forever, daemon=True).start()
+    yield f"http://127.0.0.1:{httpd.server_address[1]}", tmp_path, chamadas
+    httpd.shutdown()
+
+
+def test_combat_comes_from_the_save_and_is_kept_until_it_changes(server_combate):
+    base, home, chamadas = server_combate
+    assert esperar(f"{base}/api/ds2/catalogo", 200)  # com o índice pronto (sem ele, recalcula quando ficar pronto)
+    r = json.loads(get(f"{base}/api/ds2/personagem-teste/combate")[2])
+    assert r["equipamento"]["slots"][0]["agora"]["nome"] == "Uchigatana" and r["compras"][0]["qtd"] == 1
+    get(f"{base}/api/ds2/personagem-teste/combate")
+    assert len(chamadas) == 1 and chamadas[0] == (1, True, {"equipamento": {"slots": []}})
+    with pytest.raises(urllib.error.HTTPError) as err:
+        get(f"{base}/api/ds2/outro/combate")
+    assert err.value.code == 404
+
+
+def test_combat_error_is_503(server_combate):
+    base, home, _ = server_combate
+    (home / "quebrar").write_text("1", encoding="utf-8")
+    with pytest.raises(urllib.error.HTTPError) as err:
+        get(f"{base}/api/ds2/personagem-teste/combate")
+    assert err.value.code == 503

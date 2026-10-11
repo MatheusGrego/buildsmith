@@ -566,6 +566,7 @@ const plano = {chefes: [{no: {tipo: "chefe", nome: "Covetous Demon", icone: "ico
 const ix = V.indice(vivo);
 console.log(JSON.stringify({com: V.progressoAoVivo(plano, vivo), sem: V.progressoAoVivo(undefined, vivo),
   velho: V.progressoAoVivo(plano, {chefes: []}),
+  compras: V.progressoAoVivo(plano, vivo, [{loja: {nome: "Melentia"}, item: {nome: "Torch"}, qtd: 2}]).compras,
   mapa: [V.estadoChefe("Covetous Demon", "vivo", ix), V.estadoChefe("Mytha, the Baneful Queen", "derrotado", ix),
          V.estadoChefe("Covetous Demon", "vivo", null)]}));
 """, encoding="utf-8")
@@ -582,3 +583,4 @@ console.log(JSON.stringify({com: V.progressoAoVivo(plano, vivo), sem: V.progress
     assert [c["estado"] for c in r["sem"]["chefes"]] == ["derrotado", "derrotado", "vivo"] and r["sem"]["compras"] == []
     assert r["velho"]["chefes"][0]["estado"] == "vivo"  # servidor antigo, sem a lista: fica o plano
     assert r["mapa"] == ["derrotado", "vivo", "vivo"]
+    assert r["compras"] == [{"loja": {"nome": "Melentia"}, "item": {"nome": "Torch"}, "qtd": 2}]  # as do save, quando vieram

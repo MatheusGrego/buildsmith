@@ -115,7 +115,7 @@
       builds: p.comparacao.length, fontes: p.fontes.length, ficha: p.mudancas.length || null,
     };
     return `<nav class="menu" aria-label="Seções">${SECOES.map(([g, itens]) => `<div class="menu-g"><div class="menu-gt">${g}</div>
-      ${itens.filter(([id]) => (id !== "agora" || p.agora) && (id !== "equip" || p.equipamento)).map(([id, l]) => `<button class="menu-i" type="button" data-secao="${id}">${l}${id === "fila" ? '<span class="count" id="menu-fila" hidden></span>' : `<span class="count" data-count="${id}"${counts[id] ? "" : " hidden"}>${counts[id] || ""}</span>`}</button>`).join("")}
+      ${itens.filter(([id]) => id !== "agora" || p.agora).map(([id, l]) => `<button class="menu-i" type="button" data-secao="${id}">${l}${id === "fila" ? '<span class="count" id="menu-fila" hidden></span>' : `<span class="count" data-count="${id}"${counts[id] ? "" : " hidden"}>${counts[id] || ""}</span>`}</button>`).join("")}
     </div>`).join("")}</nav>`;
   }
 
@@ -182,7 +182,7 @@
 
   function secaoDano(p) {
     const list = p.dano || [];
-    if (!list.length) return '<section><h2>Dano</h2><p class="empty">Este plano não tem cálculo de dano.</p></section>';
+    if (!list.length) return `<section><h2>Dano</h2><p class="empty">${state.combate ? "Nenhuma arma na mão direita." : "Sem cálculo de dano."}</p></section>`;
     const nums = list.flatMap((d) => [d.agora, d.depois]).filter((v) => typeof v === "number");
     const max = Math.max(1, ...nums) * 1.08;
     const pc = (v) => `${(v / max * 100).toFixed(2)}%`;
@@ -429,10 +429,9 @@
       builds: builds(p), fontes: sources(p),
     };
     if (!p.agora) delete secoes.agora;
-    if (!p.equipamento) delete secoes.equip;
     app.innerHTML = topo(p)
       + `<div class="corpo">${menu(p)}<div class="conteudo" id="conteudo">${Object.entries(secoes).map(([id, html]) => `<div class="secao" data-pane="${id}" hidden>${html}</div>`).join("")}</div></div>`;
-    if (secoes.equip && window.buildsmithEquip) window.buildsmithEquip.ligar(app.querySelector('[data-pane="equip"]'), p);
+    if (window.buildsmithEquip) window.buildsmithEquip.ligar(app.querySelector('[data-pane="equip"]'), p);
     let saved = null;
     try { saved = localStorage.getItem(KEY); } catch (e) { saved = null; }
     const pedida = [location.hash.slice(1), saved, p.agora ? "agora" : p.sem_ia ? "catalogo" : "passos"].find((id) => id in secoes);
@@ -1004,7 +1003,7 @@
     if (atr && v.stats) atr.innerHTML = stats({ ...p, personagem: { ...c, stats: v.stats } });
     const prog = app.querySelector('[data-pane="progresso"]');
     if (prog && (v.progresso_chefes || p.progresso)) {
-      const pr = V.progressoAoVivo(p.progresso, v);
+      const pr = V.progressoAoVivo(p.progresso, v, state.combate && state.combate.compras);
       prog.innerHTML = progress({ ...p, progresso: pr });
       fallbackIcons(prog);
       contar("progresso", pr.chefes.filter((ch) => ch.estado === "derrotado").length);
@@ -1032,6 +1031,40 @@
     return out;
   }
 
+  // Equipamento (agora × melhor), Feitiços, Dano e as compras do Progresso pelo save (/combate, ds2combate): o plano
+  // da IA só entra com as trocas e os feitiços sugeridos dele.
+  async function buscarCombate(base, tentativa = 0) {
+    try {
+      const r = await fetch(`${base}/combate`, { cache: "no-store" });
+      if (!r.ok) { if (r.status === 503 && tentativa < 3) setTimeout(() => buscarCombate(base, tentativa + 1), 3000); return; }
+      const c = await r.json();
+      const nova = JSON.stringify(c);
+      if (nova === state.combateChave) return;
+      state.combateChave = nova;
+      state.combate = c;
+      aplicarCombate();
+    } catch (e) { /* servidor fora: fica o que tinha */ }
+  }
+
+  function aplicarCombate() {
+    const c = state.combate;
+    if (!c || !state.base) return;
+    const vivo = { equipamento: c.equipamento, feiticos: c.feiticos, dano: c.dano };
+    state.base = { ...state.base, ...vivo };
+    state.plano = { ...state.plano, ...vivo };
+    const p = state.plano;
+    const eqPane = app.querySelector('[data-pane="equip"]');
+    if (eqPane && window.buildsmithEquip) { eqPane.innerHTML = window.buildsmithEquip.html(p); window.buildsmithEquip.ligar(eqPane, p); }
+    const fe = app.querySelector('[data-pane="feiticos"]');
+    if (fe) { fe.innerHTML = spells(p); fallbackIcons(fe); }
+    const da = app.querySelector('[data-pane="dano"]');
+    if (da) { da.innerHTML = secaoDano(p); fallbackIcons(da); }
+    contar("feiticos", (p.feiticos && p.feiticos.lista || []).length);
+    contar("dano", (p.dano || []).length);
+    if (state.db) app.querySelectorAll(".fogueira").forEach((b) => { b.hidden = false; });
+    if (state.vivo) aplicarVivo(); else applyState();
+  }
+
   function iniciarVivo(base) {
     let chave = null;
     const buscar = async () => {
@@ -1047,6 +1080,7 @@
         state.mundos = await buscarMundos(base);
         aplicarVivo();
         sincronizarMarcados(true);  // as fontes dos marcados dependem do save (fogueiras, inventário, portas)
+        buscarCombate(base);
       } catch (e) { /* servidor fora: a página fica com o que tinha */ }
     };
     buscar();

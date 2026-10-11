@@ -9,6 +9,8 @@
   const ATR = { STR: "FOR", DEX: "DES", INT: "INT", FTH: "FÉ", magico: "mágico", fogo: "fogo", raio: "raio", sombrio: "sombrio" };
   const GRUPOS = [["direita", "Mão direita"], ["esquerda", "Mão esquerda"], ["armadura", "Armadura"], ["aneis", "Anéis"]];
   const MODOS = [["comparar", "Comparar"], ["agora", "Agora"], ["plano", "Plano"]];
+  // De onde vem a coluna da direita (ds2combate): as trocas do plano da IA ou o melhor por código.
+  const DESTINO = { plano: "plano", "melhor que dá para pegar agora": "melhor que dá para pegar", "o que você tem": "melhor do que você tem" };
   const COM_NIVEL = ["arma", "escudo", "catalisador"];
   const slug = (t) => String(t).normalize("NFD").replace(/[̀-ͯ]/g, "").toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "");
   const inicial = (n) => (n || "?").trim().replace(/^the\s+/i, "").charAt(0).toUpperCase();
@@ -109,16 +111,17 @@
       return `<div class="eq-g eq-g-${g}"><h3>${nome}</h3><div class="eq-linha">${slots.map(slotHtml).join("")}</div></div>`;
     }).join("");
     const resumo = (eq.resumo || []).map((r) => `<tr><td>${esc(r.dado)}</td><td>${esc(r.agora)}</td><td>${esc(r.depois)}</td><td class="${r.sinal === "+" ? "pos" : r.sinal === "-" ? "neg" : ""}">${esc(r.efeito)}</td></tr>`).join("");
-    return `<div class="eq-modos" role="group" aria-label="Mostrar">${MODOS.map(([m, l]) => `<button type="button" class="eq-modo" data-eq-modo="${m}" aria-pressed="${ui.modo === m}">${l}</button>`).join("")}</div>
+    const futuro = eq.origem && eq.origem !== "plano" ? "Melhor" : "Plano";
+    return `<div class="eq-modos" role="group" aria-label="Mostrar">${MODOS.map(([m, l]) => `<button type="button" class="eq-modo" data-eq-modo="${m}" aria-pressed="${ui.modo === m}">${m === "plano" ? futuro : l}</button>`).join("")}</div>
       <div class="eq-tela"><div class="eq-inv">${grupos}${sintoniaHtml(eq)}</div><aside class="eq-det" aria-live="polite">${detalhe(eq, p, ui.slot)}</aside></div>
-      ${resumo ? `<h3 class="eq-rt">O que muda</h3><div class="tw"><table><thead><tr><th>Slot</th><th>Agora</th><th>Plano</th><th>Efeito</th></tr></thead><tbody>${resumo}</tbody></table></div>` : ""}`;
+      ${resumo ? `<h3 class="eq-rt">O que muda</h3><div class="tw"><table><thead><tr><th>Slot</th><th>Agora</th><th>${futuro}</th><th>Efeito</th></tr></thead><tbody>${resumo}</tbody></table></div>` : ""}`;
   }
 
   function html(p) {
     const eq = p.equipamento;
-    if (!eq) return '<section><h2>Equipamento</h2><p class="empty">Este plano não tem o bloco de equipamento.</p></section>';
+    if (!eq) return '<section><h2>Equipamento</h2><p class="empty">Sem dados de equipamento (pelo Buildsmith.exe ele vem do save).</p></section>';
     if (!ui.slot || !(eq.slots || []).some((s) => s.slot === ui.slot)) ui.slot = ((eq.slots || []).find((s) => s.muda) || (eq.slots || [])[0] || {}).slot || null;
-    return `<section class="eq"><h2>Equipamento<small>agora × melhor do plano</small></h2><div class="eq-app">${corpo(eq, p)}</div></section>`;
+    return `<section class="eq"><h2>Equipamento<small>agora × ${esc(DESTINO[eq.origem] || "plano")}</small></h2><div class="eq-app">${corpo(eq, p)}</div></section>`;
   }
 
   function ligar(raiz, p) {

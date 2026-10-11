@@ -49,3 +49,16 @@ def test_level_without_row_uses_the_closest_below_and_cache(tmp_path):
     de_novo = escala_wiki.EscalaWiki(tmp_path / "escala.json", fetch)
     assert de_novo.letras("Uchigatana", 5)["letras"] == {"STR": "E", "DEX": "B"} and len(fetch.chamadas) == n + 1
     assert de_novo.letras("Item Sem Tabela", 0) is None and len(fetch.chamadas) == n + 1  # falta também fica no cache
+
+
+def test_cache_only_letters_never_fetch_nor_write(tmp_path):
+    escala_wiki.EscalaWiki(tmp_path / "escala.json", Fetch()).letras("Pyromancy Flame", 5)
+    antes = (tmp_path / "escala.json").read_bytes()
+
+    def sem_rede(url):
+        raise AssertionError("buscou na rede")
+
+    so_cache = escala_wiki.EscalaWiki(tmp_path / "escala.json", sem_rede)
+    assert so_cache.letras_guardadas("Pyromancy Flame", 5)["letras"] == {"fogo": "S"}
+    assert so_cache.letras_guardadas("Uchigatana", 5) is None  # não está no cache: sem letra, sem buscar
+    assert (tmp_path / "escala.json").read_bytes() == antes  # e não grava a falta (estragaria o cache por 30 dias)
