@@ -84,3 +84,18 @@ def test_rebuild_forwards_script_progress_and_keeps_saying_it_is_working(tmp_pat
     assert "  mapa extraído do jogo: Majula" in avisos
     assert any(a.startswith("  ainda refazendo") for a in avisos)
     assert "Majula" in erro
+
+
+def test_characters_without_a_page_get_one_without_ai(tmp_path, monkeypatch):
+    sys.path.insert(0, str(abrir.REPO / "skills" / "build-page" / "scripts"))
+    import plano_base
+
+    chamadas = []
+
+    def criar(home, preparar=None, avisa=None, **kw):
+        chamadas.append(home)
+        assert preparar is not None and avisa is not None
+        return ["ds2/personagem-um"]
+
+    monkeypatch.setattr(plano_base, "criar_paginas", criar)
+    assert abrir.criar_paginas_sem_ia(tmp_path, avisa=lambda t: None) == ["ds2/personagem-um"] and chamadas == [tmp_path]

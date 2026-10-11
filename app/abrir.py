@@ -4,7 +4,8 @@
 1. `git pull --ff-only` no repositório (com alteração local, sem git ou sem rede: segue com o código que tem);
 2. servidor: se o que está rodando é de outro código (ou de antes desta versão), desliga e sobe o novo;
 3. páginas: quando o código mudou, refaz cada ~/.buildsmith/paginas/<jogo>/<personagem>/ a partir do plano.json
-   que já está lá (prepare_page: nenhum Claude, nenhum token);
+   que já está lá (prepare_page: nenhum Claude, nenhum token); personagem do save sem página ganha uma sem IA
+   (plano_base: Catálogo, Onde pegar e Passos dos itens marcados saem do jogo e do save);
 4. abre a página mais recente no navegador.
 
 As fogueiras acesas e as áreas liberadas/bloqueadas a página lê ao vivo do save, pelo servidor.
@@ -221,6 +222,16 @@ def refazer_paginas(home: Path, versao: str, avisa=print, forcar: bool = False, 
     return refeitas
 
 
+def criar_paginas_sem_ia(home: Path, avisa=print) -> list[str]:
+    """Página sem IA (plano_base) para cada personagem do save que ainda não tem página."""
+    scripts = str(REPO / "skills" / "build-page" / "scripts")
+    if scripts not in sys.path:
+        sys.path.insert(0, scripts)
+    import plano_base
+
+    return plano_base.criar_paginas(home, preparar=lambda plano, jogo: _preparar_padrao(plano, jogo, avisa), avisa=avisa)
+
+
 def main(argv=None) -> int:
     if hasattr(sys.stdout, "reconfigure"):
         sys.stdout.reconfigure(encoding="utf-8", errors="replace")
@@ -256,6 +267,7 @@ def main(argv=None) -> int:
             return 1
         _esperar(lambda: pid_na_porta(args.port) is None, 8)  # o processo antigo solta a porta ao sair
     refazer_paginas(home, versao, avisa, forcar=args.refazer)
+    criar_paginas_sem_ia(home, avisa)
     if ping(args.port) is None:
         avisa("subindo o servidor...")
         if not subir(home, args.port):

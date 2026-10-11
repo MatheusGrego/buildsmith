@@ -89,7 +89,7 @@ class IconStore:
         return rel
 
 
-TEMPLATE_JS = ("pagina.js", "mapa.js", "equip.js", "iso.js", "vivo.js")
+TEMPLATE_JS = ("pagina.js", "mapa.js", "equip.js", "iso.js", "vivo.js", "catalogo.js")
 DS2_SCRIPTS = ROOT / "skills" / "ds2-save" / "scripts"
 def _ds2mapa():
     if str(DS2_SCRIPTS) not in sys.path:
@@ -211,9 +211,25 @@ def area_do_jogador(plano: dict) -> str | None:
         return None
 
 
+def _sem_mapa(plano) -> None:
+    """Tira o `mapa` de passos e fontes: ele é sempre recalculado a partir dos pontos, e o de uma página anterior
+    (plano.json publicado, refeito pelo abrir.py) não é texto do plano para validar."""
+    if not isinstance(plano, dict):
+        return
+    for lista in ("passos", "itens"):
+        for alvo in plano.get(lista) if isinstance(plano.get(lista), list) else []:
+            if not isinstance(alvo, dict):
+                continue
+            alvo.pop("mapa", None)
+            for fonte in alvo.get("fontes") if isinstance(alvo.get("fontes"), list) else []:
+                if isinstance(fonte, dict):
+                    fonte.pop("mapa", None)
+
+
 def prepare(plano_path, out_dir, jogo: str, cache_root=None, fetch=default_fetch, carregar_area=None,
             listar_areas=None, area_jogador=None) -> dict:
     plano = json.loads(Path(plano_path).read_text(encoding="utf-8"))
+    _sem_mapa(plano)
     problems = validate_plano.validate(plano)
     if problems:
         raise ValueError("plano inválido: " + "; ".join(problems))
@@ -238,8 +254,6 @@ def prepare(plano_path, out_dir, jogo: str, cache_root=None, fetch=default_fetch
     store.get(extras["almas"], "almas.png")
     store.get(extras["fogueira"], "fogueira.png")
 
-    for alvo, _fluxo in mapas_pagina.alvos(plano):
-        alvo.pop("mapa", None)  # o mapa é sempre recalculado a partir dos pontos
     icones = icones_wiki.IconesWiki(cache_root / jogo / "icones.json", fetch)
 
     def icone_local(nome: str) -> str | None:

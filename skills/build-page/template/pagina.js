@@ -8,20 +8,23 @@
   const ESTADO_FEITICO = { equipado: "Equipado", tem: "Tem", sugerido: "Sugerido" };
   const SECOES = [
     ["Plano", [["agora", "Agora"], ["equip", "Equipamento"], ["passos", "Passos"], ["fases", "Fases"]]],
-    ["Coletar", [["onde", "Onde pegar"], ["mapa", "Mapa"], ["fila", "Fila"]]],
+    ["Coletar", [["onde", "Onde pegar"], ["catalogo", "Catálogo"], ["mapa", "Mapa"], ["fila", "Fila"]]],
     ["Combate", [["dano", "Dano"], ["feiticos", "Feitiços"], ["atributos", "Atributos"]]],
     ["Registro", [["ficha", "Ficha"], ["progresso", "Progresso"], ["builds", "Builds"], ["fontes", "Fontes"]]],
   ];
-  const state = { db: null, plano: null, feitos: {}, pedidos: {}, selecao: null, vivo: null, vivoPassos: {} };
+  // base = o plano publicado (da IA ou o sem IA); plano = base + os itens marcados no Catálogo (fontes por código)
+  const state = { db: null, base: null, plano: null, feitos: {}, pedidos: {}, selecao: null, vivo: null, vivoPassos: {},
+                  quero: {}, marcados: {}, catalogo: null };
   const ui = { secao: null, passo: null, item: null, fonte: {} };
   const slug = (text) => String(text).normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "").slice(0, 180) || "pedido";
   const fogueira = (attr, value, label) => `<button class="fogueira" type="button" ${attr}="${esc(value)}" aria-pressed="false" aria-label="${esc(label)}" title="${esc(label)}" hidden><img src="icons/fogueira.png" alt=""></button>`;
   const pesq = (texto, origem) => `<button class="pesq" type="button" data-q="${esc(texto)}" data-origem="${esc(origem)}">Pesquisar</button>`;
-  function requisito(req, origem) {
+  // semPesq: requisito que o código já calculou (marcados do Catálogo): não vira pedido da fila.
+  function requisito(req, origem, semPesq) {
     if (!req) return "—";
     if (typeof req === "object" && req.item) return `<a class="req-link" href="#item-${esc(req.item)}" data-goto-item="${esc(req.item)}">${esc(req.texto)}</a>`;
     const text = typeof req === "object" ? req.texto : req;
-    return `${esc(text)}${pesq(text, origem)}`;
+    return semPesq ? esc(text) : `${esc(text)}${pesq(text, origem)}`;
   }
   const fmt = new Intl.NumberFormat("pt-BR");
   const esc = (v) => String(v ?? "").replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
@@ -112,7 +115,7 @@
       builds: p.comparacao.length, fontes: p.fontes.length, ficha: p.mudancas.length || null,
     };
     return `<nav class="menu" aria-label="Seções">${SECOES.map(([g, itens]) => `<div class="menu-g"><div class="menu-gt">${g}</div>
-      ${itens.filter(([id]) => (id !== "agora" || p.agora) && (id !== "equip" || p.equipamento)).map(([id, l]) => `<button class="menu-i" type="button" data-secao="${id}">${l}${counts[id] ? `<span class="count">${counts[id]}</span>` : id === "fila" ? '<span class="count" id="menu-fila" hidden></span>' : ""}</button>`).join("")}
+      ${itens.filter(([id]) => (id !== "agora" || p.agora) && (id !== "equip" || p.equipamento)).map(([id, l]) => `<button class="menu-i" type="button" data-secao="${id}">${l}${id === "fila" ? '<span class="count" id="menu-fila" hidden></span>' : `<span class="count" data-count="${id}"${counts[id] ? "" : " hidden"}>${counts[id] || ""}</span>`}</button>`).join("")}
     </div>`).join("")}</nav>`;
   }
 
@@ -139,12 +142,12 @@
   }
 
   function secaoPassos(p) {
-    if (!p.passos.length) return '<section><h2>Próximos passos</h2><p class="empty">Nenhum passo pendente.</p></section>';
+    if (!p.passos.length) return '<section><h2>Próximos passos</h2><p class="empty">Nenhum passo pendente. Marque itens no Catálogo: comprar, trocar, pegar, upar e equipar aparecem aqui.</p></section>';
     const ordenados = [...p.passos].sort((a, b) => ORDEM_GRUPOS.indexOf(a.tipo) - ORDEM_GRUPOS.indexOf(b.tipo));
     const numero = Object.fromEntries(ordenados.map((s, i) => [s.id, i + 1]));
     return `<section><h2>Próximos passos<small id="passos-feitos"></small></h2>${mestreDetalhe("passo", ordenados,
       (s) => `<div class="md-l1"><span class="md-fog">${fogueira("data-passo", s.id, "Marcar como feito")}</span><span class="step-no">${numero[s.id]}</span><span class="md-t">${esc(s.titulo)}</span></div>
-        <div class="md-l2"><span class="label">${esc(GRUPO[s.tipo] || s.tipo)}</span><span class="confirmado" data-confirma="${esc(s.id)}"></span><span class="vivo-chip" data-vivo-passo="${esc(s.id)}" hidden></span></div>`,
+        <div class="md-l2"><span class="label">${esc(GRUPO[s.tipo] || s.tipo)}</span>${s.marcado ? '<span class="label">· do Catálogo</span>' : ""}<span class="confirmado" data-confirma="${esc(s.id)}"></span><span class="vivo-chip" data-vivo-passo="${esc(s.id)}" hidden></span></div>`,
       (s) => `<div class="det-head" id="passo-${esc(s.id)}"><span class="det-tit">${esc(s.titulo)}</span>${selo(GRUPO[s.tipo] || s.tipo)}${s.mapa ? `<button class="pesq" type="button" data-ver-mapa="passo" data-passo-id="${esc(s.id)}">Ver no mapa</button>` : ""}</div>
         ${flow(s.fluxo)}${portasRota(s.mapa)}
         ${rows(s.dados, ["Dado", "Agora", "Depois", "Efeito"])}`, "21rem")}</section>`;
@@ -155,21 +158,23 @@
   }
 
   function secaoOnde(p) {
-    if (!p.itens.length) return '<section><h2>Onde pegar</h2><p class="empty">Nenhum item pendente.</p></section>';
+    if (!p.itens.length) return '<section><h2>Onde pegar</h2><p class="empty">Nenhum item ainda. Marque o que você quer no Catálogo: as fontes saem do jogo e do save.</p></section>';
     return `<section><h2>Onde pegar<small>mais cedo e mais rentável a partir de onde você está</small></h2>${mestreDetalhe("item", p.itens,
       (it) => {
         const m = maisCedo(it);
         const a = m ? ACESSO[m.acesso] || [m.acesso, ""] : null;
         return `<div class="md-l1">${noInline(it.item, true)}</div>
-          <div class="md-l2">${a ? selo(a[0], a[1]) : ""}<span>${esc(m ? m.rendimento || "" : "")}</span><span class="vivo-chip" data-vivo-item="${esc(it.id)}" hidden></span><span class="md-fim">${(it.fontes || []).length} fontes</span></div>`;
+          <div class="md-l2">${it.marcado ? selo("★", "destaque") : ""}${a ? selo(a[0], a[1]) : ""}<span>${esc(m ? m.rendimento || "" : "")}</span><span class="vivo-chip" data-vivo-item="${esc(it.id)}" hidden></span><span class="md-fim">${(it.fontes || []).length} fontes</span></div>`;
       },
-      (it) => `<div class="det-head" id="item-${esc(it.id)}">${node({ ...it.item, sub: `${(it.fontes || []).length} fontes` })}${it.fonte ? ext(it.fonte, "fonte na wiki", "muted") : ""}<button class="pesq" type="button" data-ver-mapa="item" data-item="${esc(it.id)}">Ver no mapa</button></div>
+      (it) => `<div class="det-head" id="item-${esc(it.id)}">${node({ ...it.item, sub: `${(it.fontes || []).length} fontes` })}${it.fonte ? ext(it.fonte, "fonte na wiki", "muted") : ""}${it.marcado
+          ? `<button class="pesq" type="button" data-quero="${esc(window.buildsmithCatalogo ? window.buildsmithCatalogo.idDoItem(it) : "")}" aria-pressed="true">Desmarcar</button>`
+          : `<button class="pesq" type="button" data-ver-mapa="item" data-item="${esc(it.id)}">Ver no mapa</button>`}</div>
         <ol class="fontes-v">${(it.fontes || []).map((f, i) => {
           const a = ACESSO[f.acesso] || [f.acesso, ""];
           return `<li class="fonte-v sel" role="button" tabindex="0" data-fonte-item="${esc(it.id)}" data-fonte="${i}">
             <div class="fonte-top"><span class="step-no">${i + 1}</span>${selo(a[0], a[1])}${(f.destaques || []).map((d) => selo(DESTAQUE[d] || d, "destaque")).join("")}<span class="fonte-rend">${esc(f.rendimento || "—")}</span>${f.mapa ? `<button class="pesq" type="button" data-ver-mapa="fonte" data-item="${esc(it.id)}" data-fonte="${i}">Ver rota no mapa</button>` : ""}</div>
             ${fluxoInline(f.fluxo)}${portasRota(f.mapa)}
-            <div class="fonte-req"><span class="label">Requisito</span>${requisito(f.requisito, it.item.nome)}</div>
+            <div class="fonte-req"><span class="label">Requisito</span>${requisito(f.requisito, it.item.nome, it.marcado)}</div>
           </li>`;
         }).join("")}</ol>
         ${rows(it.dados, ["Dado", "Agora", "Com o item", "Efeito"])}`, "18rem")}</section>`;
@@ -305,13 +310,118 @@
     return `<section><h2>Fontes</h2>${p.fontes.length ? `<ul class="sources">${p.fontes.map((f) => `<li>${f.url ? ext(f.url, esc(f.titulo)) : esc(f.titulo)}${f.data ? ` <span class="muted">· ${esc(f.data)}</span>` : ""}</li>`).join("")}</ul>` : '<p class="empty">Sem fontes.</p>'}</section>`;
   }
 
+  // ---- Catálogo (servidor local) ---------------------------------------------------------------------------
+  // Todos os itens do jogo; ★ marca (coleção "quero") e Onde pegar/Passos dos marcados saem por código, sem IA.
+  const cat = { filtro: "", busca: "", so: false, quero: "", marcados: "" };
+  function secaoCatalogo() {
+    const C = window.buildsmithCatalogo;
+    const filtros = C ? C.CATEGORIAS.map(([id, nome]) => `<button class="pesq" type="button" data-cat="${id}" aria-pressed="false">${esc(nome)}</button>`).join("") : "";
+    return `<section class="catalogo"><h2>Catálogo<small>marque o que você quer: onde pegar e os passos saem do jogo e do save, sem IA</small></h2>
+      <div class="cat-ctrl"><input type="search" id="cat-busca" placeholder="Buscar item pelo nome" aria-label="Buscar item" autocomplete="off">
+        <label class="cat-so"><input type="checkbox" id="cat-so"> só marcados</label></div>
+      <div class="cat-filtros" role="group" aria-label="Categoria">${filtros}</div>
+      <div id="cat-lista"><p class="empty">Carregando o catálogo…</p></div>
+    </section>`;
+  }
+
+  function semCatalogo() {
+    const lista = document.getElementById("cat-lista");
+    if (lista) lista.innerHTML = '<p class="empty">O catálogo precisa do servidor local (Buildsmith.exe): na página publicada ele não abre, e Onde pegar mostra o que foi publicado.</p>';
+  }
+
+  async function carregarCatalogo(tentativa = 0) {
+    const lista = document.getElementById("cat-lista");
+    try {
+      const r = await fetch("/api/ds2/catalogo", { cache: "no-store" });
+      if (r.status === 202) {
+        if (lista && !state.catalogo) lista.innerHTML = '<p class="empty">Montando o catálogo a partir dos arquivos do jogo (só na primeira vez)…</p>';
+        if (tentativa < 400) setTimeout(() => carregarCatalogo(tentativa + 1), 1500);
+        return;
+      }
+      const data = await r.json();
+      if (!r.ok) { if (lista) lista.innerHTML = `<p class="error">${esc(data.erro || "Não consegui montar o catálogo.")}</p>`; return; }
+      state.catalogo = window.buildsmithCatalogo.ordenar(Array.isArray(data.itens) ? data.itens : []);
+      pintarCatalogo();
+    } catch (e) { if (lista) lista.innerHTML = '<p class="error">O servidor local não respondeu: o catálogo volta quando ele voltar.</p>'; }
+  }
+
+  function pintarCatalogo() {
+    const C = window.buildsmithCatalogo, lista = document.getElementById("cat-lista");
+    if (!C || !lista || !state.catalogo) return;
+    app.querySelectorAll("[data-cat]").forEach((b) => b.setAttribute("aria-pressed", String(b.dataset.cat === cat.filtro)));
+    const achados = C.filtrar(state.catalogo, { cat: cat.filtro, busca: cat.busca, quero: state.quero, soMarcados: cat.so });
+    const marc = new Set(C.marcados(state.quero));
+    const linhas = achados.slice(0, C.LIMITE).map((it) => {
+      const id = String(it.id), m = marc.has(id);
+      const sub = [C.NOME_CAT[it.cat] || it.cat, C.reqTexto(it.req), C.resumoFontes(it.fontes)].filter(Boolean).join(" · ");
+      return `<li class="cat-i${m ? " marcado" : ""}">
+        <button class="estrela" type="button" data-quero="${esc(id)}" aria-pressed="${m}" aria-label="${m ? "Desmarcar" : "Marcar"} ${esc(it.nome)}" title="${m ? "Desmarcar" : "Marcar: onde pegar e passos sem IA"}"${state.db ? "" : " disabled"}>★</button>
+        ${icon(it.icone, it.nome)}<span class="cat-txt"><span class="cat-nm">${esc(it.nome)}</span><span class="cat-sub">${esc(sub)}</span></span>
+        ${m ? `<a class="req-link" href="#item-${esc(C.idNoPlano(state.plano, it))}" data-goto-item="${esc(C.idNoPlano(state.plano, it))}">onde pegar</a>` : ""}
+      </li>`;
+    }).join("");
+    const resto = achados.length > C.LIMITE ? `<p class="muted">Mostrando ${C.LIMITE} de ${fmt.format(achados.length)}: refine a busca.</p>` : "";
+    lista.innerHTML = achados.length ? `<ul class="cat-lista">${linhas}</ul>${resto}` : '<p class="empty">Nenhum item com esse filtro.</p>';
+    fallbackIcons(lista);
+  }
+
+  function contar(id, n) {
+    const el = app.querySelector(`[data-count="${id}"]`);
+    if (el) { el.hidden = !n; el.textContent = n ? String(n) : ""; }
+  }
+
+  // Busca as fontes dos marcados no servidor (todas de novo quando o save muda: fogueira acesa, item pego, porta aberta).
+  async function sincronizarMarcados(forcar = false) {
+    const C = window.buildsmithCatalogo;
+    if (!C || !forja.base) return;
+    const ids = C.marcados(state.quero);
+    if (!forcar && ids.join(",") === cat.marcados) return;
+    cat.marcados = ids.join(",");
+    contar("catalogo", ids.length);
+    Object.keys(state.marcados).forEach((id) => { if (!ids.includes(id)) delete state.marcados[id]; });
+    let esperar = false;
+    await Promise.all((forcar ? ids : ids.filter((id) => !state.marcados[id])).map(async (id) => {
+      try {
+        const r = await fetch(`${forja.base}/fontes?item=${encodeURIComponent(id)}`, { cache: "no-store" });
+        if (r.status === 202) { esperar = true; return; }
+        if (r.ok) state.marcados[id] = await r.json();
+      } catch (e) { /* servidor fora: fica o que tinha */ }
+    }));
+    if (esperar) setTimeout(() => sincronizarMarcados(true), 2000);
+    atualizarMarcados();
+  }
+
+  // Refaz só Onde pegar e Passos com o plano + os marcados (o resto da página, e o mapa, ficam como estão).
+  function atualizarMarcados() {
+    const C = window.buildsmithCatalogo;
+    if (!C || !state.base) return;
+    const p = C.juntar(state.base, C.marcados(state.quero).map((id) => state.marcados[id]).filter(Boolean));
+    state.plano = p;
+    const onde = app.querySelector('[data-pane="onde"]'), passos = app.querySelector('[data-pane="passos"]');
+    if (onde) { onde.innerHTML = secaoOnde(p); fallbackIcons(onde); }
+    if (passos) { passos.innerHTML = secaoPassos(p); fallbackIcons(passos); }
+    contar("onde", p.itens.length);
+    contar("passos", p.passos.length);
+    if (!p.itens.some((it) => it.id === ui.item)) ui.item = (p.itens[0] || {}).id;
+    if (!p.passos.some((s) => s.id === ui.passo)) ui.passo = (p.passos[0] || {}).id;
+    escolher("passo", ui.passo);
+    escolher("item", ui.item);
+    p.itens.forEach((it) => marcarFonte(it.id, ui.fonte[it.id] ?? Math.max(0, (it.fontes || []).findIndex((f) => (f.destaques || []).includes("mais_cedo")))));
+    if (state.db) app.querySelectorAll(".fogueira").forEach((b) => { b.hidden = false; });
+    pintarCatalogo();
+    if (state.vivo) {
+      aplicarVivo();
+      if (forja.base) buscarMundos(forja.base).then((m) => { state.mundos = m; aplicarVivo(); });
+    } else applyState();
+  }
+
   const app = document.getElementById("app");
   const KEY = "buildsmith-secao";
 
   function render(p) {
     state.plano = p;
     const secoes = {
-      agora: secaoAgora(p), equip: window.buildsmithEquip ? window.buildsmithEquip.html(p) : "", passos: secaoPassos(p), fases: phases(p), onde: secaoOnde(p), fila: queue(),
+      agora: secaoAgora(p), equip: window.buildsmithEquip ? window.buildsmithEquip.html(p) : "", passos: secaoPassos(p), fases: phases(p), onde: secaoOnde(p), catalogo: secaoCatalogo(), fila: queue(),
       mapa: '<section class="mapa-secao"><h2>Mapa<small>chão do jogo, andar por andar</small></h2><div id="mapa-app"></div></section>',
       dano: secaoDano(p), feiticos: spells(p), atributos: stats(p), ficha: sheet(p) + changes(p), progresso: progress(p),
       builds: builds(p), fontes: sources(p),
@@ -323,7 +433,7 @@
     if (secoes.equip && window.buildsmithEquip) window.buildsmithEquip.ligar(app.querySelector('[data-pane="equip"]'), p);
     let saved = null;
     try { saved = localStorage.getItem(KEY); } catch (e) { saved = null; }
-    const pedida = [location.hash.slice(1), saved, p.agora ? "agora" : "passos"].find((id) => id in secoes);
+    const pedida = [location.hash.slice(1), saved, p.agora ? "agora" : p.sem_ia ? "catalogo" : "passos"].find((id) => id in secoes);
     ui.passo = ui.passo && p.passos.some((s) => s.id === ui.passo) ? ui.passo : (p.passos[0] || {}).id;
     ui.item = ui.item && p.itens.some((it) => it.id === ui.item) ? ui.item : (p.itens[0] || {}).id;
     mostrar(pedida);
@@ -788,6 +898,18 @@
         else { forja.visivel = false; paintForja(); }
         return;
       }
+      const quero = ev.target.closest("[data-quero]");
+      if (quero && state.db && forja.base) {
+        const id = quero.dataset.quero, cur = state.quero[id];
+        if (!/^\d{1,10}$/.test(id)) return;
+        quero.disabled = true;
+        try { await state.db.doc(`quero/${id}`).set({ item_id: Number(id), desde: (cur && cur.desde) || new Date().toISOString(), marcado: !(cur && cur.marcado) }); }
+        catch (e) { faixa("Não consegui marcar (lista cheia ou servidor fora)."); }
+        finally { quero.disabled = false; }
+        return;
+      }
+      const filtro = ev.target.closest("[data-cat]");
+      if (filtro) { cat.filtro = cat.filtro === filtro.dataset.cat ? "" : filtro.dataset.cat; pintarCatalogo(); return; }
       const vm = ev.target.closest("[data-ver-mapa]");
       if (vm) { verNoMapa(vm); return; }
       const ask = ev.target.closest(".pesq[data-q]");
@@ -815,6 +937,12 @@
       if (!alvo || ev.target !== alvo) return;
       ev.preventDefault();
       alvo.click();
+    });
+    app.addEventListener("input", (ev) => {
+      if (ev.target.id === "cat-busca") { cat.busca = ev.target.value; pintarCatalogo(); }
+    });
+    app.addEventListener("change", (ev) => {
+      if (ev.target.id === "cat-so") { cat.so = ev.target.checked; pintarCatalogo(); }
     });
     app.addEventListener("submit", (ev) => {
       if (ev.target.id !== "fila-form") return;
@@ -909,6 +1037,7 @@
         state.vivo = v;
         state.mundos = await buscarMundos(base);
         aplicarVivo();
+        sincronizarMarcados(true);  // as fontes dos marcados dependem do save (fogueiras, inventário, portas)
       } catch (e) { /* servidor fora: a página fica com o que tinha */ }
     };
     buscar();
@@ -957,7 +1086,7 @@
   async function connect() {
     const use = window.claude && typeof window.claude.use === "function" ? window.claude.use.bind(window.claude) : null;
     const db = (use ? await use("db").catch(() => null) : null) || await localDb();
-    if (!db) { applyState(); return; }
+    if (!db) { applyState(); semCatalogo(); return; }
     state.db = db;
     app.querySelectorAll(".fogueira").forEach((b) => { b.hidden = false; });
     if (forja.base) {
@@ -973,10 +1102,22 @@
     db.collection("feitos").onSnapshot((snap) => { state.feitos = Object.fromEntries(snap.docs.map((d) => [d.id, d.data()])); applyState(); }, fail);
     db.collection("pedidos").onSnapshot((snap) => { state.pedidos = Object.fromEntries(snap.docs.map((d) => [d.id, d.data()])); applyState(); }, fail);
     db.doc("config/feiticos").onSnapshot((snap) => { state.selecao = snap.exists ? (snap.data().selecionados || []) : null; applyState(); }, fail);
+    if (forja.base && forja.jogo === "ds2") {
+      carregarCatalogo();
+      db.collection("quero").onSnapshot((snap) => {
+        const quero = Object.fromEntries(snap.docs.map((d) => [d.id, d.data()]));
+        const novo = JSON.stringify(quero);
+        if (novo === cat.quero) return;  // o servidor relê o estado a cada 2 s: só repinta quando mudou
+        cat.quero = novo;
+        state.quero = quero;
+        pintarCatalogo();
+        sincronizarMarcados();
+      }, fail);
+    } else semCatalogo();
   }
 
   fetch("plano.json", { cache: "no-store" })
     .then((r) => { if (!r.ok) throw new Error(r.status); return r.json(); })
-    .then((p) => { render(p); fallbackIcons(app); wire(); applyState(); connect(); })
+    .then((p) => { state.base = p; render(p); fallbackIcons(app); wire(); applyState(); connect(); })
     .catch(() => { app.innerHTML = '<p class="error">Não consegui ler o plano.json publicado junto com a página. Rode o /buildsmith:build de novo para republicar.</p>'; });
 })();

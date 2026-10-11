@@ -174,6 +174,10 @@ def test_plan_route_lists_the_doors_on_the_way(tmp_path):
     assert [(p["parte"], p["estado_ref"]) for p in mapa["portas"]] == [("o00_0316_0002", "porta:10160432")]
     assert mapa["portas"][0]["chave"] == {"id": 50800000, "nome": "Bastille Key", "fonte": "evento"}
     assert 1.5 <= mapa["portas"][0]["metros"] <= 2.2
+    # refazer a página a partir do plano.json publicado (abrir.py): o mapa calculado antes não barra a validação
+    prepare_page.prepare(tmp_path / "saida" / "plano.json", tmp_path / "saida", "ds2", cache_root=tmp_path / "cache",
+                         fetch=FakeFetch(), carregar_area=lambda area: {**faixa_area(), "objetos": [porta]})
+    assert final_plan(tmp_path)["itens"][0]["fontes"][0]["mapa"]["portas"][0]["chave"]["nome"] == "Bastille Key"
 
 
 def plano_com_pontos():

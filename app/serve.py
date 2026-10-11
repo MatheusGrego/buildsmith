@@ -167,6 +167,18 @@ def pages(home: Path) -> list[tuple[str, str, float]]:
     return found
 
 
+def principal(home: Path, found: list[tuple[str, str, float]]) -> tuple[str, str, float]:
+    """Página que o / abre: a mais recente com plano da IA; a sem IA (plano_base) só quando não há outra."""
+    def sem_ia(pagina) -> bool:
+        jogo, personagem, _ = pagina
+        try:
+            plano = json.loads((Path(home) / "paginas" / jogo / personagem / "plano.json").read_text(encoding="utf-8"))
+        except (OSError, ValueError):
+            return False
+        return isinstance(plano, dict) and plano.get("sem_ia") is True
+    return max(found, key=lambda x: (not sem_ia(x), x[2]))
+
+
 def personagens(home: Path, jogo: str, save=None, steam_dirs=None) -> dict:
     """Personagens do save cruzados com as páginas: o que a seleção da página mostra."""
     import ds2save  # só aqui: o servidor sobe mesmo sem pycryptodome
@@ -516,7 +528,7 @@ class Handler(BaseHTTPRequestHandler):
         if not parts:
             found = pages(self.home)
             if found and "lista" not in parse_qs(urlsplit(self.path).query):
-                jogo, personagem, _ = max(found, key=lambda x: x[2])
+                jogo, personagem, _ = principal(self.home, found)
                 self.send_response(302)
                 self.send_header("Location", f"/p/{jogo}/{personagem}/")
                 self.send_header("Content-Length", "0")
@@ -830,7 +842,7 @@ def latest_page_url(home: Path, port: int) -> str:
     found = pages(home)
     if not found:
         return f"http://127.0.0.1:{port}/"
-    jogo, personagem, _ = max(found, key=lambda x: x[2])
+    jogo, personagem, _ = principal(home, found)
     return f"http://127.0.0.1:{port}/p/{jogo}/{personagem}/"
 
 

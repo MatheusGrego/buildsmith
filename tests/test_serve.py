@@ -618,3 +618,16 @@ def test_page_icon_falls_back_to_the_icon_cache(server_catalogo):
     with pytest.raises(urllib.error.HTTPError) as err:
         get(f"{base}/p/ds2/personagem-teste/icons/Outro.png")
     assert err.value.code == 404
+
+
+def test_page_without_ai_does_not_take_the_main_page(server):
+    base, home = server
+    sem_ia = home / "paginas" / "ds2" / "personagem-dois"
+    sem_ia.mkdir(parents=True)
+    (sem_ia / "index.html").write_text("<p>ok</p>", encoding="utf-8")
+    (sem_ia / "plano.json").write_text(json.dumps({"sem_ia": True}), encoding="utf-8")  # mais nova que a da IA
+    assert serve.latest_page_url(home, 8642).endswith("/p/ds2/personagem-um/")
+    opener = urllib.request.build_opener(NoRedirect)
+    with pytest.raises(urllib.error.HTTPError) as err:
+        opener.open(urllib.request.Request(f"{base}/"), timeout=5)
+    assert err.value.headers["Location"] == "/p/ds2/personagem-um/"
