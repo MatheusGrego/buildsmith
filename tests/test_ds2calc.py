@@ -134,3 +134,105 @@ def test_cli_attunement(tmp_path, capsys):
     assert ds2calc.main(["sintonia", "--snapshot", str(snap), "--candidato", "Lizard Staff:0"]) == 0
     out = json.loads(capsys.readouterr().out)
     assert any(c["nome"] == "Lizard Staff" for c in out["catalisadores"])
+
+
+# ---- infusão --------------------------------------------------------------------------------------------------------
+
+def params_infusao():
+    """Arma 1234: reforço 900 (físico e mágico 100 → 200 em +10), escala 5 (+k = infusão k), máscara aceita 0, 2 (Mágica)
+    e 7 (Raw)."""
+    weapon = bytearray(32)
+    struct.pack_into("<i", weapon, 8, 900)
+    reinforce = bytearray(244)
+    struct.pack_into("<5f", reinforce, 0, 100.0, 100.0, 100.0, 100.0, 100.0)
+    struct.pack_into("<5f", reinforce, 36, 200.0, 200.0, 200.0, 200.0, 200.0)
+    struct.pack_into("<ii", reinforce, 72, 10, 5)
+    struct.pack_into("<f", reinforce, 160, 100.0)
+    struct.pack_into("<i", reinforce, 232, 1000)
+
+    def affect(mult, por_tipo):
+        row = bytearray(8 + 11 * 9 * 4)
+        struct.pack_into("<2f", row, 0, mult, mult)
+        for kind, valor in por_tipo.items():
+            struct.pack_into("<f", row, ds2regulation.scaling_offset(4, kind), valor)
+        return bytes(row)
+
+    stats = {}
+    for value, bonus in {10: (50, 60, 40, 40, 40, 40), 15: (55, 65, 70, 70, 70, 70), 20: (70, 80, 100, 90, 90, 90)}.items():
+        row = bytearray(40)
+        struct.pack_into("<6I", row, 12, *bonus)
+        stats[value] = bytes(row)
+    return {
+        "WeaponParam": build_param({1234: bytes(weapon)}),
+        "WeaponReinforceParam": build_param({900: bytes(reinforce)}),
+        "WeaponStatsAffectParam": build_param({5: affect(0.0, {0: 0.2, 1: 0.5}), 7: affect(1.4, {0: 0.1, 1: 0.25, 2: 0.3}),
+                                               12: affect(1.15, {0: 0.05, 1: 0.1})}),
+        "PhysicalStatsPerLevelStatValuesParam": build_param(stats),
+        "CustomAttrSpecParam": build_param({1000: struct.pack("<I", 0b10000101)}),
+    }
+
+
+STATS_INF = {"STR": 10, "DEX": 20, "INT": 20, "FTH": 10}
+
+
+def test_elemental_infusion_splits_the_base_between_physical_and_the_element():
+    calc = ds2calc.Calc(params_infusao())
+    # base +4 = 140; × 1,4 / 2 = 98 de cada lado. Físico: 98 + 0,1 × 50 + 0,25 × 80 = 123. Mágico: 98 + 0,3 × 100 (INT 20) = 128
+    assert calc.weapon_ar(1234, 4, 2, STATS_INF) == {"fisico": 123, "magico": 128}
+    partes = calc.weapon_parts(1234, 4, 2, STATS_INF)
+    assert partes["fisico"]["base"] == 98 and partes["magico"] == {"base": 98, "atributos": 30}
+
+
+def test_raw_infusion_multiplies_the_physical_base():
+    # 140 × 1,15 = 161; + 0,05 × 50 + 0,1 × 80 = 10,5 → 171
+    assert ds2calc.Calc(params_infusao()).weapon_ar(1234, 4, 7, STATS_INF) == {"fisico": 171}
+
+
+def test_no_infusion_keeps_the_physical_ar():
+    calc = ds2calc.Calc(params_infusao())
+    assert calc.weapon_ar(1234, 4, 0, STATS_INF) == {"fisico": calc.physical_ar(1234, 4, STATS_INF)} == {"fisico": 190}
+
+
+def test_infusion_outside_the_mask_is_rejected():
+    calc = ds2calc.Calc(params_infusao())
+    assert calc.infusoes(1234) == [0, 2, 7]
+    with pytest.raises(ds2calc.SaveError, match="não aceita"):
+        calc.weapon_ar(1234, 4, 3, STATS_INF)
+
+
+@pytest.mark.skipif(_real() is None, reason="DS2 não instalado nesta máquina")
+def test_real_infusions_match_the_wiki_bases():
+    """Wiki (tabela da Uchigatana): Mágica +10 = 161 físico / 161 mágico; Raw +10 = 264."""
+    calc = ds2calc.load()
+    st = {"STR": 10, "DEX": 18, "INT": 56, "FTH": 10}
+    magica = calc.weapon_parts(1700000, 10, 2, st)
+    assert magica["fisico"]["base"] == 161 and magica["magico"]["base"] == 161
+    assert calc.weapon_parts(1700000, 10, 7, st)["fisico"]["base"] == 264
+    assert calc.weapon_ar(1700000, 5, 0, {"STR": 10, "DEX": 18, "INT": 10, "FTH": 10}) == {"fisico": 218}  # menu do jogo
+
+
+@pytest.mark.skipif(_real() is None, reason="DS2 não instalado nesta máquina")
+def test_real_fire_uses_the_average_of_int_and_faith():
+    calc = ds2calc.load()
+    fogo = lambda i, f: calc.weapon_ar(1700000, 10, 1, {"STR": 10, "DEX": 18, "INT": i, "FTH": f})["fogo"]  # noqa: E731
+    assert fogo(50, 10) == fogo(40, 20) == fogo(30, 30) and fogo(50, 30) > fogo(50, 10)
+
+
+@pytest.mark.skipif(_real() is None, reason="DS2 não instalado nesta máquina")
+def test_real_mask_and_unverified_infusions():
+    calc = ds2calc.load()
+    assert calc.infusoes(1700000) == list(range(10))
+    assert calc.infusoes(3800000) == [0, 2, 4]  # cajado: Mágica e Sombria (wiki)
+    assert calc.infusoes(4010000) == [0, 3, 4]  # sino: Raio e Sombria
+    assert calc.infusoes(5400000) == [0]  # chama de piromancia
+    assert calc.conferido(1700000, 2) and calc.conferido(1700000, 0)
+    assert not calc.conferido(1700000, 8) and not calc.conferido(1700000, 9)  # Enchanted e Mundane
+    assert not calc.conferido(1320000, 2)  # Heide Knight Sword já tem raio próprio
+
+
+@pytest.mark.skipif(_real() is None, reason="DS2 não instalado nesta máquina")
+def test_cli_ar_with_infusion(capsys):
+    assert ds2calc.main(["ar", "--arma", "Uchigatana", "--nivel", "10", "--str", "10", "--dex", "18", "--int", "40",
+                         "--fth", "10", "--infusao", "magica"]) == 0
+    out = json.loads(capsys.readouterr().out)
+    assert set(out["ar"]) == {"fisico", "magico"} and out["infusao"] == "Mágica" and out["conferido"] is True

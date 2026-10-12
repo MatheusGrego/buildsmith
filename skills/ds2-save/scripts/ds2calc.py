@@ -8,6 +8,10 @@ AR físico (validado contra o menu do jogo: Uchigatana +5 = 218, Cleric's Parma 
 Catalisador (validado: Sorcerer's Staff +2 = 356, Pyromancy Flame = 204 com INT 26 / FÉ 6):
   bônus por elemento: mágico = linha INT, fogo = linha ⌊(INT+FÉ)/2⌋, raio = linha FÉ, sombrio = linha min(INT, FÉ)
   AR por elemento = floor((base + escala × bônus) × mult / 100); o menu mostra a soma dos elementos.
+Infusão k (0..9): a escala sai da linha `stats_affect_id + k` da WeaponStatsAffectParam e o multiplicador de dano dos 2
+floats do cabeçalho dela (1,4 elementais/veneno/sangramento, 1,15 Raw, 1,0 Enchanted, 0,5 Mundane). Elemento novo divide a
+base meio a meio entre físico e elemento (Uchigatana +10 Mágica = 161/161, wiki). A máscara de infusões aceitas é a linha da
+CustomAttrSpecParam apontada por WeaponReinforceParam+232 (bit k). Catalisador e elemento próprio da arma: só a escala muda.
 Feitiço: AR = floor(AR do catalisador no elemento × damage_mult do PlayerDamageParam). O menu não mostra esse
 número, então ele é "calculado" (não conferido no jogo). damage_mult 0 (teleguiados) = sem cálculo.
 """
@@ -16,6 +20,7 @@ import json
 import math
 import struct
 import sys
+import unicodedata
 
 import ds2regulation
 from ds2save import SaveError, load_item_names
@@ -23,6 +28,35 @@ from ds2save import SaveError, load_item_names
 
 ELEMENTOS = {"magico": 2, "raio": 3, "fogo": 4, "sombrio": 5}  # elemento → índice de escala na WeaponStatsAffectParam
 TIPO_DANO = {1: "magico", 2: "raio", 3: "fogo", 4: "sombrio"}  # PlayerDamageParam.damage_type_0
+# Código da infusão (byte 1 do registro do save) -> (nome, elemento novo, pedra). Ordem pela máscara do jogo: cajado aceita
+# 2 e 4 (Mágica e Sombria, wiki), sino 3 e 4 (Raio e Sombria); Magic Stone = 8 visto no save (Enchanted, wiki).
+INFUSOES = {0: ("Normal", None, None), 1: ("Fogo", "fogo", "Firedrake Stone"), 2: ("Mágica", "magico", "Faintstone"),
+            3: ("Raio", "raio", "Boltstone"), 4: ("Sombria", "sombrio", "Darknight Stone"), 5: ("Veneno", None, "Poison Stone"),
+            6: ("Sangramento", None, "Bleed Stone"), 7: ("Raw", None, "Raw Stone"), 8: ("Enchanted", None, "Magic Stone"),
+            9: ("Mundane", None, "Old Mundane Stone")}
+DIVIDE = {5, 6}  # veneno e sangramento: metade da base vira o efeito (wiki: Poison +10 = 161 físico)
+NAO_CONFERIDAS = {8, 9}  # Enchanted e Mundane: calculados pela tabela, ainda sem conferir no menu
+REINFORCE_ESPEC = 232  # WeaponReinforceParam: id da linha da CustomAttrSpecParam (máscara das infusões)
+
+
+def _piso(x: float) -> int:
+    """floor tolerante ao float das tabelas (230 × 1,4 / 2 dá 160,99999...)."""
+    return math.floor(x + 1e-6)
+
+
+def _sem_acento(t: str) -> str:
+    return unicodedata.normalize("NFKD", str(t)).encode("ascii", "ignore").decode().strip().lower()
+
+
+def infusao_codigo(texto) -> int:
+    """'2', 'magica', 'Mágica' ou 'magico' -> 2."""
+    t = _sem_acento(texto)
+    if t.isdigit() and int(t) in INFUSOES:
+        return int(t)
+    for k, (nome, elemento, _pedra) in INFUSOES.items():
+        if t in (_sem_acento(nome), elemento):
+            return k
+    raise SaveError(f"infusão desconhecida: {texto}")
 
 
 def bonus_rows(stats: dict) -> dict[str, int]:
@@ -42,6 +76,11 @@ class Calc:
         self.stat_bonus = rows(params["PhysicalStatsPerLevelStatValuesParam"], layouts["PhysicalStatsPerLevelStatValuesParam"])
         self.spells = rows(params["SpellParam"], layouts["SpellParam"]) if "SpellParam" in params else {}
         self.damage = rows(params["PlayerDamageParam"], layouts["PlayerDamageParam"]) if "PlayerDamageParam" in params else {}
+        self._mascara = {}
+        if "CustomAttrSpecParam" in params:
+            mascaras = rows(params["CustomAttrSpecParam"], {"mascara": ("I", 0)})
+            espec = rows(params["WeaponReinforceParam"], {"espec": ("i", REINFORCE_ESPEC)})
+            self._mascara = {rid: mascaras.get(v["espec"], {}).get("mascara", 0) for rid, v in espec.items()}
         self._affect_raw = params["WeaponStatsAffectParam"]
         self._affect_index = {
             row_id: offset for row_id, offset, _ in
@@ -53,35 +92,79 @@ class Calc:
         offset = self._affect_index[affect_id] + ds2regulation.scaling_offset(level, kind)
         return struct.unpack_from("<f", self._affect_raw, offset)[0]
 
-    def physical_ar(self, item_id: int, level: int, stats: dict) -> int:
+    def _linha(self, item_id: int, level: int, o_que: str = "arma") -> dict:
         if item_id not in self.weapons:
-            raise SaveError(f"arma {item_id} não está na WeaponParam")
+            raise SaveError(f"{o_que} {item_id} não está na WeaponParam")
         row = self.reinforce[self.weapons[item_id]["reinforce_id"]]
         if not 0 <= level <= row["nivel_max"]:
             raise SaveError(f"nível +{level} fora do limite da arma (+{row['nivel_max']})")
+        return row
+
+    def infusoes(self, item_id: int) -> list[int]:
+        """Códigos de infusão que a arma aceita (0 = normal sempre)."""
+        if item_id not in self.weapons:
+            raise SaveError(f"arma {item_id} não está na WeaponParam")
+        mascara = self._mascara.get(self.weapons[item_id]["reinforce_id"], 0)
+        return [0] + [k for k in range(1, 10) if mascara >> k & 1]
+
+    def _affect(self, item_id: int, row: dict, infusao: int) -> int:
+        if infusao not in INFUSOES:
+            raise SaveError(f"infusão desconhecida: {infusao}")
+        if infusao and infusao not in self.infusoes(item_id):
+            raise SaveError(f"a arma {item_id} não aceita a infusão {INFUSOES[infusao][0]}")
+        affect = row["stats_affect_id"] + infusao
+        if affect not in self._affect_index:
+            raise SaveError(f"sem escala para a infusão {INFUSOES[infusao][0]} da arma {item_id}")
+        return affect
+
+    def _mult(self, affect: int, level: int, row: dict) -> float:
+        """Multiplicador de dano da infusão (cabeçalho da linha de escala), arredondado: as tabelas são float32."""
+        a, b = struct.unpack_from("<2f", self._affect_raw, self._affect_index[affect])
+        return round(a + (b - a) * level / max(row["nivel_max"], 1), 4)
+
+    @staticmethod
+    def _proprios(row: dict) -> list[str]:
+        return [e for e in ELEMENTOS if row[f"mult_{e}"]]
+
+    def _novo_elemento(self, row: dict, infusao: int) -> str | None:
+        e = INFUSOES[infusao][1]
+        return e if e and e not in self._proprios(row) else None
+
+    def _base_fisica(self, row: dict, affect: int, level: int, infusao: int) -> float:
         base = row["dano_fisico"] + (row["dano_fisico_max"] - row["dano_fisico"]) * level / max(row["nivel_max"], 1)
-        strength = self.stat_bonus[max(1, min(99, stats["STR"]))]["bonus_str"]
-        dexterity = self.stat_bonus[max(1, min(99, stats["DEX"]))]["bonus_dex"]
-        bonus = (self._scaling(row["stats_affect_id"], level, 0) * strength
-                 + self._scaling(row["stats_affect_id"], level, 1) * dexterity)
-        return math.floor((base + bonus) * row["mult_fisico"] / 100)
+        if infusao:
+            divide = infusao in DIVIDE or self._novo_elemento(row, infusao) is not None
+            base *= self._mult(affect, level, row) * (0.5 if divide else 1)
+        return base
 
+    def _bonus_fisico(self, affect: int, level: int, stats: dict, infusao: int) -> dict[str, float]:
+        fontes = [("STR", 0, "bonus_str", stats["STR"]), ("DEX", 1, "bonus_dex", stats["DEX"])]
+        if infusao == 8:  # Enchanted: o bônus de INT entra no físico (não conferido no menu)
+            fontes.append(("INT", 2, "bonus_magico", stats["INT"]))
+        return {stat: self._scaling(affect, level, kind) * self.stat_bonus[max(1, min(99, valor))][key]
+                for stat, kind, key, valor in fontes}
 
-    def physical_parts(self, item_id: int, level: int, stats: dict) -> dict[str, int]:
+    def physical_ar(self, item_id: int, level: int, stats: dict, infusao: int = 0) -> int:
+        row = self._linha(item_id, level)
+        affect = self._affect(item_id, row, infusao)
+        bonus = sum(self._bonus_fisico(affect, level, stats, infusao).values())
+        return _piso((self._base_fisica(row, affect, level, infusao) + bonus) * row["mult_fisico"] / 100)
+
+    def physical_parts(self, item_id: int, level: int, stats: dict, infusao: int = 0) -> dict[str, int]:
         """Quanto do AR físico vem da arma e quanto vem de cada atributo (a soma pode diferir 1 do AR pelo arredondamento)."""
-        row = self.reinforce[self.weapons[item_id]["reinforce_id"]]
+        row = self._linha(item_id, level)
+        affect = self._affect(item_id, row, infusao)
         mult = row["mult_fisico"] / 100
-        base = row["dano_fisico"] + (row["dano_fisico_max"] - row["dano_fisico"]) * level / max(row["nivel_max"], 1)
-        out = {"base": math.floor(base * mult)}
-        for stat, kind, key in (("STR", 0, "bonus_str"), ("DEX", 1, "bonus_dex")):
-            valor = self._scaling(row["stats_affect_id"], level, kind) * self.stat_bonus[max(1, min(99, stats[stat]))][key]
+        out = {"base": _piso(self._base_fisica(row, affect, level, infusao) * mult)}
+        for stat, valor in self._bonus_fisico(affect, level, stats, infusao).items():
             if valor:
-                out[stat] = math.floor(valor * mult)
+                out[stat] = _piso(valor * mult)
         return out
 
-    def catalyst_parts(self, item_id: int, level: int, stats: dict) -> dict[str, dict[str, int]]:
-        """Por elemento: quanto vem do catalisador e quanto vem dos atributos (INT, FÉ ou os dois)."""
-        row = self.reinforce[self.weapons[item_id]["reinforce_id"]]
+    def catalyst_parts(self, item_id: int, level: int, stats: dict, infusao: int = 0) -> dict[str, dict[str, int]]:
+        """Por elemento próprio: quanto vem da peça e quanto vem dos atributos (INT, FÉ ou os dois)."""
+        row = self._linha(item_id, level, "catalisador")
+        affect = self._affect(item_id, row, infusao)
         lines = bonus_rows(stats)
         out = {}
         for element, kind in ELEMENTOS.items():
@@ -90,17 +173,14 @@ class Calc:
                 continue
             low, high = row[f"dano_{element}"], row[f"dano_{element}_max"]
             base = low + (high - low) * level / max(row["nivel_max"], 1)
-            bonus = self._scaling(row["stats_affect_id"], level, kind) * self.stat_bonus[lines[element]][f"bonus_{element}"]
-            out[element] = {"base": math.floor(base * mult), "atributos": math.floor(bonus * mult)}
+            bonus = self._scaling(affect, level, kind) * self.stat_bonus[lines[element]][f"bonus_{element}"]
+            out[element] = {"base": _piso(base * mult), "atributos": _piso(bonus * mult)}
         return out
 
-    def catalyst_ar(self, item_id: int, level: int, stats: dict) -> dict[str, int]:
-        """AR por elemento de um catalisador (só os elementos que ele tem)."""
-        if item_id not in self.weapons:
-            raise SaveError(f"catalisador {item_id} não está na WeaponParam")
-        row = self.reinforce[self.weapons[item_id]["reinforce_id"]]
-        if not 0 <= level <= row["nivel_max"]:
-            raise SaveError(f"nível +{level} fora do limite (+{row['nivel_max']})")
+    def catalyst_ar(self, item_id: int, level: int, stats: dict, infusao: int = 0) -> dict[str, int]:
+        """AR por elemento próprio de um catalisador (ou da arma, como a Moonlight Greatsword)."""
+        row = self._linha(item_id, level, "catalisador")
+        affect = self._affect(item_id, row, infusao)
         lines = bonus_rows(stats)
         out = {}
         for element, kind in ELEMENTOS.items():
@@ -110,8 +190,48 @@ class Calc:
             low, high = row[f"dano_{element}"], row[f"dano_{element}_max"]
             base = low + (high - low) * level / max(row["nivel_max"], 1)
             bonus = self.stat_bonus[lines[element]][f"bonus_{element}"]
-            out[element] = math.floor((base + self._scaling(row["stats_affect_id"], level, kind) * bonus) * mult / 100)
+            out[element] = _piso((base + self._scaling(affect, level, kind) * bonus) * mult / 100)
         return out
+
+    def _infundido(self, item_id: int, level: int, stats: dict, infusao: int) -> dict[str, dict[str, int]]:
+        """Elemento novo que a infusão põe na arma: metade da base × multiplicador + escala da linha k."""
+        row = self._linha(item_id, level)
+        affect = self._affect(item_id, row, infusao)
+        e = self._novo_elemento(row, infusao) if infusao else None
+        if e is None:
+            return {}
+        low, high = row[f"dano_{e}"], row[f"dano_{e}_max"]
+        base = (low + (high - low) * level / max(row["nivel_max"], 1)) * self._mult(affect, level, row) * 0.5
+        bonus = self._scaling(affect, level, ELEMENTOS[e]) * self.stat_bonus[bonus_rows(stats)[e]][f"bonus_{e}"]
+        return {e: {"base": _piso(base), "atributos": _piso(bonus), "ar": _piso(base + bonus)}}
+
+    def weapon_ar(self, item_id: int, level: int, infusao: int, stats: dict) -> dict[str, int]:
+        """AR por tipo de dano (só os maiores que 0) com a infusão: físico, elemento próprio e elemento da infusão."""
+        out = {"fisico": self.physical_ar(item_id, level, stats, infusao)}
+        for e, v in self.catalyst_ar(item_id, level, stats, infusao).items():
+            out[e] = out.get(e, 0) + v
+        for e, v in self._infundido(item_id, level, stats, infusao).items():
+            out[e] = out.get(e, 0) + v["ar"]
+        return {k: v for k, v in out.items() if v}
+
+    def weapon_parts(self, item_id: int, level: int, infusao: int, stats: dict) -> dict[str, dict]:
+        """Por tipo de dano: quanto vem da peça e quanto dos atributos, como physical_parts e catalyst_parts."""
+        out = {}
+        fis = self.physical_parts(item_id, level, stats, infusao)
+        if fis["base"] or len(fis) > 1:
+            out["fisico"] = fis
+        out.update(self.catalyst_parts(item_id, level, stats, infusao))
+        for e, v in self._infundido(item_id, level, stats, infusao).items():
+            atual = out.get(e, {"base": 0, "atributos": 0})
+            out[e] = {"base": atual["base"] + v["base"], "atributos": atual["atributos"] + v["atributos"]}
+        return out
+
+    def conferido(self, item_id: int, infusao: int) -> bool:
+        """False quando o número sai só da tabela, sem conferência no menu: Enchanted, Mundane, e infusão em peça que já
+        tem elemento próprio (catalisador, Heide Knight Sword)."""
+        if not infusao:
+            return True
+        return infusao not in NAO_CONFERIDAS and not self._proprios(self._linha(item_id, 0))
 
     def attunement(self, atn: int) -> dict:
         row = self.stat_bonus[max(1, min(99, atn))]
@@ -242,6 +362,9 @@ def main(argv=None) -> int:
     ar.add_argument("--nivel", type=int, default=0)
     ar.add_argument("--str", type=int, required=True)
     ar.add_argument("--dex", type=int, required=True)
+    ar.add_argument("--int", dest="int_", type=int, default=10)
+    ar.add_argument("--fth", type=int, default=10)
+    ar.add_argument("--infusao", help="código (0-9) ou nome: fogo, magica, raio, sombria, veneno, sangramento, raw, enchanted, mundane")
     ar.add_argument("--jogo", help="pasta Game do DS2 (padrão: Steam)")
     cat = sub.add_parser("catalisador", help="AR por elemento de um catalisador (o menu mostra a soma)")
     spell = sub.add_parser("feitico", help="AR calculado, usos e slots de um feitiço com um catalisador")
@@ -292,12 +415,17 @@ def main(argv=None) -> int:
     try:
         item_id, name = _item_id(args.arma)
         calc = load(ds2regulation.find_regulation(args.jogo))
-        value = calc.physical_ar(item_id, args.nivel, {"STR": args.str, "DEX": args.dex})
+        stats = {"STR": args.str, "DEX": args.dex, "INT": args.int_, "FTH": args.fth}
+        k = infusao_codigo(args.infusao) if args.infusao is not None else 0
+        out = {"arma": name, "item_id": item_id, "nivel": args.nivel, "str": args.str, "dex": args.dex,
+               "ar_fisico": calc.physical_ar(item_id, args.nivel, stats, k)}
+        if args.infusao is not None:
+            out.update({"int": args.int_, "fth": args.fth, "infusao": INFUSOES[k][0],
+                        "ar": calc.weapon_ar(item_id, args.nivel, k, stats), "conferido": calc.conferido(item_id, k)})
     except SaveError as err:
         print(json.dumps({"error": str(err)}, ensure_ascii=False))
         return 1
-    print(json.dumps({"arma": name, "item_id": item_id, "nivel": args.nivel, "str": args.str, "dex": args.dex,
-                      "ar_fisico": value}, ensure_ascii=False, indent=2))
+    print(json.dumps(out, ensure_ascii=False, indent=2))
     return 0
 
 
