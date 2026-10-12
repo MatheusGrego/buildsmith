@@ -20,17 +20,30 @@ class FakeCalc:
     reinforce = {1: {"nivel_max": 10}}
     spells = {ARROW: {}}
 
-    def physical_ar(self, item_id, nivel, stats):
+    def physical_ar(self, item_id, nivel, stats, infusao=0):
         return BASE[item_id] + 10 * nivel if item_id in BASE else 0
 
-    def physical_parts(self, item_id, nivel, stats):
+    def physical_parts(self, item_id, nivel, stats, infusao=0):
         return {"base": self.physical_ar(item_id, nivel, stats)}
 
-    def catalyst_ar(self, item_id, nivel, stats):
+    def catalyst_ar(self, item_id, nivel, stats, infusao=0):
         return {"magico": MAGIA[item_id] + nivel} if item_id in MAGIA else {}
 
-    def catalyst_parts(self, item_id, nivel, stats):
+    def catalyst_parts(self, item_id, nivel, stats, infusao=0):
         return {k: {"base": v} for k, v in self.catalyst_ar(item_id, nivel, stats).items()}
+
+    def weapon_ar(self, item_id, nivel, infusao, stats):
+        fogo = {"fogo": 50 + nivel} if infusao == 1 else {}
+        return {k: v for k, v in {"fisico": self.physical_ar(item_id, nivel, stats), **self.catalyst_ar(item_id, nivel, stats), **fogo}.items() if v}
+
+    def weapon_parts(self, item_id, nivel, infusao, stats):
+        return {k: {"base": v} for k, v in self.weapon_ar(item_id, nivel, infusao, stats).items()}
+
+    def infusoes(self, item_id):
+        return [0] if item_id in MAGIA else [0, 1]
+
+    def conferido(self, item_id, infusao):
+        return True
 
     def attunement(self, atn):
         return {"slots": 3, "faixa": 2}
@@ -173,7 +186,7 @@ def test_catalysts_are_compared_only_with_the_same_kind():
     calc = FakeCalc()
     calc.weapons = {**FakeCalc.weapons, chama: FakeCalc.weapons[STAFF], chama_boa: FakeCalc.weapons[STAFF]}
     fogo = {chama: 150, chama_boa: 190}
-    calc.catalyst_ar = lambda i, n, s: {"fogo": fogo[i] + n} if i in fogo else FakeCalc.catalyst_ar(calc, i, n, s)
+    calc.catalyst_ar = lambda i, n, s, k=0: {"fogo": fogo[i] + n} if i in fogo else FakeCalc.catalyst_ar(calc, i, n, s)
     snap = {**SNAP, "equipped": {**SNAP["equipped"], "hands": {**SNAP["equipped"]["hands"], "L3": {"id": chama, "name": "Pyromancy Flame"}}},
             "inventory": SNAP["inventory"] + [{"id": chama, "name": "Pyromancy Flame", "category": "MeleeWeapons", "quantity": 1, "upgrade": 0}]}
     so_cajado = ds2combate.combate(calc, FakeData(), names, snap, indice=INDICE)["equipamento"]

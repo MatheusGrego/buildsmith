@@ -177,7 +177,7 @@ def parse_slot(slot: bytes, names) -> dict:
         if item_id in EMPTY or not 1_000_000 <= item_id < 100_000_000:
             continue
         if item_id in names and names[item_id][0] in EQUIP_CATEGORIES:
-            inventory.append(item(item_id, 1, extra & 0xFF))
+            inventory.append({**item(item_id, 1, extra & 0xFF), "infusao": extra >> 8 & 0xFF})  # byte 1 = infusão (ds2calc.INFUSOES)
         else:
             inventory.append(item(item_id, quantity, None))
     for off in range(OFF_KEY_ITEMS, min(END_KEY_ITEMS, len(slot) - RECORD + 1), RECORD):

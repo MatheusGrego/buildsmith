@@ -21,6 +21,13 @@ def test_swap_argument():
     assert ds2equip.ler_troca("R3=-") == ("R3", (None, 0))
     with pytest.raises(ValueError):
         ds2equip.ler_troca("sem-igual")
+    assert ds2equip.ler_troca("R1=Old Knight Halberd:8:1") == ("R1", ("Old Knight Halberd", 8, 1))
+
+
+def test_copies_keep_the_highest_upgrade_and_its_infusion():
+    snap = {"inventory": [{"id": 3800000, "upgrade": 2, "infusao": 0}, {"id": 3800000, "upgrade": 0, "infusao": 4},
+                          {"id": 1700000, "upgrade": 8, "infusao": 8}, {"id": 60970000, "upgrade": None}]}
+    assert ds2equip.copias(snap) == {3800000: (2, 0), 1700000: (8, 8), 60970000: (0, 0)}
 
 
 def snapshot_personagem():
@@ -82,3 +89,18 @@ def test_southern_ritual_band_adds_a_slot():
     calc = ds2calc.load()
     out = ds2equip.equipamento(calc, load_item_names(), snapshot_personagem(), {"anel2": ("Southern Ritual Band", 0)})
     assert out["sintonia"]["total_agora"] == 6 and out["sintonia"]["total"] == 7  # ATN 30 = 6 slots; anel +1 (wiki)
+
+
+@pytest.mark.skipif(_real() is None, reason="DS2 não instalado nesta máquina")
+def test_real_equipped_weapon_uses_the_infusion_of_its_copy():
+    snap = snapshot_personagem()
+    for it in snap["inventory"]:
+        if it["id"] == 1700000:
+            it["infusao"] = 2
+    out = ds2equip.equipamento(ds2calc.load(), load_item_names(), snap, {"R2": ("Old Knight Halberd", 8, 3)})
+    slots = {s["slot"]: s for s in out["slots"]}
+    r1 = slots["R1"]["agora"]
+    assert r1["infusao"] == 2 and r1["infusao_nome"] == "Mágica" and set(r1["ar"]) == {"fisico", "magico"} and r1["conferido"]
+    r2 = slots["R2"]["plano"]
+    assert r2["nivel"] == 8 and r2["infusao_nome"] == "Raio" and "raio" in r2["ar"]
+    assert "Raio" in next(r["depois"] for r in out["resumo"] if r["dado"] == "R2")

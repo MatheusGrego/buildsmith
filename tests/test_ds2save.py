@@ -76,6 +76,16 @@ def test_snapshot_inventory(save_file):
     assert inv["desconhecido #12345678"]["category"] == "?"
 
 
+def test_inventory_reads_the_infusion_byte(names):
+    from conftest import id_of, make_slot
+    slot = make_slot()
+    struct.pack_into("<IIfI", slot, ds2save.OFF_INVENTORY, id_of(names, "Uchigatana"), 0, 40.0, 0x0308)  # +8, Raio
+    struct.pack_into("<4I", slot, ds2save.OFF_INVENTORY + 16, id_of(names, "Human Effigy"), 0, 15, 0)
+    inv = {i["name"]: i for i in ds2save.parse_slot(bytes(slot), names)["inventory"]}
+    assert inv["Uchigatana"]["upgrade"] == 8 and inv["Uchigatana"]["infusao"] == 3
+    assert "infusao" not in inv["Human Effigy"]
+
+
 def test_snapshot_lists_unknown_ids(save_file):
     assert 12345678 in ds2save.snapshot(save_file)["unknown_ids"]
 

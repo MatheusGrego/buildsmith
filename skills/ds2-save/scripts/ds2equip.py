@@ -3,7 +3,8 @@
 
 Números do jogo (ds2calc): AR físico ou por elemento, quanto vem da peça e quanto vem dos atributos, requisito,
 sintonia com o AR de cada feitiço no catalisador da coluna. Anéis de atributo contam (ds2calc.ANEIS_ATRIBUTO).
-Nível de upgrade do que está equipado = o maior do mesmo item no inventário (o save guarda só o id na mão).
+Nível de upgrade e infusão do que está equipado = os da cópia de maior reforço no inventário (o save guarda só o id na
+mão). Troca "R1=Old Knight Halberd:8:3" = nível 8, infusão 3 (ds2calc.INFUSOES; aceita o nome: "fogo", "magica").
 
   python ds2equip.py --snapshot S [--troca "L1=Lizard Staff:0"] [--troca "peito=Black Witch Robe"] [--troca "R3=-"]
                      [--sintonia "Great Soul Arrow,Great Heavy Soul Arrow,..."] [--atributo INT=35]
@@ -27,7 +28,17 @@ def _catalisador(cat: str, nome: str) -> bool:
     return cat == "SpellTools" or nome.endswith("Pyromancy Flame")
 
 
-def peca(calc, names, item_id: int, nivel: int, stats: dict) -> dict:
+def copias(snapshot: dict) -> dict[int, tuple[int, int]]:
+    """Item -> (reforço, infusão) da cópia de maior reforço no inventário."""
+    out = {}
+    for it in snapshot["inventory"]:
+        nivel = it.get("upgrade") or 0
+        if it["id"] not in out or nivel > out[it["id"]][0]:
+            out[it["id"]] = (nivel, it.get("infusao") or 0)
+    return out
+
+
+def peca(calc, names, item_id: int, nivel: int, stats: dict, infusao: int = 0) -> dict:
     cat, nome = names.get(item_id, ("?", f"#{item_id}"))
     out = {"id": item_id, "nome": nome, "link": WIKI + nome.replace(" ", "+"), "categoria": cat, "nivel": nivel}
     w = calc.weapons.get(item_id)
@@ -35,22 +46,22 @@ def peca(calc, names, item_id: int, nivel: int, stats: dict) -> dict:
         return out
     req = {k: w[f"req_{k.lower()}"] for k in ("STR", "DEX", "INT", "FTH") if w.get(f"req_{k.lower()}")}
     out["requisito"], out["requisito_ok"] = req, all(stats[k] >= v for k, v in req.items())
+    out.update({"infusao": infusao, "infusao_nome": ds2calc.INFUSOES[infusao][0], "conferido": calc.conferido(item_id, infusao)})
     if _catalisador(cat, nome):
         out["tipo"] = "catalisador"
-        out["ar"] = calc.catalyst_ar(item_id, nivel, stats)
-        out["partes"] = calc.catalyst_parts(item_id, nivel, stats)
+        out["ar"] = calc.catalyst_ar(item_id, nivel, stats, infusao)
+        out["partes"] = calc.catalyst_parts(item_id, nivel, stats, infusao)
         if nome in ds2calc.ESCALA_HOLLOWING:
             out["aviso"] = ds2calc.ESCALA_HOLLOWING[nome]
     else:
         out["tipo"] = "escudo" if cat == "Shields" else "arma"
-        fisico, elemento = calc.physical_ar(item_id, nivel, stats), calc.catalyst_ar(item_id, nivel, stats)
-        if elemento:  # dano elemental da própria arma (ex.: Moonlight Greatsword é só mágico, escala com INT)
-            out["ar"] = {**({"fisico": fisico} if fisico else {}), **elemento}
-            out["partes"] = {**({"fisico": calc.physical_parts(item_id, nivel, stats)} if fisico else {}),
-                             **calc.catalyst_parts(item_id, nivel, stats)}
-        else:
-            out["ar"] = fisico
-            out["partes"] = calc.physical_parts(item_id, nivel, stats)
+        ar = calc.weapon_ar(item_id, nivel, infusao, stats)
+        if set(ar) <= {"fisico"}:
+            out["ar"] = ar.get("fisico", 0)
+            out["partes"] = calc.physical_parts(item_id, nivel, stats, infusao)
+        else:  # dano elemental próprio (Moonlight Greatsword) ou da infusão
+            out["ar"] = ar
+            out["partes"] = calc.weapon_parts(item_id, nivel, infusao, stats)
     return out
 
 
@@ -58,6 +69,8 @@ def _resumo_peca(p: dict | None) -> str:
     if not p:
         return "vazio"
     nivel = f" +{p['nivel']}" if p.get("tipo") in ("arma", "escudo", "catalisador") else ""
+    if p.get("infusao"):
+        nivel += f" {p['infusao_nome']}"
     if isinstance(p.get("ar"), dict):
         return f"{p['nome']}{nivel} · " + " · ".join(f"{ELEM[k]} {v}" for k, v in p["ar"].items())
     if p.get("ar") is not None:
@@ -92,15 +105,13 @@ def _sintonia(calc, names_por_nome, lista: list[str], cats: list[dict], stats: d
 
 def equipamento(calc, names: dict, snapshot: dict, trocas: dict | None = None, sintonia_plano: list[str] | None = None,
                 atributos: dict | None = None) -> dict:
-    """trocas: slot -> (nome ou None para vazio, nível). Devolve agora × plano por slot, sintonia e o resumo."""
+    """trocas: slot -> (nome ou None para vazio, nível[, infusão]). Devolve agora × plano por slot, sintonia e o resumo."""
     trocas = trocas or {}
     por_nome = {}
     for item_id, (_cat, nome) in names.items():
         por_nome.setdefault(nome.casefold(), item_id)
         por_nome[f"#nome:{item_id}"] = nome
-    nivel_max = {}
-    for it in snapshot["inventory"]:
-        nivel_max[it["id"]] = max(nivel_max.get(it["id"], 0), it.get("upgrade") or 0)
+    tem = copias(snapshot)
     eq = snapshot["equipped"]
     vazio = lambda i: i == EMPTY_HAND or i - ARMOR_ITEM_OFFSET in EMPTY_ARMOR  # noqa: E731 (snapshot antigo)
     ids_agora = {**{k: v["id"] for k, v in eq.get("hands", {}).items()}, **{k: v["id"] for k, v in eq.get("armor", {}).items()},
@@ -108,7 +119,7 @@ def equipamento(calc, names: dict, snapshot: dict, trocas: dict | None = None, s
     ids_agora = {k: v for k, v in ids_agora.items() if not vazio(v)}
     ids_plano = dict(ids_agora)
     niveis_plano = {}
-    for slot, (nome, nivel) in trocas.items():
+    for slot, (nome, nivel, *infusao) in trocas.items():
         if not any(slot in s for _g, s in SLOTS):
             raise SaveError(f"slot desconhecido: {slot}")
         if nome is None:
@@ -117,7 +128,8 @@ def equipamento(calc, names: dict, snapshot: dict, trocas: dict | None = None, s
         item_id = por_nome.get(nome.casefold())
         if item_id is None:
             raise SaveError(f"item '{nome}' não encontrado")
-        ids_plano[slot], niveis_plano[slot] = item_id, nivel
+        ids_plano[slot] = item_id
+        niveis_plano[slot] = (nivel, infusao[0] if infusao else tem.get(item_id, (0, 0))[1])
 
     def stats_de(ids: dict, extra: dict | None) -> tuple[dict, list[str]]:
         aneis = [{"name": names.get(ids[s], ("", ""))[1]} for s in ("anel1", "anel2", "anel3", "anel4") if s in ids]
@@ -129,13 +141,15 @@ def equipamento(calc, names: dict, snapshot: dict, trocas: dict | None = None, s
     slots, resumo = [], []
     for grupo, nomes in SLOTS:
         for slot in nomes:
-            a = peca(calc, names, ids_agora[slot], nivel_max.get(ids_agora[slot], 0), st_agora) if slot in ids_agora else None
+            a = peca(calc, names, ids_agora[slot], *tem.get(ids_agora[slot], (0, 0))[:1], st_agora,
+                     tem.get(ids_agora[slot], (0, 0))[1]) if slot in ids_agora else None
             if slot in ids_plano:
-                nivel = niveis_plano.get(slot, nivel_max.get(ids_plano[slot], 0))
-                b = peca(calc, names, ids_plano[slot], nivel, st_plano)
+                nivel, infusao = niveis_plano.get(slot, tem.get(ids_plano[slot], (0, 0)))
+                b = peca(calc, names, ids_plano[slot], nivel, st_plano, infusao)
             else:
                 b = None
-            muda = (a and a["id"], a and a["nivel"]) != (b and b["id"], b and b["nivel"]) or _numero(a) != _numero(b)
+            chave = lambda p: (p and p["id"], p and p["nivel"], p and p.get("infusao"))  # noqa: E731
+            muda = chave(a) != chave(b) or _numero(a) != _numero(b)
             slots.append({"slot": slot, "nome_slot": NOMES_SLOT.get(slot, slot), "grupo": grupo, "agora": a, "plano": b,
                           "muda": bool(muda)})
             if muda:
@@ -178,8 +192,9 @@ def ler_troca(texto: str) -> tuple[str, tuple[str | None, int]]:
     valor = valor.strip()
     if valor in ("-", ""):
         return slot.strip(), (None, 0)
-    m = re.match(r"^(.*?)(?::(\d+))?$", valor)
-    return slot.strip(), (m.group(1).strip(), int(m.group(2) or 0))
+    m = re.match(r"^(.*?)(?::(\d+))?(?::([^:]+))?$", valor)
+    troca = (m.group(1).strip(), int(m.group(2) or 0))
+    return slot.strip(), troca + ((ds2calc.infusao_codigo(m.group(3)),) if m.group(3) else ())
 
 
 def main(argv=None) -> int:
