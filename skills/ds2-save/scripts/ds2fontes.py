@@ -11,7 +11,9 @@ atributos, inventário, equipado, chefes derrotados) e devolve as fontes com:
 - faltam: almas (preço acima do que você tem), chave (porta fechada sem a chave), alma de chefe (troca);
 - destaques: uma "mais_cedo" (a primeira que dá para pegar: área liberada, mais perto da fogueira) e no máximo uma
   "mais_rentavel" (loja de estoque ilimitado ou, sem ela, drop repetível de inimigo);
-- feito: item do chão já pego ou chefe já derrotado (fica por último);
+- feito: item do chão já pego (fica por último);
+- ascetic: recompensa de chefe já derrotado volta com a Bonfire Ascetic queimada na fogueira da área (a área vira o
+  ciclo NG+ seguinte; wiki Bonfire Ascetic): conta como repetível e pede a Ascetic quando ela não está no inventário;
 - condicao: o que só a wiki diz (loja que abre por evento, chance de drop) aparece como "ver na wiki".
 E o requisito do item contra os atributos (com anel que soma atributo): quantos níveis e almas faltam (level_costs).
 
@@ -32,6 +34,7 @@ WIKI = "https://darksouls2.wiki.fextralife.com/"
 EQUIPAVEIS = {"arma", "escudo", "catalisador", "armadura", "anel", "feitico", "milagre", "piromancia", "hex"}
 CONDICAO_LOJA = "a loja pode abrir só depois de um evento — ver na wiki"
 CONDICAO_DROP = "chance de drop não lida — ver na wiki"
+ASCETIC = "Bonfire Ascetic"
 PASSO_DA_FONTE = {"compra": "compra", "troca": "troca", "chao": "explorar", "drop": "farm", "recompensa": "chefe"}
 NO_ITEM = {"bau": "baú", "cadaver": "cadáver"}
 
@@ -169,6 +172,8 @@ def _rendimento(f: dict) -> str:
         return f"×{f['qtd']} · uma vez"
     if t == "drop":
         return f"drop de {f['quantos']} inimigo{'s' if f['quantos'] != 1 else ''} · repete"
+    if f.get("ascetic"):
+        return f"1 por {ASCETIC} · área vira NG+"
     return "1 · uma vez"
 
 
@@ -217,9 +222,10 @@ def fontes(item: dict, indice: dict, pers: dict, carregar_area=None, estado_area
         if f["tipo"] == "chao" and f.get("area"):
             st = estado(f["area"]) or {}
             f["feito"] = bool((st.get("lotes") or {}).get(str(f["lote"])))
-        if f["tipo"] == "recompensa":
-            f["feito"] = f["chefe"].casefold() in derrotados
+        f["ascetic"] = f["tipo"] == "recompensa" and f["chefe"].casefold() in derrotados
         f["faltam"] = []
+        if f["ascetic"] and not tem.get(ASCETIC.casefold()):
+            f["faltam"].append({"tipo": "item", "item": ASCETIC})
         if f["tipo"] == "troca":
             c = f.get("chefe") or {}
             f["chefe_derrotado"] = bool(c.get("nome")) and c["nome"].casefold() in derrotados
@@ -254,9 +260,10 @@ def fontes(item: dict, indice: dict, pers: dict, carregar_area=None, estado_area
     if out:
         cedo = next((f for f in out if not f["feito"]), out[0])
         cedo["destaques"].append("mais_cedo")
-        rentaveis = [f for f in out if not f["feito"] and (f["tipo"] == "compra" and f["estoque"] is None or f["tipo"] == "drop")]
+        rentaveis = [f for f in out if not f["feito"]
+                     and (f["tipo"] == "compra" and f["estoque"] is None or f["tipo"] == "drop" or f["ascetic"])]
         if rentaveis:
-            melhor = min(rentaveis, key=lambda f: (ACESSOS.index(f["acesso"]), f["tipo"] != "compra",
+            melhor = min(rentaveis, key=lambda f: (ACESSOS.index(f["acesso"]), f["ascetic"], f["tipo"] != "compra",
                                                    f.get("preco", 0), -f.get("quantos", 0)))
             melhor["destaques"].append("mais_rentavel")
     return {"item": {k: item[k] for k in ("id", "nome", "cat", "req") if k in item} | ({"icone": item["icone"]} if item.get("icone") else {}),
@@ -313,6 +320,11 @@ def fluxo(f: dict, res: dict) -> list[dict]:
     if t == "drop":
         nome = f.get("inimigo") or f"inimigo {f['tipo_inimigo']}"
         return _fogueira(f, area) + [_com_ponto(_no("inimigo", nome, area, f.get("wiki")), _ponto(f, 2)), _no_item(res, "drop")]
+    if f.get("ascetic"):
+        falta = any(x["tipo"] == "item" and x["item"] == ASCETIC for x in f["faltam"])
+        ascetic = {**_no("item", ASCETIC, "falta" if falta else "queimar na fogueira"), **({} if falta else {"tem": True})}
+        return _fogueira(f, area) + [ascetic, _com_ponto(_no("chefe", f["chefe"], "NG+ · " + area), _ponto(f, 2)),
+                                     _no_item(res, "recompensa")]
     return _fogueira(f, area) + [_com_ponto(_no("chefe", f["chefe"], area), _ponto(f, 2)), _no_item(res, "recompensa")]
 
 
@@ -322,7 +334,11 @@ def _texto_falta(x: dict) -> str:
     if x["tipo"] == "chave":
         return f"falta {x['item']} ({x['porta']})"
     if x["tipo"] == "alma":
+        if x.get("derrotado"):
+            return f"falta {x['item']} ({ASCETIC} + {x['chefe']} de novo)"
         return f"falta {x['item']}" + (f" ({x['chefe']})" if x.get("chefe") else "")
+    if x["tipo"] == "item":
+        return f"falta {x['item']}"
     return ""
 
 
@@ -371,7 +387,8 @@ def passos(res: dict, pers: dict) -> list[dict]:
         cedo = next((f for f in res["fontes"] if "mais_cedo" in f["destaques"]), None)
         if cedo and not cedo["feito"]:
             tipo = PASSO_DA_FONTE[cedo["tipo"]]
-            verbo = {"compra": "Comprar", "troca": "Trocar por", "explorar": "Pegar", "farm": "Farmar", "chefe": "Derrotar"}[tipo]
+            verbo = {"compra": "Comprar", "troca": "Trocar por", "explorar": "Pegar", "farm": "Farmar",
+                     "chefe": f"{ASCETIC} +" if cedo.get("ascetic") else "Derrotar"}[tipo]
             alvo = cedo["chefe"] if tipo == "chefe" else it["nome"]
             passo = {"id": f"{base}-{tipo}", "tipo": tipo, "titulo": _curto(f"{verbo} {alvo}", 40), "fluxo": fluxo(cedo, res),
                      "dados": []}

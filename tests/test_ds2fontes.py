@@ -131,9 +131,28 @@ def test_trade_needs_the_boss_soul():
     assert not any(x["tipo"] == "alma" for x in calcular(ARMA, pers=com_alma)["fontes"][0]["faltam"])
 
 
-def test_boss_reward_already_taken_when_the_boss_is_dead():
+def test_boss_reward_repeats_with_a_bonfire_ascetic_when_the_boss_is_dead():
     res = calcular(ALMA, pers={**PERS, "chefes": ["Flexile Sentry"]})
-    assert res["fontes"][0]["feito"] and res["fontes"][0]["rota"]["metros"] == pytest.approx(19.0)
+    f = res["fontes"][0]
+    assert not f["feito"] and f["ascetic"] and f["rota"]["metros"] == pytest.approx(19.0)
+    assert "Bonfire Ascetic" in f["rendimento"] and "mais_rentavel" in f["destaques"]
+    assert {"tipo": "item", "item": "Bonfire Ascetic"} in f["faltam"]
+    com = calcular(ALMA, pers={**PERS, "chefes": ["Flexile Sentry"], "itens": [{"nome": "Bonfire Ascetic", "qtd": 1}]})
+    assert not com["fontes"][0]["faltam"]
+    nos = ds2fontes.fluxo(com["fontes"][0], com)
+    assert [n["tipo"] for n in nos] == ["local", "item", "chefe", "item"] and nos[1]["nome"] == "Bonfire Ascetic" and nos[1]["tem"]
+    passo = ds2fontes.passos(com, PERS)[0]
+    assert passo["tipo"] == "chefe" and "Ascetic" in passo["titulo"]
+
+
+def test_boss_reward_while_the_boss_lives_needs_no_ascetic():
+    f = calcular(ALMA)["fontes"][0]
+    assert not f["ascetic"] and f["rendimento"] == "1 · uma vez" and not f["faltam"]
+
+
+def test_trade_soul_of_a_dead_boss_points_to_the_ascetic():
+    troca = calcular(ARMA, pers={**PERS, "chefes": ["Flexile Sentry"]})["fontes"][0]
+    assert "Bonfire Ascetic" in ds2fontes.requisito_texto(troca)
 
 
 def test_requirement_gap_in_levels_and_souls():
