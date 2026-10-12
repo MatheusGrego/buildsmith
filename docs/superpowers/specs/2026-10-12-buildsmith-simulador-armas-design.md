@@ -21,10 +21,15 @@ mostrar "agora +0 normal → meta +8 Fogo · faltam 3 Titanite Chunk, 1 Firedrak
   = 161 físico + 161 do elemento (bate com a wiki); Raw +10 = 230 × 1,15 = 264 (bate com a wiki).
 - **Código no save:** byte 1 do campo `extra` do registro de inventário (byte 0 = reforço). Visto: Uchigatana `0x8` → `0x808`
   depois de 1 Magic Stone.
-- **Código ↔ pedra:** a ordem dos ids das pedras é a ordem dos códigos (Magic Stone = 8 confirmado no save):
-  1 Faintstone (Mágica), 2 Boltstone (Raio), 3 Firedrake Stone (Fogo), 4 Darknight Stone (Sombria), 5 Poison Stone,
-  6 Bleed Stone, 7 Raw Stone, 8 Magic Stone (Enchanted), 9 Old Mundane Stone. Palestone tira a infusão.
-- **Arma aceita a infusão k** quando a linha `stats_affect_id + k` existe (arma de alma de chefe só tem a linha base).
+- **Arma aceita a infusão k** quando o bit k da máscara está ligado: `WeaponReinforceParam` +232 = id da linha em
+  `CustomAttrSpecParam` (4 bytes = máscara). Ex.: espadas 0x3ff (todas), cajados 0x15 (0, 2, 4), sinos 0x19 (0, 3, 4),
+  chamas de piromancia id 0 (nenhuma).
+- **Código ↔ elemento ↔ pedra:** pela máscara e pela wiki (cajado aceita Mágica e Sombria; sino aceita Raio e Sombria; Lizard
+  Staff "infundir com Faintstone"): 1 Fogo (Firedrake Stone), 2 Mágica (Faintstone), 3 Raio (Boltstone), 4 Sombria
+  (Darknight Stone), 5 Veneno (Poison Stone), 6 Sangramento (Bleed Stone), 7 Raw (Raw Stone), 8 Enchanted (Magic Stone,
+  confirmado no save), 9 Mundane (Old Mundane Stone). Palestone tira a infusão. A ordem dos ids das pedras **não** é a dos
+  códigos.
+- As 10 linhas de escala existem para toda arma, até as que não aceitam infusão: a permissão vem só da máscara.
 - **Serviço:** só o Steady Hand McDuff infunde: 2.000 almas + a pedra; tirar: 1.000 almas + Palestone (wiki, cache
   `steady-hand-mcduff.md`).
 
@@ -34,8 +39,9 @@ conferido" até um teste com o valor do menu do jogo.
 ## Componentes
 
 1. **`ds2calc.Calc.weapon_ar(item_id, nivel, infusao, stats)`** → `{"fisico": n, "magico": n, ...}` só com os elementos > 0, e
-   `weapon_parts(...)` com base e atributos por elemento (como `catalyst_parts`). `infusao=0` dá o mesmo que `physical_ar` hoje.
-   `infusoes(item_id)` → códigos aceitos. Constantes `INFUSOES` (código → nome, elemento, pedra id/nome). Linha de bônus do
+   `weapon_parts(...)` com base e atributos por elemento (como `catalyst_parts`). `infusao=0` dá o mesmo que `physical_ar` hoje
+   (e o elemento próprio da arma, como em `ds2equip.peca`). `infusoes(item_id)` → códigos aceitos (máscara). Catalisador
+   infundido: o multiplicador do cabeçalho é 1,0 e só a escala muda (AR do catalisador pela linha `affect + k`). Constantes `INFUSOES` (código → nome, elemento, pedra id/nome). Linha de bônus do
    elemento pelos atributos já existe (`bonus_rows`). CLI: `ds2calc ar --infusao fogo|3`.
 2. **`ds2save.parse_slot`**: item de equipamento ganha `"infusao": k` (0 = nenhuma). `ds2equip.peca` usa a infusão da cópia
    escolhida (a de maior reforço; o save só guarda o id na mão) e mostra o nome da infusão no `sub`.
