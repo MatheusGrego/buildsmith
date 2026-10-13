@@ -1049,12 +1049,14 @@
   function aplicarCombate() {
     const c = state.combate;
     if (!c || !state.base) return;
-    const vivo = { equipamento: c.equipamento, feiticos: c.feiticos, dano: c.dano };
+    const vivo = { equipamento: c.equipamento, feiticos: c.feiticos, dano: c.dano, armas: c.armas || [], metas: c.metas || [] };
     state.base = { ...state.base, ...vivo };
     state.plano = { ...state.plano, ...vivo };
     const p = state.plano;
     const eqPane = app.querySelector('[data-pane="equip"]');
-    if (eqPane && window.buildsmithEquip) { eqPane.innerHTML = window.buildsmithEquip.html(p); window.buildsmithEquip.ligar(eqPane, p); }
+    // Simular e metas (equip.js) só com o servidor: /simular e a coleção metas; gravar refaz o /combate.
+    const equipCtx = forja.base ? { base: forja.base, headers: HEADERS, atualizar: () => buscarCombate(forja.base) } : null;
+    if (eqPane && window.buildsmithEquip) { eqPane.innerHTML = window.buildsmithEquip.html(p); window.buildsmithEquip.ligar(eqPane, p, equipCtx); }
     const fe = app.querySelector('[data-pane="feiticos"]');
     if (fe) { fe.innerHTML = spells(p); fallbackIcons(fe); }
     const da = app.querySelector('[data-pane="dano"]');

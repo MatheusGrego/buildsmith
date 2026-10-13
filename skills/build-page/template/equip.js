@@ -39,9 +39,23 @@
   function requisitoTexto(req) {
     return req && Object.keys(req).length ? Object.entries(req).map(([k, v]) => `${ATR[k] || k} ${v}`).join(" · ") : "—";
   }
+  // Simulador (servidor local, /simular e coleção metas): reforço e infusão de uma arma, calculados por código.
+  const metaTexto = (m) => `+${m.nivel}${m.infusao ? ` ${m.infusao_nome || `infusão ${m.infusao}`}` : ""}`;
+  function faltaTexto(f) {
+    const partes = (f.materiais || []).map((m) => `${fmt.format(m.qtd)} ${m.item} (tem ${fmt.format(m.tem)})`);
+    if (f.almas) partes.push(`${fmt.format(f.almas)} almas (tem ${fmt.format(f.almas_tem || 0)})`);
+    return partes.length ? partes.join(" · ") : "nada: já está assim";
+  }
+  const infusaoOpcoes = (lista) => (lista || []).map((i) => ({ k: i.k, rotulo: i.pedra ? `${i.nome} · ${i.pedra}` : i.nome }));
+  function total(p) {
+    if (!p || p.ar == null) return null;
+    return typeof p.ar === "number" ? p.ar : Object.values(p.ar).reduce((a, b) => a + b, 0);
+  }
 
   // ---- desenho ------------------------------------------------------------------------------------------
-  const ui = { modo: "comparar", slot: null };
+  // sim: o que está nos seletores do Simular (slot, item, nivel, infusao); res: a última resposta do /simular.
+  const ui = { modo: "comparar", slot: null, sim: null, res: null, erro: null, carregando: false, pedido: 0 };
+  let ctx = null; // servidor local: { base, headers, atualizar }; sem ele (página publicada) não há Simular nem metas
 
   function tile(p, extra) {
     if (!p) return `<span class="eq-tile eq-vazio${extra ? " " + extra : ""}"></span>`;
@@ -57,10 +71,11 @@
       : tile(lado);
     const d = delta(s.agora, s.plano);
     const ganho = ui.modo !== "agora" && s.muda && d ? `<span class="eq-d ${d > 0 ? "pos" : "neg"}">${d > 0 ? "+" : "−"}${fmt.format(Math.abs(d))}</span>` : "";
-    const rotulo = `${s.nome_slot || s.slot}: ${lado ? lado.nome : "vazio"}`;
+    const meta = s.meta ? `<span class="eq-meta-t">meta ${esc(metaTexto(s.meta))}</span>` : "";
+    const rotulo = `${s.nome_slot || s.slot}: ${lado ? lado.nome : "vazio"}${s.meta ? `, meta ${metaTexto(s.meta)}` : ""}`;
     return `<button type="button" class="eq-slot${ui.modo !== "agora" && s.muda ? " eq-muda" : ""}" data-eq-slot="${esc(s.slot)}"
       aria-pressed="${ui.slot === s.slot}" aria-label="${esc(rotulo)}"><span class="eq-tiles">${tiles}</span>
-      <span class="eq-rot">${esc(s.nome_slot || s.slot)}${ganho}</span><span class="eq-nome">${esc(lado ? lado.nome : "vazio")}</span></button>`;
+      <span class="eq-rot">${esc(s.nome_slot || s.slot)}${ganho}</span><span class="eq-nome">${esc(lado ? lado.nome : "vazio")}</span>${meta}</button>`;
   }
 
   function sintoniaHtml(eq) {
@@ -102,7 +117,66 @@
       <div class="tw"><table><thead><tr><th></th><th>Agora</th><th>Plano</th></tr></thead><tbody>
       ${linhas.map(([rot, f]) => `<tr><th scope="row">${rot}</th><td>${col(s.agora, f)}</td><td>${col(s.plano, f)}</td></tr>`).join("")}
       </tbody></table></div>${avisos}${onde}
-      <p class="muted eq-nota">AR e "vem de": regras do jogo com seus atributos${(eq.atributos && eq.atributos.aneis_plano || []).length ? ` (${esc(eq.atributos.aneis_plano.join(", "))})` : ""}. Letras: tabela de upgrade da wiki${fonte ? ` · <a href="${esc(fonte)}" target="_blank" rel="noopener noreferrer">fonte</a>` : ""}.</p>`;
+      <p class="muted eq-nota">AR e "vem de": regras do jogo com seus atributos${(eq.atributos && eq.atributos.aneis_plano || []).length ? ` (${esc(eq.atributos.aneis_plano.join(", "))})` : ""}. Letras: tabela de upgrade da wiki${fonte ? ` · <a href="${esc(fonte)}" target="_blank" rel="noopener noreferrer">fonte</a>` : ""}.</p>
+      ${metaHtml(s)}${simHtml(s, p)}`;
+  }
+
+  // Resultado do simulador (meta do slot ou o que está nos seletores): AR e diferença para a cópia que você tem.
+  function resultadoLinhas(r) {
+    const d = r.agora ? total(r.peca) - total(r.agora) : null;
+    const dif = d ? ` <span class="${d > 0 ? "pos" : "neg"}">${d > 0 ? "+" : "−"}${fmt.format(Math.abs(d))}</span>` : "";
+    const linhas = [
+      ["AR", `${esc(arTexto(r.peca.ar))}${dif}`],
+      ["Você tem", r.agora ? `${esc(metaTexto(r.agora))} · ${esc(arTexto(r.agora.ar))}` : "não está no inventário"],
+      ["Requisito", `<span class="${r.peca.requisito_ok === false ? "neg" : ""}">${esc(requisitoTexto(r.peca.requisito))}</span>`],
+      ["Falta", esc(faltaTexto(r.falta))],
+      ["Onde", esc(r.falta.ferreiro || "—")],
+    ];
+    const avisos = (r.falta.avisos || []).map((a) => `<p class="eq-alerta">${esc(a)}</p>`).join("");
+    const conf = r.conferido ? "" : '<p class="eq-alerta">Calculado pela tabela do jogo, ainda não conferido no menu.</p>';
+    return `<div class="tw"><table><tbody>${linhas.map(([k, v]) => `<tr><th scope="row">${k}</th><td>${v}</td></tr>`).join("")}</tbody></table></div>${avisos}${conf}`;
+  }
+
+  function metaHtml(s) {
+    if (!s.meta) return "";
+    return `<div class="eq-bloco"><h3>Meta<small>${esc(s.meta.item.nome)} ${esc(metaTexto(s.meta))}</small></h3>${resultadoLinhas(s.meta)}</div>`;
+  }
+
+  function simHtml(s, p) {
+    if (!ctx || !["direita", "esquerda"].includes(s.grupo) || !ui.sim || ui.sim.slot !== s.slot) return "";
+    const armas = p.armas || [];
+    const sim = ui.sim;
+    const res = ui.res && ui.res.item.id === sim.item ? ui.res : null;
+    const opcao = (v, rot, sel) => `<option value="${esc(v)}"${sel ? " selected" : ""}>${esc(rot)}</option>`;
+    const itens = armas.map((a) => opcao(a.id, `${a.nome} ${metaTexto(a)}`, a.id === sim.item)).join("");
+    const maximo = res ? res.nivel_max : Math.max(sim.nivel, 10);
+    const niveis = Array.from({ length: maximo + 1 }, (_, n) => opcao(n, `+${n}`, n === sim.nivel)).join("");
+    const infs = infusaoOpcoes(res ? res.infusoes : [{ k: sim.infusao, nome: "…" }]).map((i) => opcao(i.k, i.rotulo, i.k === sim.infusao)).join("");
+    const ligada = (p.metas || []).find((m) => m.item_id === sim.item);
+    const igual = ligada && ligada.nivel === sim.nivel && ligada.infusao === sim.infusao;
+    const botao = igual
+      ? '<button type="button" class="pesq" data-meta="tirar">Tirar meta</button>'
+      : `<button type="button" class="pesq" data-meta="virar"${res ? "" : " disabled"}>${ligada ? `Trocar meta (era ${esc(metaTexto(ligada))})` : "Virar meta"}</button>`;
+    const corpoRes = ui.erro ? `<p class="eq-alerta">${esc(ui.erro)}</p>` : ui.carregando && !res ? '<p class="muted">calculando…</p>' : res ? resultadoLinhas(res) : "";
+    return `<div class="eq-bloco eq-sim"><h3>Simular<small>reforço e infusão, pelas regras do jogo</small></h3>
+      <div class="eq-sim-campos">
+        <label>Arma<select data-sim="item">${itens}</select></label>
+        <label>Reforço<select data-sim="nivel">${niveis}</select></label>
+        <label>Infusão<select data-sim="infusao">${infs}</select></label>
+      </div>${corpoRes}${botao}</div>`;
+  }
+
+  function metasHtml(p) {
+    const lista = p.metas || [];
+    if (!ctx || !lista.length) return "";
+    const itens = lista.map((m) => {
+      const r = m.resultado;
+      const nome = r ? r.item.nome : m.nome;
+      const info = r ? `AR ${arTexto(r.peca.ar)} · falta: ${faltaTexto(r.falta)}` : m.erro;
+      return `<li><span class="eq-mn">${esc(nome)} <b>${esc(metaTexto(r || m))}</b></span><span class="eq-mi">${esc(info)}</span>
+        <button type="button" class="pesq" data-meta-tirar="${esc(m.item_id)}">Tirar</button></li>`;
+    }).join("");
+    return `<h3 class="eq-rt">Metas</h3><ul class="eq-metas">${itens}</ul>`;
   }
 
   function corpo(eq, p) {
@@ -114,7 +188,8 @@
     const futuro = eq.origem && eq.origem !== "plano" ? "Melhor" : "Plano";
     return `<div class="eq-modos" role="group" aria-label="Mostrar">${MODOS.map(([m, l]) => `<button type="button" class="eq-modo" data-eq-modo="${m}" aria-pressed="${ui.modo === m}">${m === "plano" ? futuro : l}</button>`).join("")}</div>
       <div class="eq-tela"><div class="eq-inv">${grupos}${sintoniaHtml(eq)}</div><aside class="eq-det" aria-live="polite">${detalhe(eq, p, ui.slot)}</aside></div>
-      ${resumo ? `<h3 class="eq-rt">O que muda</h3><div class="tw"><table><thead><tr><th>Slot</th><th>Agora</th><th>${futuro}</th><th>Efeito</th></tr></thead><tbody>${resumo}</tbody></table></div>` : ""}`;
+      ${resumo ? `<h3 class="eq-rt">O que muda</h3><div class="tw"><table><thead><tr><th>Slot</th><th>Agora</th><th>${futuro}</th><th>Efeito</th></tr></thead><tbody>${resumo}</tbody></table></div>` : ""}
+      ${metasHtml(p)}`;
   }
 
   function html(p) {
@@ -124,16 +199,84 @@
     return `<section class="eq"><h2>Equipamento<small>agora × ${esc(DESTINO[eq.origem] || "plano")}</small></h2><div class="eq-app">${corpo(eq, p)}</div></section>`;
   }
 
-  function ligar(raiz, p) {
+  // Simular: começa com a arma do slot (na meta dela, se houver) e refaz a conta a cada mudança de seletor.
+  function iniciarSim(eq, p) {
+    const s = (eq.slots || []).find((x) => x.slot === ui.slot);
+    if (!ctx || !s || !["direita", "esquerda"].includes(s.grupo)) return false;
+    if (ui.sim && ui.sim.slot === s.slot) return false;
+    const base = s.agora && (p.armas || []).find((a) => a.id === s.agora.id) || (p.armas || [])[0];
+    if (!base) return false;
+    const meta = s.meta && s.meta.item.id === base.id ? s.meta : null;
+    ui.sim = { slot: s.slot, item: base.id, nivel: meta ? meta.nivel : base.nivel, infusao: meta ? meta.infusao : base.infusao };
+    ui.res = null; ui.erro = null;
+    return true;
+  }
+
+  function ligar(raiz, p, contexto) {
     if (!raiz || !p.equipamento) return;
+    if (contexto !== undefined) ctx = contexto;
     const app = raiz.querySelector(".eq-app");
-    const redesenhar = () => { app.innerHTML = corpo(p.equipamento, p); trocaImagens(app); };
-    trocaImagens(app);
+    const redesenhar = () => {
+      const foco = document.activeElement && document.activeElement.dataset ? document.activeElement.dataset.sim : null;
+      app.innerHTML = corpo(p.equipamento, p);
+      trocaImagens(app);
+      if (foco) { const el = app.querySelector(`[data-sim="${foco}"]`); if (el) el.focus(); }
+    };
+    const simular = async () => {
+      const { item, nivel, infusao } = ui.sim;
+      const pedido = ++ui.pedido;
+      ui.carregando = true; ui.erro = null;
+      try {
+        const r = await fetch(`${ctx.base}/simular?item=${item}&nivel=${nivel}&infusao=${infusao}`, { cache: "no-store" });
+        const j = await r.json().catch(() => ({}));
+        if (pedido !== ui.pedido) return;
+        if (r.ok) ui.res = j; else { ui.res = null; ui.erro = j.erro || `erro ${r.status}`; }
+      } catch (e) {
+        if (pedido === ui.pedido) ui.erro = "servidor fora do ar";
+      }
+      ui.carregando = false;
+      redesenhar();
+    };
+    const gravar = async (item, nivel, infusao, ativa) => {
+      try {
+        const r = await fetch(`${ctx.base}/metas/${item}`, { method: "POST", headers: ctx.headers,
+          body: JSON.stringify({ item_id: item, nivel, infusao, ativa, desde: new Date().toISOString() }) });
+        if (!r.ok) { ui.erro = r.status === 409 ? "metas demais: tire uma antes" : "não consegui gravar a meta"; redesenhar(); return; }
+        ctx.atualizar();
+      } catch (e) { ui.erro = "servidor fora do ar"; redesenhar(); }
+    };
+    if (iniciarSim(p.equipamento, p)) simular();
+    redesenhar();
     app.addEventListener("click", (ev) => {
       const m = ev.target.closest("[data-eq-modo]");
       if (m) { ui.modo = m.dataset.eqModo; redesenhar(); return; }
       const s = ev.target.closest("[data-eq-slot]");
-      if (s) { ui.slot = s.dataset.eqSlot; redesenhar(); const b = app.querySelector(`[data-eq-slot="${CSS.escape(ui.slot)}"]`); if (b) b.focus(); }
+      if (s) {
+        ui.slot = s.dataset.eqSlot;
+        if (iniciarSim(p.equipamento, p)) simular();
+        redesenhar();
+        const b = app.querySelector(`[data-eq-slot="${CSS.escape(ui.slot)}"]`); if (b) b.focus();
+        return;
+      }
+      const meta = ev.target.closest("[data-meta]");
+      if (meta && ui.sim) { gravar(ui.sim.item, ui.sim.nivel, ui.sim.infusao, meta.dataset.meta === "virar"); return; }
+      const tirar = ev.target.closest("[data-meta-tirar]");
+      if (tirar) {
+        const id = Number(tirar.dataset.metaTirar);
+        const m2 = (p.metas || []).find((x) => x.item_id === id);
+        if (m2) gravar(id, m2.nivel, m2.infusao, false);
+      }
+    });
+    app.addEventListener("change", (ev) => {
+      const sel = ev.target.closest("[data-sim]");
+      if (!sel || !ui.sim) return;
+      const v = Number(sel.value);
+      if (sel.dataset.sim === "item") {
+        const a = (p.armas || []).find((x) => x.id === v);
+        ui.sim = { ...ui.sim, item: v, nivel: a ? a.nivel : 0, infusao: a ? a.infusao : 0 };
+      } else ui.sim = { ...ui.sim, [sel.dataset.sim]: v };
+      simular();
+      redesenhar();
     });
   }
 
@@ -144,5 +287,5 @@
     });
   }
 
-  window.buildsmithEquip = { html, ligar, _teste: { letras, arTexto, numero, partesTexto, delta, requisitoTexto } };
+  window.buildsmithEquip = { html, ligar, _teste: { letras, arTexto, numero, partesTexto, delta, requisitoTexto, metaTexto, faltaTexto, infusaoOpcoes, total } };
 })();
