@@ -30,7 +30,8 @@ Windows "sempre por cima" aparece sobre o jogo sem tocar no processo do jogo.
 Só leitura do processo `DarkSoulsII.exe` pela API do Windows (`OpenProcess` com `PROCESS_VM_READ |
 PROCESS_QUERY_LIMITED_INFORMATION`, `ReadProcessMemory`, via ctypes; nada instalado, nada escrito no jogo).
 
-- Lê: posição X/Y/Z, direção do personagem, direção (yaw) da câmera, área atual (id do mapa, ex. `m10_10_00_00`).
+- Lê: nome do personagem carregado, posição X/Y/Z, direção do personagem, direção (yaw) da câmera, área atual (id do mapa,
+  ex. `m10_10_00_00`).
 - Base: o AOB do `BaseA` e as cadeias do jogador local do DS2S-META (MIT); a direção da câmera e a área ainda não têm caminho
   conhecido: **engenharia reversa (REA/Ghidra)**, conferida em ≥ 2 lugares do jogo.
 - Conferência: a posição lida da memória tem que bater com a do save (`ds2save.posicoes`) logo depois de o jogo gravar
