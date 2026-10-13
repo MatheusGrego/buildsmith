@@ -630,3 +630,25 @@ console.log(JSON.stringify([
     assert out[0] == {"area": "m10_04_00_00", "pos": [10, 2, 30], "fogueiras": [4650], "fonte": "vivo"}
     assert out[1] == {**{"area": "m10_04_00_00", "pos": [1, 2, 3], "fogueiras": [4650]}, "fonte": "save"}
     assert out[2]["fonte"] == "save" and out[3]["fonte"] == "save" and out[4] is None
+
+
+@pytest.mark.skipif(shutil.which("node") is None, reason="sem node para rodar o JS da página")
+def test_follow_mode_opens_the_new_area_once(tmp_path):
+    script = tmp_path / "mapa_troca.js"
+    script.write_text(r"""
+global.window = {};
+eval(require("fs").readFileSync(process.argv[2], "utf8"));
+const t = window.buildsmithMapa._teste;
+const v = { ativo: true, nome: "Personagem Um", area: "m10_10_00_00", pos: [0, 0, 0] };
+const areas = ["m10_04_00_00", "m10_10_00_00"];
+console.log(JSON.stringify([
+  t.trocaDeArea(v, "m10_04_00_00", null, "Personagem Um", areas),
+  t.trocaDeArea(v, "m10_04_00_00", "m10_10_00_00", "Personagem Um", areas),
+  t.trocaDeArea(v, "m10_10_00_00", null, "Personagem Um", areas),
+  t.trocaDeArea({ ...v, nome: "Outro" }, "m10_04_00_00", null, "Personagem Um", areas),
+  t.trocaDeArea({ ...v, area: "m99_00_00_00" }, "m10_04_00_00", null, "Personagem Um", areas),
+]));
+""", encoding="utf-8")
+    out = json.loads(subprocess.run(["node", str(script), str(ROOT / "skills/build-page/template/mapa.js")], capture_output=True,
+                                    text=True, encoding="utf-8", timeout=20, check=True).stdout)
+    assert out == ["m10_10_00_00", None, None, None, None]  # abre uma vez; já abrindo, mesma área, outro personagem, área fora

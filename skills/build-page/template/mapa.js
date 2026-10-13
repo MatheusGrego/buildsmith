@@ -143,7 +143,7 @@
                destaque: null, zonaSel: null, pop: null, jogador: null, tipoSel: null, poll: null,
                modo: "2d", iso: null, interior: false, foco: true, acesas: null, fogChave: undefined, escolhida: false,
                entChave: null, vivo: null, realce: false, mundo: null, mundoChave: "", rotaTexto: "",
-               save: null, aoVivo: null, seguir: false, fonteVivo: null, ultimoDesenho: 0,
+               save: null, aoVivo: null, seguir: false, fonteVivo: null, ultimoDesenho: 0, trocando: null,
                filtros: { zonas: true, fogueiras: true, chefes: true, npcs: true, plano: true, outros: true, chaves: true,
                           baus: false, objetos: false, inimigos: false } };
   const em3d = () => st.modo === "iso" && st.iso;
@@ -253,6 +253,12 @@
     }
     return save ? { ...save, fonte: "save" } : null;
   }
+  // Seguir: área nova para abrir quando o jogo passa de área (uma vez: enquanto ela carrega, as mensagens seguintes não
+  // abrem de novo). null: mesma área, já abrindo, outro personagem ou área fora do mapa.
+  function trocaDeArea(vivo, aberta, emTroca, nome, disponiveis) {
+    if (!vivo || !vivo.ativo || vivo.nome !== nome || !vivo.area || vivo.area === aberta || vivo.area === emTroca) return null;
+    return disponiveis.includes(vivo.area) ? vivo.area : null;
+  }
   const nomePersonagem = () => (st.plano && st.plano.personagem && st.plano.personagem.name) || null;
 
   // Stream ao vivo: o "você" anda junto com o jogo; no 3D com Seguir, a câmera acompanha e gira com a do jogo.
@@ -265,8 +271,11 @@
       st.aoVivo = v;
       const meu = v && v.ativo && v.nome === nomePersonagem();
       if (meu && st.seguir && em3d() && st.doc && v.area === st.doc.area) st.iso.seguir(v);
-      if (meu && st.seguir && v.area && st.doc && v.area !== st.doc.area && st.indice && st.indice.some((a) => a.area === v.area)) {
-        abrirArea(v.area);  // passou de área no jogo: o mapa vai junto
+      const nova = st.seguir && st.doc && st.indice
+        ? trocaDeArea(v, st.doc.area, st.trocando, nomePersonagem(), st.indice.map((a) => a.area)) : null;
+      if (nova) {  // passou de área no jogo: o mapa vai junto
+        st.trocando = nova;
+        abrirArea(nova).finally(() => { st.trocando = null; });
       }
       if (Date.now() - st.ultimoDesenho > 250) { st.ultimoDesenho = Date.now(); aplicarJogador(escolherPosicao(v, st.save, nomePersonagem())); }
     };
@@ -1264,6 +1273,6 @@
     }
   }
 
-  window.buildsmithMapa = { montar, ver, setVivo, _teste: { escolherPosicao, caixa, ajustar, regua, tamanhoIcone, estadoAndar, corZona, andarDe, tintaParada, pino, trechosTela, liberadas,
+  window.buildsmithMapa = { montar, ver, setVivo, _teste: { escolherPosicao, trocaDeArea, caixa, ajustar, regua, tamanhoIcone, estadoAndar, corZona, andarDe, tintaParada, pino, trechosTela, liberadas,
                                                    dimsObjeto, alturaInimigo, raioInimigo, estadoObjeto, itemPego, iso: () => st.iso } };
 })();
