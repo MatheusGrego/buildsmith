@@ -87,3 +87,22 @@ def test_closed_game_and_reopening():
     assert lv.ler() == {"ativo": False, "motivo": "jogo fechado", "ts": 1.0}
     estado["aberto"] = True
     assert lv.ler()["ativo"]  # tenta abrir de novo na leitura seguinte
+
+
+def test_area_comes_from_the_given_source_by_the_character_name():
+    vistos = []
+
+    def area(nome):
+        vistos.append(nome)
+        return "m10_04_00_00"
+
+    r = ds2vivo.LeitorVivo(abrir=lambda: jogo(), relogio=lambda: 1.0, area=area).ler()
+    assert r["area"] == "m10_04_00_00" and r["area_fonte"] == "save" and vistos == ["Personagem Um"]
+
+
+def test_area_source_failing_does_not_break_the_reading():
+    def area(nome):
+        raise OSError("save sendo gravado")
+
+    r = ds2vivo.LeitorVivo(abrir=lambda: jogo(), relogio=lambda: 1.0, area=area).ler()
+    assert r["ativo"] and r["area"] is None

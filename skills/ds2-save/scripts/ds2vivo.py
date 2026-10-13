@@ -7,6 +7,7 @@ Endereços do DS2S-META (MIT, © 2021 Nordgaren), relativos ao ponteiro estátic
   câmera = [[BaseA+0x0]+0x20]: floats em +0x1A0/+0x1A4/+0x1A8; nome = [BaseA+0xA8]+0x114 (UTF-16).
 Eixos: os 3 floats na ordem em que estão na memória = (x, y para cima, z), como a posição do save (ds2save.posicao_do_slot);
 a conferência com o jogo fixa isso (EIXOS). Direções na convenção do mapa 3D (iso.js): frente = (sen a, cos a) em (x, z).
+Área: ainda sem campo achado na memória; vem de `area(nome)` (o servidor passa a área do save daquele personagem).
 
   python ds2vivo.py   uma leitura em JSON (o jogo precisa estar aberto)
 """
@@ -42,9 +43,10 @@ def direcao_do_quaternion(q) -> float | None:
 class LeitorVivo:
     """Uma leitura por chamada de `ler()`. Abre o processo na primeira vez e de novo quando o jogo fecha e reabre."""
 
-    def __init__(self, abrir=None, relogio=time.time):
+    def __init__(self, abrir=None, relogio=time.time, area=None):
         self._abrir = abrir or (lambda: ds2mem.ProcessoWin.abrir(EXE))
         self._relogio = relogio
+        self._area = area  # nome do personagem -> área (do save) ou None
         self._mem = None
         self._estatico = None  # endereço do ponteiro BaseA, achado uma vez por processo
 
@@ -61,6 +63,14 @@ class LeitorVivo:
                 mem.fechar()
             raise ds2mem.ErroMemoria("versão do jogo sem o BaseA conhecido")
         self._mem, self._estatico = mem, ds2mem.rel32(mem, instr, 3, 7)
+
+    def _area_de(self, nome) -> dict:
+        if not self._area or not nome:
+            return {"area": None}
+        try:
+            return {"area": self._area(nome), "area_fonte": "save"}
+        except Exception:  # save sendo gravado: a área volta na próxima leitura
+            return {"area": None}
 
     def ler(self) -> dict:
         ts = self._relogio()
@@ -81,10 +91,11 @@ class LeitorVivo:
             cam_ptr = ds2mem.cadeia(mem, base_a, OFF_CAM)
             camera = [round(mem.f32s(cam_ptr + CAM_XYZ, 3)[i], 3) for i in EIXOS] if cam_ptr else None
             nome_ptr = ds2mem.cadeia(mem, base_a, OFF_NOME)
-            return {"ativo": True, "nome": mem.utf16(nome_ptr + NOME) if nome_ptr else None, "pos": pos,
+            nome = mem.utf16(nome_ptr + NOME) if nome_ptr else None
+            return {"ativo": True, "nome": nome, "pos": pos,
                     "dir_personagem": direcao_do_quaternion(mem.f32s(pos_ptr + POS_QUAT, 4)),
                     "camera": camera, "yaw_camera": yaw_da_camera(camera, pos) if camera else None,
-                    "area": None, "ts": ts}
+                    **self._area_de(nome), "ts": ts}
         except ds2mem.ErroMemoria as err:
             self._soltar()
             motivo = "jogo fechado" if "não está aberto" in str(err) else str(err)
