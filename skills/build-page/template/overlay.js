@@ -15,6 +15,8 @@
   iso.setFoco(false);
   iso.setAtivo(true);
   let area = null, primeiro = true;
+  const tecla = (q.get("tecla") || "").slice(0, 24);  // a tecla do menu que o Windows aceitou (app/overlay.py)
+  let dicaAte = tecla ? Date.now() + 6000 : 0;
 
   function aplicar(v) {
     if (!v.ativo) { mostrar(TEXTO[v.motivo] || "sem leitura do jogo"); return; }
@@ -24,7 +26,8 @@
       area = v.area;
       iso.abrir(area).then(() => { iso.setCorte(null); iso.seguir(v); }).catch(() => mostrar("sem a cena desta área"));
     }
-    mostrar(null);
+    mostrar(Date.now() < dicaAte ? `${tecla} abre o menu` : null);
+    seta.style.visibility = "";
     iso.seguir(v);
     const r = Iso._teste.rotacaoSeta(v.dir_personagem, iso.giro);
     seta.style.transform = r == null ? "" : `rotate(${r}rad)`;

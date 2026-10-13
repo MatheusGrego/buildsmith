@@ -1104,6 +1104,21 @@ def running(port: int = PORT) -> bool:
         return False
 
 
+def slug_do_jogador(home: Path, vivo, save=None) -> str:
+    """Página do personagem carregado no jogo (nome lido da memória, cruzado com o save); sem leitura, a mais recente."""
+    nome = (vivo.atual() or {}).get("nome")
+    if nome:
+        try:
+            import ds2save
+            for p in ds2save.personagens(Path(save) if save else ds2save.find_save()):
+                if p["nome"] == nome and (Path(home) / "paginas" / "ds2" / p["slug"]).is_dir():
+                    return p["slug"]
+        except Exception:  # save sendo gravado: fica a página mais recente
+            pass
+    found = pages(home)
+    return principal(home, found)[1] if found else ""
+
+
 def latest_page_url(home: Path, port: int) -> str:
     found = pages(home)
     if not found:
@@ -1117,6 +1132,7 @@ def main(argv=None) -> int:
     parser = argparse.ArgumentParser(prog="serve")
     parser.add_argument("--home", default=str(default_home()))
     parser.add_argument("--port", type=int, default=PORT)
+    parser.add_argument("--sem-overlay", action="store_true", help="não abre o minimapa por cima do jogo")
     parser.add_argument("--open", action="store_true",
                         help="atualiza (git pull, servidor e páginas: app/abrir.py) e abre a página mais recente")
     sub = parser.add_subparsers(dest="cmd")
@@ -1175,6 +1191,15 @@ def main(argv=None) -> int:
             webbrowser.open(latest_page_url(home, args.port))
         return 0
     httpd = make_server(home, args.port)
+    if not args.sem_overlay and os.name == "nt":  # minimapa e overlay grande por cima do jogo (app/overlay.py)
+        import overlay
+
+        def avisa(texto: str) -> None:
+            with (home / "execucoes" / "overlay.log").open("a", encoding="utf-8") as fh:
+                fh.write(f"{datetime.now():%Y-%m-%d %H:%M:%S}  {texto}\n")
+        (home / "execucoes").mkdir(parents=True, exist_ok=True)
+        vivo = httpd.RequestHandlerClass.vivo
+        overlay.iniciar(home, args.port, lambda: slug_do_jogador(home, vivo), avisa)
     if args.open:
         threading.Timer(0.6, lambda: webbrowser.open(latest_page_url(home, args.port))).start()
     try:

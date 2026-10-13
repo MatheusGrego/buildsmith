@@ -799,3 +799,20 @@ def test_minimap_page_gets_the_page_csp(server):
         body = resp.read()
         assert resp.headers.get("Content-Security-Policy") == serve.CSP_PAGINA
         assert body.startswith(b"<!doctype html>") and b"<title>Minimapa</title>" in body
+
+
+def test_overlay_page_follows_the_character_loaded_in_the_game(server):
+    base, home = server
+    save = home / "DS2SOFS0000.co2"
+    (home / "paginas" / "ds2" / "personagem-teste").mkdir(parents=True)
+
+    class Vivo:
+        def __init__(self, nome):
+            self.nome = nome
+
+        def atual(self):
+            return {"ativo": bool(self.nome), "nome": self.nome}
+
+    assert serve.slug_do_jogador(home, Vivo("Personagem (teste)"), save) == "personagem-teste"
+    assert serve.slug_do_jogador(home, Vivo("Personagem Um"), save) == "personagem-um"
+    assert serve.slug_do_jogador(home, Vivo(None), save) in ("personagem-um", "personagem-teste")  # sem jogo: a mais recente
