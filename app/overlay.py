@@ -285,7 +285,7 @@ def iniciar(home: Path, port: int, slug_do_jogador, avisa=lambda texto: None) ->
     base, teclas = f"http://127.0.0.1:{port}", {}
     dica = lambda: urllib.parse.quote(teclas.get("grande") or "")  # noqa: E731 (o minimapa mostra a tecla que valeu)
     ov = Overlay(win, url_mini=lambda: f"{base}/p/ds2/{slug_do_jogador()}/overlay.html?fundo=escuro&tecla={dica()}",
-                 url_grande=lambda: f"{base}/p/ds2/{slug_do_jogador()}/?overlay=1")
+                 url_grande=lambda: f"{base}/p/ds2/{slug_do_jogador()}/?overlay=1#mapa")
     teclas.update(win.ouvir_teclas({"grande": ov.alternar_grande, "mini": ov.alternar_mini}))
     avisa(f"overlay: teclas {teclas}")
 

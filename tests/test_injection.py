@@ -606,3 +606,27 @@ console.log(JSON.stringify({
     assert out["giro"] == [1.0, round(3.1 + (2 * math.pi - 6.2), 3), round(2 * math.pi + 0.2, 3)]
     assert out["andar"] == {"min": 10.0, "max": 12.5, "altura": 12.5}
     assert out["seta"] == [round(math.pi / 2, 3), round(-math.pi / 2, 3), None]
+
+
+@pytest.mark.skipif(shutil.which("node") is None, reason="sem node para rodar o JS da página")
+def test_map_uses_the_live_position_only_for_this_character(tmp_path):
+    script = tmp_path / "mapa_vivo.js"
+    script.write_text(r"""
+global.window = {};
+eval(require("fs").readFileSync(process.argv[2], "utf8"));
+const t = window.buildsmithMapa._teste;
+const save = { area: "m10_04_00_00", pos: [1, 2, 3], fogueiras: [4650] };
+const vivo = { ativo: true, nome: "Personagem Um", area: "m10_04_00_00", pos: [10, 2, 30], yaw_camera: 1 };
+console.log(JSON.stringify([
+  t.escolherPosicao(vivo, save, "Personagem Um"),
+  t.escolherPosicao({ ...vivo, nome: "Outro" }, save, "Personagem Um"),
+  t.escolherPosicao({ ativo: false, motivo: "jogo fechado" }, save, "Personagem Um"),
+  t.escolherPosicao({ ...vivo, area: null }, save, "Personagem Um"),
+  t.escolherPosicao(null, null, "Personagem Um"),
+]));
+""", encoding="utf-8")
+    out = json.loads(subprocess.run(["node", str(script), str(ROOT / "skills/build-page/template/mapa.js")], capture_output=True,
+                                    text=True, encoding="utf-8", timeout=20, check=True).stdout)
+    assert out[0] == {"area": "m10_04_00_00", "pos": [10, 2, 30], "fogueiras": [4650], "fonte": "vivo"}
+    assert out[1] == {**{"area": "m10_04_00_00", "pos": [1, 2, 3], "fogueiras": [4650]}, "fonte": "save"}
+    assert out[2]["fonte"] == "save" and out[3]["fonte"] == "save" and out[4] is None

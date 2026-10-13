@@ -143,6 +143,7 @@
                destaque: null, zonaSel: null, pop: null, jogador: null, tipoSel: null, poll: null,
                modo: "2d", iso: null, interior: false, foco: true, acesas: null, fogChave: undefined, escolhida: false,
                entChave: null, vivo: null, realce: false, mundo: null, mundoChave: "", rotaTexto: "",
+               save: null, aoVivo: null, seguir: false, fonteVivo: null, ultimoDesenho: 0,
                filtros: { zonas: true, fogueiras: true, chefes: true, npcs: true, plano: true, outros: true, chaves: true,
                           baus: false, objetos: false, inimigos: false } };
   const em3d = () => st.modo === "iso" && st.iso;
@@ -200,6 +201,7 @@
               <button type="button" class="mp-iso-tg" data-iso="interior" aria-pressed="false" title="Cortar o que está acima do andar para ver dentro de cavernas e prédios (I); PgUp/PgDn trocam o andar">Interior</button>
               <button type="button" class="mp-iso-tg" data-iso="foco" aria-pressed="true" title="Escurecer o que está longe do centro da vista (O)">Foco</button>
               <button type="button" class="mp-iso-tg" data-iso="livre" aria-pressed="false" title="Câmera livre: voar pela área e entrar nos lugares (V)">Livre</button>
+              <button type="button" class="mp-iso-tg" data-iso="seguir" aria-pressed="false" title="Seguir você ao vivo, girando com a câmera do jogo (jogo aberto)">Seguir</button>
             </div>
             <p class="mp-iso-ajuda" data-ajuda="fixa"><kbd>WASD</kbd> andar · <kbd>Q</kbd><kbd>E</kbd> girar · <kbd>R</kbd><kbd>F</kbd> inclinar · <kbd>Shift</kbd> rápido · botão direito arrasta: girar · roda: zoom · <kbd>V</kbd> livre</p>
             <p class="mp-iso-ajuda" data-ajuda="livre" hidden><kbd>WASD</kbd> voar · segure e arraste: olhar · <kbd>E</kbd>/<kbd>Espaço</kbd> sobe · <kbd>Q</kbd>/<kbd>C</kbd> desce · <kbd>Shift</kbd> rápido · roda: avançar · <kbd>V</kbd> volta à fixa</p>
@@ -226,24 +228,61 @@
       if (!st.indice.length) return vazio("Mapa indisponível. Rode o /buildsmith:build com o DS2 SotFS instalado.");
       if (API && !st.poll) {
         st.poll = setInterval(() => { if (!document.hidden && st.raiz.offsetParent !== null) { buscarJogador(); buscarMundo(); } }, POLL_MS);
+        ouvirVivo();
       }
       // abre onde você está (posição do save); sem servidor ou fora das áreas, a 1ª do plano
       return (API ? buscarJogador() : Promise.resolve()).then(() => {
         if (st.escolhida && st.doc) return null;
         const j = st.jogador;
         return abrirArea(j && st.indice.some((a) => a.area === j.area) ? j.area : st.indice[0].area);
+      }).then(() => {  // aberta pelo overlay do jogo (?overlay=1): direto no 3D, seguindo você
+        if (typeof location !== "undefined" && new URLSearchParams(location.search).get("overlay") === "1" && !motivoSem3d()) {
+          st.seguir = true;
+          return mudarModo("iso").then(() => marcarSeguir());
+        }
+        return null;
       });
     });
   }
 
-  // Você no mapa: posição da última gravação do save (o servidor relê o arquivo quando ele muda).
+  // Você no mapa: a posição ao vivo (memória do jogo, /api/ds2/vivo/stream) quando o jogo está aberto com ESTE
+  // personagem; senão a da última gravação do save (o servidor relê o arquivo quando ele muda).
+  function escolherPosicao(vivo, save, nome) {
+    if (vivo && vivo.ativo && vivo.nome === nome && AREA_OK.test(vivo.area || "") && Array.isArray(vivo.pos) && vivo.pos.length === 3) {
+      return { area: vivo.area, pos: vivo.pos, fogueiras: save ? save.fogueiras : undefined, fonte: "vivo" };
+    }
+    return save ? { ...save, fonte: "save" } : null;
+  }
+  const nomePersonagem = () => (st.plano && st.plano.personagem && st.plano.personagem.name) || null;
+
+  // Stream ao vivo: o "você" anda junto com o jogo; no 3D com Seguir, a câmera acompanha e gira com a do jogo.
+  function ouvirVivo() {
+    if (!API || st.fonteVivo || typeof EventSource === "undefined") return;
+    st.fonteVivo = new EventSource("/api/ds2/vivo/stream");
+    st.fonteVivo.onmessage = (e) => {
+      let v = null;
+      try { v = JSON.parse(e.data); } catch (err) { return; }
+      st.aoVivo = v;
+      const meu = v && v.ativo && v.nome === nomePersonagem();
+      if (meu && st.seguir && em3d() && st.doc && v.area === st.doc.area) st.iso.seguir(v);
+      if (meu && st.seguir && v.area && st.doc && v.area !== st.doc.area && st.indice && st.indice.some((a) => a.area === v.area)) {
+        abrirArea(v.area);  // passou de área no jogo: o mapa vai junto
+      }
+      if (Date.now() - st.ultimoDesenho > 250) { st.ultimoDesenho = Date.now(); aplicarJogador(escolherPosicao(v, st.save, nomePersonagem())); }
+    };
+  }
+
   async function buscarJogador() {
     let j = null;
     try {
       const r = await fetch(`${API}/${PAG[2]}/posicao`, { cache: "no-store" });
       j = r.ok ? await r.json() : null;
     } catch (e) { j = null; }
-    const novo = j && AREA_OK.test(j.area) && Array.isArray(j.pos) && j.pos.length === 3 ? j : null;
+    st.save = j && AREA_OK.test(j.area) && Array.isArray(j.pos) && j.pos.length === 3 ? j : null;
+    aplicarJogador(escolherPosicao(st.aoVivo, st.save, nomePersonagem()));
+  }
+
+  function aplicarJogador(novo) {
     const chave = (x) => (x ? `${x.area}|${x.pos.join(",")}` : "");
     const fogs = novo && Array.isArray(novo.fogueiras) ? novo.fogueiras.filter(Number.isInteger) : null;
     const fogChave = fogs ? fogs.join(",") : null;
@@ -1074,6 +1113,7 @@
         else if (acao === "interior") alternarInterior();
         else if (acao === "foco") alternarFoco();
         else if (acao === "livre") alternarLivre();
+        else if (acao === "seguir") { st.seguir = !st.seguir; marcarSeguir(); }
         atualizar();
         return;
       }
@@ -1137,6 +1177,11 @@
     st.raiz.querySelector("[data-realce]").setAttribute("aria-pressed", String(st.realce));
     sincronizarEntidades();
     atualizar();
+  }
+
+  function marcarSeguir() {
+    const b = st.raiz && st.raiz.querySelector('[data-iso="seguir"]');
+    if (b) b.setAttribute("aria-pressed", String(st.seguir));
   }
 
   function alternarLivre() {
@@ -1219,6 +1264,6 @@
     }
   }
 
-  window.buildsmithMapa = { montar, ver, setVivo, _teste: { caixa, ajustar, regua, tamanhoIcone, estadoAndar, corZona, andarDe, tintaParada, pino, trechosTela, liberadas,
+  window.buildsmithMapa = { montar, ver, setVivo, _teste: { escolherPosicao, caixa, ajustar, regua, tamanhoIcone, estadoAndar, corZona, andarDe, tintaParada, pino, trechosTela, liberadas,
                                                    dimsObjeto, alturaInimigo, raioInimigo, estadoObjeto, itemPego, iso: () => st.iso } };
 })();
