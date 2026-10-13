@@ -130,6 +130,20 @@ def listar_areas_do_jogo() -> list[str]:
     return [a["area"] for a in _ds2mapa().areas(_jogo_instalado())]
 
 
+OVERLAY_JS = ("iso.js", "overlay.js")
+
+
+def montar_overlay(template_dir: Path) -> str:
+    """Minimapa (janela por cima do jogo e fonte do OBS): esqueleto + CSS + iso.js + overlay.js num overlay.html só."""
+    template_dir = Path(template_dir)
+    html = (template_dir / "overlay.html").read_text(encoding="utf-8")
+    css = (template_dir / "overlay.css").read_text(encoding="utf-8")
+    js = "\n".join((template_dir / name).read_text(encoding="utf-8") for name in OVERLAY_JS)
+    if "</style" in css.lower() or "</script" in js.lower():
+        raise ValueError("CSS ou JS do minimapa fecha a própria tag")
+    return html.replace("<!--CSS-->", f"<style>\n{css}</style>", 1).replace("<!--JS-->", f"<script>\n{js}</script>", 1)
+
+
 def montar_index(template_dir: Path) -> str:
     """Junta o esqueleto, o CSS e o JS num index.html só: o CSP da página só aceita script e estilo inline."""
     template_dir = Path(template_dir)
@@ -280,6 +294,7 @@ def prepare(plano_path, out_dir, jogo: str, cache_root=None, fetch=default_fetch
     except Exception as err:  # jogo ausente, arquivo trocado por atualização: página sem mapa, com aviso
         store.avisos.append(f"mapa indisponível: {err}")
     (out_dir / "index.html").write_text(montar_index(SKILL_DIR / "template"), encoding="utf-8")
+    (out_dir / "overlay.html").write_text(montar_overlay(SKILL_DIR / "template"), encoding="utf-8")
     (out_dir / "plano.json").write_text(json.dumps(plano, ensure_ascii=False, indent=2), encoding="utf-8")
     vendor_src = SKILL_DIR / "template" / "vendor"
     vendor_files = {}
@@ -292,7 +307,8 @@ def prepare(plano_path, out_dir, jogo: str, cache_root=None, fetch=default_fetch
                 vendor_files[f"vendor/{vf.name}"] = str(vendor_dst / vf.name)
     return {
         "index": str(out_dir / "index.html"),
-        "files": {"plano.json": str(out_dir / "plano.json"), **store.files, **map_files, **vendor_files},
+        "files": {"plano.json": str(out_dir / "plano.json"), "overlay.html": str(out_dir / "overlay.html"), **store.files,
+                  **map_files, **vendor_files},
         "avisos": store.avisos,
     }
 

@@ -1,3 +1,4 @@
+import math
 """Prompt injection: cada caminho que um texto plantado (wiki, cache, fila, plano) usaria para virar ação.
 
 Um teste por ataque achado na auditoria. O texto de terceiros entra em: wiki/cache → modelo → arquivos que o
@@ -584,3 +585,24 @@ console.log(JSON.stringify({com: V.progressoAoVivo(plano, vivo), sem: V.progress
     assert r["velho"]["chefes"][0]["estado"] == "vivo"  # servidor antigo, sem a lista: fica o plano
     assert r["mapa"] == ["derrotado", "vivo", "vivo"]
     assert r["compras"] == [{"loja": {"nome": "Melentia"}, "item": {"nome": "Torch"}, "qtd": 2}]  # as do save, quando vieram
+
+
+@pytest.mark.skipif(shutil.which("node") is None, reason="sem node para rodar o JS da página")
+def test_iso_follow_mode_math(tmp_path):
+    """Minimapa: gira só com a câmera do jogo (pelo caminho curto), corte de andar pela altura e seta relativa à tela."""
+    script = tmp_path / "iso_seguir.js"
+    script.write_text(r"""
+const Iso = require(process.argv[2]);
+const t = Iso._teste;
+const r = (x) => Math.round(x * 1000) / 1000;
+console.log(JSON.stringify({
+  giro: [r(t.giroDoMinimapa(1.0, 0)), r(t.giroDoMinimapa(-3.1, 3.1)), r(t.giroDoMinimapa(0.2, 2 * Math.PI))],
+  andar: t.andarDoCorte(12.5),
+  seta: [r(t.rotacaoSeta(Math.PI / 2, 0)), r(t.rotacaoSeta(0, Math.PI / 2)), t.rotacaoSeta(null, 1)],
+}));
+""", encoding="utf-8")
+    out = json.loads(subprocess.run(["node", str(script), str(ROOT / "skills/build-page/template/iso.js")], capture_output=True,
+                                    text=True, encoding="utf-8", timeout=20, check=True).stdout)
+    assert out["giro"] == [1.0, round(3.1 + (2 * math.pi - 6.2), 3), round(2 * math.pi + 0.2, 3)]
+    assert out["andar"] == {"min": 10.0, "max": 12.5, "altura": 12.5}
+    assert out["seta"] == [round(math.pi / 2, 3), round(-math.pi / 2, 3), None]

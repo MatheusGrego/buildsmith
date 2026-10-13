@@ -789,3 +789,13 @@ def test_live_stream_sends_events_and_survives_the_client_leaving(server_vivo):
 def test_reader_failure_is_inactive_not_an_error(tmp_path):
     fluxo = serve.FluxoVivo(LeitorFalso(quebrar=True))
     assert fluxo.atual() == {"ativo": False, "motivo": "erro na leitura (RuntimeError)"}
+
+
+def test_minimap_page_gets_the_page_csp(server):
+    base, home = server
+    page = home / "paginas" / "ds2" / "personagem-um"
+    (page / "overlay.html").write_text("<title>Minimapa</title><p>m</p>", encoding="utf-8")
+    with urllib.request.urlopen(f"{base}/p/ds2/personagem-um/overlay.html", timeout=5) as resp:
+        body = resp.read()
+        assert resp.headers.get("Content-Security-Policy") == serve.CSP_PAGINA
+        assert body.startswith(b"<!doctype html>") and b"<title>Minimapa</title>" in body

@@ -1059,7 +1059,7 @@ class Handler(BaseHTTPRequestHandler):
         if root not in target.parents and target != root / "index.html" or not target.is_file():
             return self._send(404, b"nao encontrado", "text/plain; charset=utf-8")
         body = target.read_bytes()
-        if target.name == "index.html":
+        if target.name in ("index.html", "overlay.html"):  # a página e o minimapa: mesmo CSP (script só inline/próprio)
             return self._send(200, DOCTYPE + body + b"</body></html>", "text/html; charset=utf-8", CSP_PAGINA)
         ctype = TIPOS_ESTATICOS.get(target.suffix.lower()) or mimetypes.guess_type(target.name)[0] or "application/octet-stream"
         if ctype.startswith("text/") or ctype == "application/json":

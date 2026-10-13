@@ -413,3 +413,10 @@ def test_area_extracted_from_the_game_is_reported_as_progress(tmp_path, monkeypa
     assert "mapa extraído do jogo: Iron Keep" in capsys.readouterr().err
     carregar("m10_19_00_00")  # já no cache: nada a avisar
     assert capsys.readouterr().err == ""
+
+
+def test_minimap_page_is_written_next_to_the_index(tmp_path):
+    out = run(tmp_path, FakeFetch())
+    assert "overlay.html" in out["files"]
+    html = Path(out["files"]["overlay.html"]).read_text(encoding="utf-8")
+    assert "MapaIsometrico" in html and "/api/ds2/vivo/stream" in html and html.count("<script>") == 1
