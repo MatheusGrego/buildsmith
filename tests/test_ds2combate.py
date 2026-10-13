@@ -33,7 +33,7 @@ class FakeCalc:
         return {k: {"base": v} for k, v in self.catalyst_ar(item_id, nivel, stats).items()}
 
     def weapon_ar(self, item_id, nivel, infusao, stats):
-        fogo = {"fogo": 50 + nivel} if infusao == 1 else {}
+        fogo = {"fogo": 500 + nivel} if infusao == 1 else {}
         return {k: v for k, v in {"fisico": self.physical_ar(item_id, nivel, stats), **self.catalyst_ar(item_id, nivel, stats), **fogo}.items() if v}
 
     def weapon_parts(self, item_id, nivel, infusao, stats):
@@ -217,3 +217,20 @@ def test_goals_go_to_the_equipped_slot_and_to_the_list():
 def test_without_goals_the_combat_has_an_empty_list():
     out = calcular()
     assert out["metas"] == [] and "meta" not in slot(out["equipamento"], "R1")
+
+
+def snap_infundida():
+    inv = [dict(i, infusao=1) if i["id"] == UCHI else i for i in SNAP["inventory"]]
+    return {**SNAP, "inventory": inv}
+
+
+def test_damage_rows_keep_the_infusion_of_the_weapon():
+    out = ds2combate.combate(FakeCalc(), FakeData(), NAMES, snap_infundida(), indice=INDICE)
+    proximo = next(d for d in out["dano"] if d["detalhe"] == "reforço +5 → +6")
+    assert proximo["agora"] == 505 and proximo["depois"] == 506  # Fogo +5 → Fogo +6, não Fogo → normal
+
+
+def test_best_weapon_is_compared_with_the_infused_one_you_hold():
+    out = ds2combate.combate(FakeCalc(), FakeData(), NAMES, snap_infundida(), indice=INDICE)
+    r1 = slot(out["equipamento"], "R1")
+    assert r1["plano"]["nome"] == "Uchigatana" and not r1["muda"]  # a Falchion (210) não ganha da Uchigatana de Fogo (505)

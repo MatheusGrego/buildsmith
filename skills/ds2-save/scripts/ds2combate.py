@@ -61,19 +61,19 @@ def _escola(p: dict | None) -> str | None:
 
 def melhores(calc, names, snap: dict, stats: dict, indice: dict | None) -> dict:
     """Trocas por código: slot -> (nome, nível) da arma e do catalisador melhores que o equipado."""
-    nivel, _qtd = _inventario(snap)
-    candidatos = {i: n for i, n in nivel.items() if i in calc.weapons}
+    copias = ds2equip.copias(snap)  # (reforço, infusão) da melhor cópia: a arma infundida conta com a infusão
+    candidatos = {i: c for i, c in copias.items() if i in calc.weapons}
     if indice:
         acesso = acesso_areas(indice["areas"], snap["progresso"].get("fogueiras", []))
         tem = {it["id"] for it in snap["inventory"]}
         for item in indice["itens"].values():
             if item["cat"] in ("arma", "catalisador") and item["id"] in calc.weapons and item["id"] not in candidatos \
                     and _pega_agora(item, acesso, tem):
-                candidatos[item["id"]] = 0
-    pecas = [ds2equip.peca(calc, names, i, n, stats) for i, n in candidatos.items()]
+                candidatos[item["id"]] = (0, 0)
+    pecas = [ds2equip.peca(calc, names, i, n, stats, k) for i, (n, k) in candidatos.items()]
     pecas = [p for p in pecas if p.get("requisito_ok") and "aviso" not in p]
     maos = {k: v["id"] for k, v in snap["equipped"].get("hands", {}).items() if v["id"] != ds2equip.EMPTY_HAND}
-    atual = {k: ds2equip.peca(calc, names, i, nivel.get(i, 0), stats) for k, i in maos.items()}
+    atual = {k: ds2equip.peca(calc, names, i, *copias.get(i, (0, 0))[:1], stats, copias.get(i, (0, 0))[1]) for k, i in maos.items()}
     trocas = {}
     armas = [p for p in pecas if p.get("tipo") == "arma" and p["categoria"] == "MeleeWeapons"]
     if armas and ("R1" not in atual or atual["R1"].get("tipo") == "arma"):
@@ -177,7 +177,7 @@ def dano(calc, data, names, snap: dict, stats: dict, eq: dict) -> list[dict]:
         arma = _no_item(a["nome"], f"+{a['nivel']}", tem=True, **({"icone": a["icone"]} if a.get("icone") else {}))
         alvos = [a["nivel"] + 1] + ([maximo] if a["nivel"] + 1 < maximo else []) if a["nivel"] < maximo else []
         for k in alvos:
-            depois = ds2equip.peca(calc, names, a["id"], k, stats)
+            depois = ds2equip.peca(calc, names, a["id"], k, stats, a.get("infusao") or 0)
             out.append({"arma": arma, "agora": ds2equip._numero(a), "depois": ds2equip._numero(depois),
                         "detalhe": f"reforço +{a['nivel']} → +{k}",
                         "por_causa": _custo(data, names, qtd, snap.get("souls") or 0, a["id"], a["nivel"], k)})
