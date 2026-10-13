@@ -196,3 +196,24 @@ def test_catalysts_are_compared_only_with_the_same_kind():
                                                                       "cat": "catalisador", "fontes": [{"tipo": "chao", "area": BASTILHA}]}}}
     com_chama = ds2combate.combate(calc, FakeData(), names, snap, indice=indice)["equipamento"]
     assert slot(com_chama, "L3")["plano"]["nome"] == "Ascended Pyromancy Flame" and slot(com_chama, "L1")["plano"]["nome"] == "Lizard Staff"
+
+
+def test_goals_go_to_the_equipped_slot_and_to_the_list():
+    metas = {str(UCHI): {"item_id": UCHI, "nivel": 7, "infusao": 0, "ativa": True},
+             str(CLAYMORE): {"item_id": CLAYMORE, "nivel": 2, "infusao": 0, "ativa": True},
+             "999": {"item_id": 999, "nivel": 1, "infusao": 0, "ativa": True},
+             str(STAFF): {"item_id": STAFF, "nivel": 3, "infusao": 0, "ativa": False},
+             "lixo": "nao e meta"}
+    out = calcular(metas=metas)
+    r1 = slot(out["equipamento"], "R1")
+    assert r1["meta"]["nivel"] == 7 and r1["meta"]["falta"]["almas"] == 200 and r1["meta"]["peca"]["ar"] == 220
+    assert "meta" not in slot(out["equipamento"], "L1")  # meta desligada
+    lista = {m["item_id"]: m for m in out["metas"]}
+    assert set(lista) == {UCHI, CLAYMORE, 999}
+    assert lista[CLAYMORE]["resultado"]["agora"] is None and "erro" in lista[999]
+    assert [a["nome"] for a in out["armas"]] == ["Sorcerer's Staff", "Uchigatana"]
+
+
+def test_without_goals_the_combat_has_an_empty_list():
+    out = calcular()
+    assert out["metas"] == [] and "meta" not in slot(out["equipamento"], "R1")

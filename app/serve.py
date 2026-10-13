@@ -45,7 +45,7 @@ PORT = 8642
 VERSAO = abrir.versao_codigo()  # o abridor compara com a do disco: código novo depois de um pull = reinicia
 SEGMENT = re.compile(r"^[a-z0-9][a-z0-9._-]{0,180}$")
 GAME_OK = re.compile(r"^[a-z0-9]+$")
-COLLECTIONS = {"feitos", "pedidos", "config", "quero"}
+COLLECTIONS = {"feitos", "pedidos", "config", "quero", "metas"}
 MODOS = {"plano", "fila"}
 MAX_BODY = 4 * 1024
 AREA_OK = re.compile(r"^m\d\d_\d\d_\d\d_\d\d$")
@@ -54,6 +54,7 @@ TIPOS_ESTATICOS = {".js": "text/javascript", ".mjs": "text/javascript", ".json":
 COORD_MAX = 10000.0
 AREAS_EM_MEMORIA = 12  # ~3 MB de grafo cada; as fontes de um item passam por várias áreas
 MAX_QUERO = 200  # itens marcados ao mesmo tempo no Catálogo
+MAX_METAS = 40  # metas de arma ligadas ao mesmo tempo (Equipamento)
 ICONE_OK = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]{0,180}$")
 MAX_FILA = 50  # pedidos na_fila ao mesmo tempo
 TEXTO_MAX = 160
@@ -85,7 +86,7 @@ def state_path(home: Path, jogo: str, personagem: str) -> Path:
 
 def read_state(home: Path, jogo: str, personagem: str) -> dict:
     path = state_path(home, jogo, personagem)
-    state = {"feitos": {}, "pedidos": {}, "config": {}, "quero": {}}
+    state = {"feitos": {}, "pedidos": {}, "config": {}, "quero": {}, "metas": {}}
     if path.is_file():
         state.update(json.loads(path.read_text(encoding="utf-8")))
     return state
@@ -119,6 +120,16 @@ def clean_doc(collection: str, doc_id: str, data) -> dict | None:
         if (set(data) - {"item_id", "desde", "marcado"} or not doc_id.isdigit() or len(doc_id) > 10
                 or not isinstance(item_id, int) or isinstance(item_id, bool) or str(item_id) != doc_id
                 or not isinstance(data.get("marcado"), bool) or not _linha(data.get("desde", "-"), 40)):
+            return None
+        return data
+    if collection == "metas":  # meta de uma arma no Equipamento: reforço e infusão que o jogador quer (ds2calc.INFUSOES)
+        def inteiro(v, menor, maior):
+            return isinstance(v, int) and not isinstance(v, bool) and menor <= v <= maior
+        item_id = data.get("item_id")
+        if (set(data) - {"item_id", "nivel", "infusao", "ativa", "desde"} or not doc_id.isdigit() or len(doc_id) > 10
+                or not inteiro(item_id, 1, 9_999_999_999) or str(item_id) != doc_id or not inteiro(data.get("nivel"), 0, 10)
+                or not inteiro(data.get("infusao"), 0, 9) or not isinstance(data.get("ativa"), bool)
+                or not _linha(data.get("desde", "-"), 40)):
             return None
         return data
     if collection == "config" and doc_id == "feiticos":
@@ -221,10 +232,11 @@ def coords(texto) -> tuple[float, float, float] | None:
 class MapaVivo:
     """Posição do personagem (relê o save só quando o arquivo muda) e rota pelo chão (grafo do navmesh em memória)."""
 
-    def __init__(self, home: Path, save=None, carregar_area=None, calcular_combate=None):
+    def __init__(self, home: Path, save=None, carregar_area=None, calcular_combate=None, simular_arma=None):
         self.home, self.save = Path(home), save
         self.carregar_area = carregar_area  # área -> dados com malhas; None = jogo instalado + cache de ~/.buildsmith
-        self.calcular_combate = calcular_combate  # (save, slot, índice, plano) -> combate; None = ds2combate com o jogo
+        self.calcular_combate = calcular_combate  # (save, slot, índice, plano, metas) -> combate; None = ds2combate com o jogo
+        self.simular_arma = simular_arma  # (save, slot, item, nível, infusão) -> simulação; None = ds2simula com o jogo
         self._combate: dict = {}
         self._regras = None  # (ds2calc, ds2data) do jogo instalado, lidos uma vez
         self._save = (None, {})
@@ -324,6 +336,35 @@ class MapaVivo:
         dados, grafo = self._area(area)
         return ds2mapa.rota(dados, de, ate, grafo, ds2mapa.caixas_da_cena(self.home / "cache" / "ds2", area))
 
+    def _regras_do_jogo(self):
+        """(ds2calc, ds2data) do jogo instalado e os nomes dos itens, lidos uma vez."""
+        import ds2calc
+        import ds2data
+        import ds2save
+
+        with self._lock:
+            if self._nomes is None:
+                self._nomes = ds2save.load_item_names()
+            if self._regras is None:
+                self._regras = (ds2calc.load(), ds2data.load())
+            return self._regras
+
+    def simular(self, slug_: str, item_id: int, nivel: int, infusao: int) -> dict | None:
+        """Arma em qualquer reforço e infusão com os atributos do save (ds2simula). SaveError = pedido inválido."""
+        import ds2save
+
+        pos = self.posicao(slug_)
+        if pos is None:
+            return None
+        path = Path(self.save) if self.save else ds2save.find_save()
+        if self.simular_arma:
+            return self.simular_arma(path, pos["slot"], item_id, nivel, infusao)
+        import ds2simula
+
+        calc, data = self._regras_do_jogo()
+        snap = ds2save.snapshot(path, pos["slot"], self._nomes)
+        return ds2simula.simular(calc, data, self._nomes, snap, item_id, nivel, infusao)
+
     def combate(self, slug_: str, indice: dict | None = None) -> dict | None:
         """Equipamento (agora × melhor), feitiços, dano e compras pelo save (ds2combate); refeito quando o save, o plano
         ou o índice de itens mudam."""
@@ -335,8 +376,9 @@ class MapaVivo:
         path = Path(self.save) if self.save else ds2save.find_save()
         st = path.stat()
         plano_path = self.home / "paginas" / "ds2" / slug_ / "plano.json"
+        estado_path = state_path(self.home, "ds2", slug_)
         chave = (str(path), st.st_mtime_ns, st.st_size, plano_path.stat().st_mtime_ns if plano_path.is_file() else None,
-                 indice is not None)
+                 indice is not None, estado_path.stat().st_mtime_ns if estado_path.is_file() else None)
         with self._lock:
             if slug_ in self._combate and self._combate[slug_][0] == chave:
                 return self._combate[slug_][1]
@@ -345,20 +387,19 @@ class MapaVivo:
         except (OSError, ValueError):
             plano = None
         plano = plano if isinstance(plano, dict) else None
+        try:
+            metas = read_state(self.home, "ds2", slug_).get("metas")
+        except (OSError, ValueError):
+            metas = None
+        metas = metas if isinstance(metas, dict) else {}
         if self.calcular_combate:
-            out = self.calcular_combate(path, pos["slot"], indice, plano)
+            out = self.calcular_combate(path, pos["slot"], indice, plano, metas)
         else:
-            import ds2calc
             import ds2combate
-            import ds2data
 
-            with self._lock:
-                if self._nomes is None:
-                    self._nomes = ds2save.load_item_names()
-                if self._regras is None:
-                    self._regras = (ds2calc.load(), ds2data.load())
+            regras = self._regras_do_jogo()
             snap = ds2save.snapshot(path, pos["slot"], self._nomes)
-            out = ds2combate.combate(*self._regras, self._nomes, snap, indice, plano)
+            out = ds2combate.combate(*regras, self._nomes, snap, indice, plano, metas=metas)
         with self._lock:
             self._combate[slug_] = (chave, out)
         return out
@@ -630,6 +671,8 @@ class Handler(BaseHTTPRequestHandler):
             return self._fontes(parts[2])
         if len(parts) == 4 and parts[:2] == ["api", "ds2"] and parts[3] == "combate" and SEGMENT.match(parts[2]):
             return self._combate(parts[2])
+        if len(parts) == 4 and parts[:2] == ["api", "ds2"] and parts[3] == "simular" and SEGMENT.match(parts[2]):
+            return self._simular(parts[2])
         if len(parts) == 4 and parts[:2] == ["api", "ds2"] and parts[3] == "posicao" and SEGMENT.match(parts[2]):
             return self._posicao(parts[2])
         if len(parts) == 4 and parts[:2] == ["api", "ds2"] and parts[3] == "save" and SEGMENT.match(parts[2]):
@@ -692,6 +735,11 @@ class Handler(BaseHTTPRequestHandler):
             marcados = sum(1 for k, v in quero.items() if k != doc_id and isinstance(v, dict) and v.get("marcado"))
             if marcados >= MAX_QUERO:
                 return self._send(409, b"lista cheia", "text/plain; charset=utf-8")
+        if collection == "metas" and data["ativa"]:
+            metas = read_state(self.home, jogo, personagem)["metas"]
+            ligadas = sum(1 for k, v in metas.items() if k != doc_id and isinstance(v, dict) and v.get("ativa"))
+            if ligadas >= MAX_METAS:
+                return self._send(409, b"metas demais", "text/plain; charset=utf-8")
         if collection == "pedidos":
             pedidos = read_state(self.home, jogo, personagem)["pedidos"]
             abertos = sum(1 for k, v in pedidos.items() if k != doc_id and isinstance(v, dict) and v.get("estado") == "na_fila")
@@ -809,6 +857,24 @@ class Handler(BaseHTTPRequestHandler):
         if r is None:
             return self._json({"erro": "personagem não está no save"}, status=404)
         return self._json(completar_combate(self.home, json.loads(json.dumps(r))))
+
+    def _simular(self, personagem: str):
+        import ds2save
+
+        q = parse_qs(urlsplit(self.path).query)
+        item, nivel, infusao = (q.get(k, [""])[0] for k in ("item", "nivel", "infusao"))
+        if not (item.isdigit() and len(item) <= 10 and nivel.isdigit() and int(nivel) <= 10 and infusao.isdigit()
+                and int(infusao) <= 9):
+            return self._send(400, b"item, nivel ou infusao invalido", "text/plain; charset=utf-8")
+        try:
+            r = self.mapa.simular(personagem, int(item), int(nivel), int(infusao))
+        except ds2save.SaveError as err:  # arma, nível ou infusão que o jogo não aceita
+            return self._json({"erro": str(err)}, status=400)
+        except Exception as err:  # sem save, save sendo gravado, jogo ausente
+            return self._json({"erro": f"não consegui simular ({type(err).__name__})"}, status=503)
+        if r is None:
+            return self._json({"erro": "personagem não está no save"}, status=404)
+        return self._json(r)
 
     def _fontes(self, personagem: str):
         item_id = parse_qs(urlsplit(self.path).query).get("item", [""])[0]

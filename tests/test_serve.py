@@ -643,16 +643,23 @@ def server_combate(tmp_path):
     (page / "plano.json").write_text(json.dumps({"equipamento": {"slots": []}}), encoding="utf-8")
     chamadas = []
 
-    def calcular(path, slot_n, indice, plano):
+    def calcular(path, slot_n, indice, plano, metas=None):
         chamadas.append((slot_n, indice is not None, plano))
+        (tmp_path / "metas_vistas.json").write_text(json.dumps(metas), encoding="utf-8")
         if (tmp_path / "quebrar").exists():
             raise OSError("save sendo gravado")
         return {"equipamento": {"slots": [{"slot": "R1", "agora": {"nome": "Uchigatana", "nivel": 5, "tipo": "arma"}, "plano": None,
                                            "muda": False}], "sintonia": {}}, "feiticos": {"lista": []}, "dano": [],
                 "compras": [{"loja": {"tipo": "npc", "nome": "Steady Hand McDuff"}, "item": {"tipo": "item", "nome": "Uchigatana"}, "qtd": 1}]}
 
+    def simular_arma(path, slot_n, item_id, nivel, infusao):
+        if infusao == 7:
+            import ds2save
+            raise ds2save.SaveError("a arma não aceita a infusão Raw")
+        return {"item": {"id": item_id}, "nivel": nivel, "infusao": infusao, "slot": slot_n}
+
     httpd = serve.make_server(tmp_path, port=0, runner=serve.Runner(command=lambda p: [sys.executable, "-c", "0"], cwd=tmp_path),
-                              save=save, mapa=serve.MapaVivo(tmp_path, save, calcular_combate=calcular),
+                              save=save, mapa=serve.MapaVivo(tmp_path, save, calcular_combate=calcular, simular_arma=simular_arma),
                               catalogo=serve.Catalogo(tmp_path, lambda: {"itens": {}, "areas": {}}))
     threading.Thread(target=httpd.serve_forever, daemon=True).start()
     yield f"http://127.0.0.1:{httpd.server_address[1]}", tmp_path, chamadas
@@ -669,6 +676,60 @@ def test_combat_comes_from_the_save_and_is_kept_until_it_changes(server_combate)
     with pytest.raises(urllib.error.HTTPError) as err:
         get(f"{base}/api/ds2/outro/combate")
     assert err.value.code == 404
+
+
+def test_simulate_a_weapon_by_code(server_combate):
+    base, _, _ = server_combate
+    api = f"{base}/api/ds2/personagem-teste"
+    r = json.loads(get(f"{api}/simular?item=3330000&nivel=8&infusao=1")[2])
+    assert r == {"item": {"id": 3330000}, "nivel": 8, "infusao": 1, "slot": 1}
+    for q in ("item=abc&nivel=8&infusao=1", "item=3330000&nivel=11&infusao=1", "item=3330000&nivel=8&infusao=10",
+              "nivel=8&infusao=1", "item=3330000&nivel=-1&infusao=0"):
+        with pytest.raises(urllib.error.HTTPError) as err:
+            get(f"{api}/simular?{q}")
+        assert err.value.code == 400, q
+    with pytest.raises(urllib.error.HTTPError) as err:
+        get(f"{api}/simular?item=3330000&nivel=8&infusao=7")
+    assert err.value.code == 400 and "não aceita" in json.loads(err.value.read())["erro"]
+    with pytest.raises(urllib.error.HTTPError) as err:
+        get(f"{base}/api/ds2/outro/simular?item=3330000&nivel=8&infusao=1")
+    assert err.value.code == 404
+
+
+def test_goals_per_weapon_are_kept_and_validated(server_combate):
+    base, home, _ = server_combate
+    api = f"{base}/api/ds2/personagem-teste"
+    meta = {"item_id": 3330000, "nivel": 8, "infusao": 1, "ativa": True, "desde": "2026-10-12T10:00:00Z"}
+    assert post(f"{api}/metas/3330000", meta)["metas"]["3330000"] == meta
+    for doc, body in (("3330000", {**meta, "nivel": 11}), ("3330000", {**meta, "infusao": 10}), ("3330000", {**meta, "x": 1}),
+                      ("1700000", meta), ("3330000", {**meta, "ativa": "sim"}), ("3330000", {**meta, "nivel": True})):
+        with pytest.raises(urllib.error.HTTPError) as err:
+            post(f"{api}/metas/{doc}", body)
+        assert err.value.code == 400, body
+
+
+def test_goals_have_a_limit(server_combate, monkeypatch):
+    base, _, _ = server_combate
+    monkeypatch.setattr(serve, "MAX_METAS", 1)
+    api = f"{base}/api/ds2/personagem-teste"
+    post(f"{api}/metas/1", {"item_id": 1, "nivel": 0, "infusao": 0, "ativa": True})
+    with pytest.raises(urllib.error.HTTPError) as err:
+        post(f"{api}/metas/2", {"item_id": 2, "nivel": 0, "infusao": 0, "ativa": True})
+    assert err.value.code == 409
+    post(f"{api}/metas/1", {"item_id": 1, "nivel": 0, "infusao": 0, "ativa": False})  # tirar sempre pode
+    post(f"{api}/metas/2", {"item_id": 2, "nivel": 0, "infusao": 0, "ativa": True})
+
+
+def test_combat_gets_the_goals_and_is_redone_when_they_change(server_combate):
+    base, home, chamadas = server_combate
+    assert esperar(f"{base}/api/ds2/catalogo", 200)
+    api = f"{base}/api/ds2/personagem-teste"
+    get(f"{api}/combate")
+    assert json.loads((home / "metas_vistas.json").read_text(encoding="utf-8")) == {}
+    post(f"{api}/metas/3330000", {"item_id": 3330000, "nivel": 8, "infusao": 1, "ativa": True})
+    get(f"{api}/combate")
+    assert len(chamadas) == 2
+    assert json.loads((home / "metas_vistas.json").read_text(encoding="utf-8"))["3330000"]["nivel"] == 8
 
 
 def test_combat_error_is_503(server_combate):

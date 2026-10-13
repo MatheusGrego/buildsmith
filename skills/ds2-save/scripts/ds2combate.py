@@ -9,6 +9,8 @@
   ficam depois.
 - Dano: cada arma equipada na mão direita com o próximo reforço e o máximo (almas e materiais, quanto você tem) e a
   troca da R1, se houver.
+- Metas (estado da página, coleção `metas`): cada meta ligada simulada (ds2simula) na lista `metas`; a da arma que está
+  numa mão vai também em `slot["meta"]`. `armas` = as armas do inventário para o seletor do simulador.
 
   python ds2combate.py [--personagem NOME | --slot N]
 """
@@ -19,6 +21,7 @@ from pathlib import Path
 
 import ds2calc
 import ds2equip
+import ds2simula
 from ds2fontes import acesso_areas, almas, wiki
 from ds2save import SaveError, _slug
 
@@ -196,7 +199,32 @@ def compras(snap: dict) -> list[dict]:
     return out
 
 
-def combate(calc, data, names: dict, snap: dict, indice: dict | None = None, plano: dict | None = None) -> dict:
+def metas_simuladas(calc, data, names: dict, snap: dict, eq: dict, metas: dict | None) -> list[dict]:
+    """Metas ligadas com o resultado do simulador; documento estranho fica de fora, arma inválida vem com `erro`."""
+    lista, por_id = [], {}
+    for doc in (metas or {}).values():
+        if not isinstance(doc, dict) or doc.get("ativa") is not True:
+            continue
+        try:
+            item_id, nivel, infusao = int(doc["item_id"]), int(doc["nivel"]), int(doc["infusao"])
+        except (KeyError, TypeError, ValueError):
+            continue
+        m = {"item_id": item_id, "nivel": nivel, "infusao": infusao}
+        try:
+            m["resultado"] = ds2simula.simular(calc, data, names, snap, item_id, nivel, infusao)
+        except (SaveError, KeyError, IndexError) as err:
+            m.update({"erro": str(err), "nome": names.get(item_id, ("", f"#{item_id}"))[1]})
+        lista.append(m)
+        por_id[item_id] = m
+    for s in eq["slots"]:
+        m = por_id.get((s.get("agora") or {}).get("id"))
+        if s["slot"] in MAOS and m and "resultado" in m:
+            s["meta"] = m["resultado"]
+    return lista
+
+
+def combate(calc, data, names: dict, snap: dict, indice: dict | None = None, plano: dict | None = None,
+            metas: dict | None = None) -> dict:
     stats, _fontes = ds2calc.atributos_efetivos(snap)
     trocas = melhores(calc, names, snap, stats, indice)
     do_plano = _trocas_do_plano(plano, names)
@@ -205,7 +233,8 @@ def combate(calc, data, names: dict, snap: dict, indice: dict | None = None, pla
     eq["origem"] = "plano" if do_plano else "melhor que dá para pegar agora" if indice else "o que você tem"
     _icones(eq, indice)
     return {"equipamento": eq, "feiticos": feiticos(calc, snap, eq, plano), "dano": dano(calc, data, names, snap, stats, eq),
-            "compras": compras(snap)}
+            "compras": compras(snap), "metas": metas_simuladas(calc, data, names, snap, eq, metas),
+            "armas": ds2simula.armas_do_inventario(names, snap)}
 
 
 def main(argv=None) -> int:

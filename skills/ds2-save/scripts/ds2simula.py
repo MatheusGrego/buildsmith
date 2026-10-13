@@ -42,6 +42,8 @@ def armas_do_inventario(names: dict, snap: dict) -> list[dict]:
 
 
 def simular(calc, data, names: dict, snap: dict, item_id: int, nivel: int, infusao: int, atributos: dict | None = None) -> dict:
+    if item_id not in calc.weapons:
+        raise SaveError(f"item {item_id} não é arma nem catalisador")
     stats, aneis = ds2calc.atributos_efetivos({"stats": {**snap["stats"], **(atributos or {})}, "equipped": snap["equipped"]})
     peca = ds2equip.peca(calc, names, item_id, nivel, stats, infusao)  # SaveError: arma, nível ou infusão inválidos
     copia = ds2equip.copias(snap).get(item_id)
