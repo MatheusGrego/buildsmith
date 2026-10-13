@@ -4,7 +4,9 @@ posição da câmera e a direção (yaw) dela.
 
 Endereços do DS2S-META (MIT, © 2021 Nordgaren), relativos ao ponteiro estático BaseA (ds2mem.AOB_BASE_A):
   PlayerCtrl = [BaseA+0xD0]; posição = [[PlayerCtrl+0xF8]+0xF0]: floats em +0x20/+0x24/+0x28 e a rotação em +0x30..+0x3C;
-  câmera = [[BaseA+0x0]+0x20]: floats em +0x1A0/+0x1A4/+0x1A8; nome = [BaseA+0xA8]+0x114 (UTF-16).
+  nome = [BaseA+0xA8]+0x114 (UTF-16).
+Câmera: achada no jogo em 2026-10-13 (a do DS2S-META, [[BaseA+0x0]+0x20], cai na vtable nesta versão): posição em
+  [BaseA+0xB0]+0x1E0 (x, y, z), a ~3,6 m do personagem; girar a câmera 90° muda a yaw em ~90° e andar não.
 Eixos: os 3 floats na ordem em que estão na memória = (x, y para cima, z), como a posição do save (ds2save.posicao_do_slot);
 a conferência com o jogo fixa isso (EIXOS). Direções na convenção do mapa 3D (iso.js): frente = (sen a, cos a) em (x, z).
 Área: ainda sem campo achado na memória; vem de `area(nome)` (o servidor passa a área do save daquele personagem).
@@ -19,8 +21,8 @@ import time
 import ds2mem
 
 EXE = "DarkSoulsII.exe"
-OFF_CTRL, OFF_POS, OFF_CAM, OFF_NOME = [0xD0], [0xF8, 0xF0], [0x0, 0x20], [0xA8]
-POS_XYZ, POS_QUAT, CAM_XYZ, NOME = 0x20, 0x30, 0x1A0, 0x114
+OFF_CTRL, OFF_POS, OFF_CAM, OFF_NOME = [0xD0], [0xF8, 0xF0], [0xB0], [0xA8]
+POS_XYZ, POS_QUAT, CAM_XYZ, NOME = 0x20, 0x30, 0x1E0, 0x114
 EIXOS = (0, 1, 2)  # índices dos floats da memória para (x, y para cima, z) do mapa
 
 

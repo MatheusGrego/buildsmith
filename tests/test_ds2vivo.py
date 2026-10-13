@@ -32,9 +32,8 @@ def jogo(pos=(10.0, 2.0, -5.0), quat=(1.0, 0.0, 0.0, 0.0), camera=(10.0, 4.0, -1
     struct.pack_into("<Q", codigo, 0x187, base_a)
     mem = ds2mem.MemoriaFalsa({
         MOD: bytes(codigo),
-        BASE_A: regiao(0x200, x0=CAM_OBJ, xa8=NOME_OBJ, xd0=ctrl),
-        CAM_OBJ: regiao(0x40, x20=CAM),
-        CAM: regiao(0x200, x1a0=camera),
+        BASE_A: regiao(0x200, xa8=NOME_OBJ, xb0=CAM, xd0=ctrl),
+        CAM: regiao(0x200, x1e0=camera),  # achado no jogo em 2026-10-13: [BaseA+0xB0]+0x1E0
         NOME_OBJ: regiao(0x200, x114=nome),
         CTRL: regiao(0x200, xf8=P1),
         P1: regiao(0x200, xf0=POS),
