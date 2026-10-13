@@ -26,6 +26,9 @@ próprias licenças, que continuam valendo para eles, e são listados aqui como 
   ESD foi conferido lá; os leitores do buildsmith foram escritos do zero.
 - [Paramdex](https://github.com/soulsmods/Paramdex) (soulsmods): nomes e posições de campos das tabelas de parâmetros
   do DS2, usados como referência para ler as tabelas do jogo.
+- [DS2S-META](https://github.com/pseudostripy/DS2S-META) (MIT, © 2021 Nordgaren): endereços de memória do DS2 SotFS (padrão
+  do ponteiro `BaseA` e as cadeias do jogador, da câmera e do nome) usados pela leitura ao vivo (`ds2mem`, `ds2vivo`), só
+  leitura; o leitor foi escrito do zero.
 
 ## Conteúdo que não vai no repositório nem na release
 
