@@ -26,7 +26,9 @@ def regiao(tamanho, **valores):
 
 
 def jogo(pos=(10.0, 2.0, -5.0), quat=(1.0, 0.0, 0.0, 0.0), camera=(10.0, 4.0, -1.0), nome="Personagem Um", base_a=BASE_A,
-         ctrl=CTRL):
+         ctrl=CTRL, area=bytes([0, 0, 4, 10])):
+    nome_obj = bytearray(regiao(0x200, x114=nome))
+    nome_obj[0x1B8:0x1BC] = area  # área atual, na ordem do save (achada no jogo em 2026-10-13)
     codigo = bytearray(0x200)
     codigo[0x100:0x111] = bytes.fromhex("488B05" + "80000000" + "488B583848 85DB 7410 F6".replace(" ", ""))
     struct.pack_into("<Q", codigo, 0x187, base_a)
@@ -34,7 +36,7 @@ def jogo(pos=(10.0, 2.0, -5.0), quat=(1.0, 0.0, 0.0, 0.0), camera=(10.0, 4.0, -1
         MOD: bytes(codigo),
         BASE_A: regiao(0x200, xa8=NOME_OBJ, xb0=CAM, xd0=ctrl),
         CAM: regiao(0x200, x1e0=camera),  # achado no jogo em 2026-10-13: [BaseA+0xB0]+0x1E0
-        NOME_OBJ: regiao(0x200, x114=nome),
+        NOME_OBJ: bytes(nome_obj),
         CTRL: regiao(0x200, xf8=P1),
         P1: regiao(0x200, xf0=POS),
         POS: regiao(0x80, x20=pos, x30=quat),
@@ -65,7 +67,7 @@ def test_live_state_from_memory():
     assert r["ativo"] and r["nome"] == "Personagem Um" and r["ts"] == 123.0
     assert r["pos"] == [10.0, 2.0, -5.0] and r["camera"] == [10.0, 4.0, -1.0]
     assert abs(abs(r["yaw_camera"]) - math.pi) < 1e-6 and abs(r["dir_personagem"]) < 1e-6
-    assert r["area"] is None  # Task 3
+    assert r["area"] == "m10_04_00_00" and r["area_fonte"] == "memoria"
 
 
 def test_null_pointers_mean_loading():
@@ -95,13 +97,19 @@ def test_area_comes_from_the_given_source_by_the_character_name():
         vistos.append(nome)
         return "m10_04_00_00"
 
-    r = ds2vivo.LeitorVivo(abrir=lambda: jogo(), relogio=lambda: 1.0, area=area).ler()
-    assert r["area"] == "m10_04_00_00" and r["area_fonte"] == "save" and vistos == ["Personagem Um"]
+    r = ds2vivo.LeitorVivo(abrir=lambda: jogo(area=bytes(4)), relogio=lambda: 1.0, area=area).ler()
+    assert r["area"] == "m10_04_00_00" and r["area_fonte"] == "save" and vistos == ["Personagem Um"]  # memória sem área
 
 
 def test_area_source_failing_does_not_break_the_reading():
     def area(nome):
         raise OSError("save sendo gravado")
 
-    r = ds2vivo.LeitorVivo(abrir=lambda: jogo(), relogio=lambda: 1.0, area=area).ler()
+    r = ds2vivo.LeitorVivo(abrir=lambda: jogo(area=bytes(4)), relogio=lambda: 1.0, area=area).ler()
     assert r["ativo"] and r["area"] is None
+
+
+def test_area_code_from_memory_bytes():
+    assert ds2vivo.area_dos_bytes(bytes([0, 0, 31, 10])) == "m10_31_00_00"
+    assert ds2vivo.area_dos_bytes(bytes([0, 0, 0, 0])) is None  # tela de título, carregando
+    assert ds2vivo.area_dos_bytes(bytes([200, 1, 2, 99])) is None  # lixo

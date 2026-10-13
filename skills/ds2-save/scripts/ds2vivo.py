@@ -9,7 +9,9 @@ Câmera: achada no jogo em 2026-10-13 (a do DS2S-META, [[BaseA+0x0]+0x20], cai n
   [BaseA+0xB0]+0x1E0 (x, y, z), a ~3,6 m do personagem; girar a câmera 90° muda a yaw em ~90° e andar não.
 Eixos: os 3 floats na ordem em que estão na memória = (x, y para cima, z), como a posição do save (ds2save.posicao_do_slot);
 a conferência com o jogo fixa isso (EIXOS). Direções na convenção do mapa 3D (iso.js): frente = (sen a, cos a) em (x, z).
-Área: ainda sem campo achado na memória; vem de `area(nome)` (o servidor passa a área do save daquele personagem).
+Área atual: achada no jogo em 2026-10-13 em [BaseA+0xA8]+0x1B8 (4 bytes na ordem do save: cc dd bb aa), conferida em
+  Majula → Forest (fogueira) → Heide (fogueira) → Majula (a pé); [BaseA+0x70]+0x164 é a área da última fogueira (não muda
+  a pé). Valor estranho ou zerado: `area(nome)`, a área do save daquele personagem.
 
   python ds2vivo.py   uma leitura em JSON (o jogo precisa estar aberto)
 """
@@ -22,8 +24,16 @@ import ds2mem
 
 EXE = "DarkSoulsII.exe"
 OFF_CTRL, OFF_POS, OFF_CAM, OFF_NOME = [0xD0], [0xF8, 0xF0], [0xB0], [0xA8]
-POS_XYZ, POS_QUAT, CAM_XYZ, NOME = 0x20, 0x30, 0x1E0, 0x114
+POS_XYZ, POS_QUAT, CAM_XYZ, NOME, AREA = 0x20, 0x30, 0x1E0, 0x114, 0x1B8
 EIXOS = (0, 1, 2)  # índices dos floats da memória para (x, y para cima, z) do mapa
+
+
+def area_dos_bytes(b: bytes) -> str | None:
+    """4 bytes na ordem do save (cc dd bb aa) -> 'mAA_BB_DD_CC'. None se zerado ou fora do formato dos mapas (m10..m59)."""
+    cc, dd, bb, aa = b[:4]
+    if not 10 <= aa <= 59 or max(bb, dd, cc) > 99:
+        return None
+    return f"m{aa:02d}_{bb:02d}_{dd:02d}_{cc:02d}"
 
 
 def yaw_da_camera(camera, pos) -> float | None:
@@ -94,10 +104,11 @@ class LeitorVivo:
             camera = [round(mem.f32s(cam_ptr + CAM_XYZ, 3)[i], 3) for i in EIXOS] if cam_ptr else None
             nome_ptr = ds2mem.cadeia(mem, base_a, OFF_NOME)
             nome = mem.utf16(nome_ptr + NOME) if nome_ptr else None
+            area = area_dos_bytes(mem.ler(nome_ptr + AREA, 4)) if nome_ptr else None
             return {"ativo": True, "nome": nome, "pos": pos,
                     "dir_personagem": direcao_do_quaternion(mem.f32s(pos_ptr + POS_QUAT, 4)),
                     "camera": camera, "yaw_camera": yaw_da_camera(camera, pos) if camera else None,
-                    **self._area_de(nome), "ts": ts}
+                    **({"area": area, "area_fonte": "memoria"} if area else self._area_de(nome)), "ts": ts}
         except ds2mem.ErroMemoria as err:
             self._soltar()
             motivo = "jogo fechado" if "não está aberto" in str(err) else str(err)
