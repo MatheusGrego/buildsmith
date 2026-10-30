@@ -229,6 +229,62 @@ def coords(texto) -> tuple[float, float, float] | None:
     return v if len(v) == 3 and all(math.isfinite(c) and abs(c) <= COORD_MAX for c in v) else None
 
 
+class FluxoVivo:
+    """Estado ao vivo do jogo (ds2vivo: memória, só leitura) para o minimapa: uma thread lê a ~10 Hz enquanto houver
+    alguém ouvindo o stream e todos recebem o mesmo valor. Sem ninguém ouvindo, nada lê o jogo."""
+
+    def __init__(self, leitor=None, intervalo: float = 0.1, area=None):
+        self._leitor, self.intervalo, self._area = leitor, intervalo, area
+        self._cond = threading.Condition()
+        self._valor, self._seq, self._ouvintes = None, 0, 0
+        self._thread = None
+        self.parar = threading.Event()
+
+    def _ler(self) -> dict:
+        try:
+            if self._leitor is None:
+                import ds2vivo
+                self._leitor = ds2vivo.LeitorVivo(area=self._area)
+            return self._leitor.ler()
+        except Exception as err:  # jogo, permissão ou leitor com defeito: o minimapa só mostra "fora"
+            return {"ativo": False, "motivo": f"erro na leitura ({type(err).__name__})"}
+
+    def atual(self) -> dict:
+        with self._cond:
+            if self._ouvintes and self._valor is not None:
+                return self._valor
+        return self._ler()
+
+    def _laco(self) -> None:
+        while not self.parar.is_set():
+            with self._cond:
+                if not self._ouvintes:
+                    self._thread = None
+                    return
+            valor = self._ler()
+            with self._cond:
+                self._valor, self._seq = valor, self._seq + 1
+                self._cond.notify_all()
+            self.parar.wait(self.intervalo)
+
+    def entrar(self) -> None:
+        with self._cond:
+            self._ouvintes += 1
+            if self._thread is None:
+                self._thread = threading.Thread(target=self._laco, daemon=True)
+                self._thread.start()
+
+    def sair(self) -> None:
+        with self._cond:
+            self._ouvintes = max(0, self._ouvintes - 1)
+
+    def esperar(self, seq: int, timeout: float) -> tuple[int, dict | None]:
+        """Próximo valor depois de `seq` (ou None se não chegou nada no tempo)."""
+        with self._cond:
+            self._cond.wait_for(lambda: self._seq != seq or self.parar.is_set(), timeout)
+            return (self._seq, self._valor) if self._seq != seq else (seq, None)
+
+
 class MapaVivo:
     """Posição do personagem (relê o save só quando o arquivo muda) e rota pelo chão (grafo do navmesh em memória)."""
 
@@ -246,6 +302,18 @@ class MapaVivo:
         self._nomes = None
         self._areas: OrderedDict = OrderedDict()
         self._lock = threading.Lock()
+
+    def area_por_nome(self, nome: str) -> str | None:
+        """Área do personagem com esse nome na última gravação do save (o minimapa usa enquanto a memória não diz)."""
+        import ds2save
+
+        path = Path(self.save) if self.save else ds2save.find_save()
+        st = path.stat()
+        chave = (str(path), st.st_mtime_ns, st.st_size)
+        with self._lock:
+            if self._save[0] != chave:
+                self._save = (chave, ds2save.posicoes(path))
+            return next((p["area"] for p in self._save[1].values() if p.get("nome") == nome), None)
 
     def posicao(self, slug_: str) -> dict | None:
         import ds2save
@@ -665,6 +733,10 @@ class Handler(BaseHTTPRequestHandler):
             return self._json(personagens(self.home, parts[1], self.save, self.steam_dirs))
         if parts == ["api", "ds2", "rota"]:
             return self._rota()
+        if parts == ["api", "ds2", "vivo"]:
+            return self._json(self.vivo.atual())
+        if parts == ["api", "ds2", "vivo", "stream"]:
+            return self._stream_vivo()
         if parts == ["api", "ds2", "catalogo"]:
             return self._catalogo()
         if len(parts) == 4 and parts[:2] == ["api", "ds2"] and parts[3] == "fontes" and SEGMENT.match(parts[2]):
@@ -746,6 +818,28 @@ class Handler(BaseHTTPRequestHandler):
             if abertos >= MAX_FILA:
                 return self._send(409, b"fila cheia", "text/plain; charset=utf-8")
         return self._json(write_doc(self.home, jogo, personagem, collection, doc_id, data))
+
+    def _stream_vivo(self):
+        """Server-Sent Events: um `data: <json>` a cada leitura do jogo; termina quando o cliente sai."""
+        self.send_response(200)
+        self.send_header("Content-Type", "text/event-stream; charset=utf-8")
+        self.send_header("Cache-Control", "no-store")
+        self.send_header("X-Content-Type-Options", "nosniff")
+        self.end_headers()
+        self.vivo.entrar()
+        try:
+            self.wfile.write(b"retry: 2000\n\n")
+            self.wfile.flush()
+            seq = -1
+            while not self.vivo.parar.is_set():
+                seq, valor = self.vivo.esperar(seq, 2.0)
+                corpo = b": ainda aqui\n\n" if valor is None else ("data: " + json.dumps(valor, ensure_ascii=False) + "\n\n").encode("utf-8")
+                self.wfile.write(corpo)
+                self.wfile.flush()
+        except (BrokenPipeError, ConnectionResetError, ConnectionAbortedError, OSError):
+            pass  # cliente fechou a aba ou o OBS trocou de cena
+        finally:
+            self.vivo.sair()
 
     def _cena_json(self, area: str):
         pronta = self.cenas.pronta(area)
@@ -965,7 +1059,7 @@ class Handler(BaseHTTPRequestHandler):
         if root not in target.parents and target != root / "index.html" or not target.is_file():
             return self._send(404, b"nao encontrado", "text/plain; charset=utf-8")
         body = target.read_bytes()
-        if target.name == "index.html":
+        if target.name in ("index.html", "overlay.html"):  # a página e o minimapa: mesmo CSP (script só inline/próprio)
             return self._send(200, DOCTYPE + body + b"</body></html>", "text/html; charset=utf-8", CSP_PAGINA)
         ctype = TIPOS_ESTATICOS.get(target.suffix.lower()) or mimetypes.guess_type(target.name)[0] or "application/octet-stream"
         if ctype.startswith("text/") or ctype == "application/json":
@@ -987,13 +1081,23 @@ class Handler(BaseHTTPRequestHandler):
 
 
 def make_server(home: Path, port: int = PORT, runner: Runner | None = None, save=None, steam_dirs=None,
-                mapa: MapaVivo | None = None, extrair_cena=None, catalogo: Catalogo | None = None) -> ThreadingHTTPServer:
+                mapa: MapaVivo | None = None, extrair_cena=None, catalogo: Catalogo | None = None,
+                vivo: FluxoVivo | None = None) -> ThreadingHTTPServer:
     runner = runner or Runner(cwd=Path(home), log_path=Path(home) / "execucoes" / "ultima.jsonl")
+    mapa = mapa or MapaVivo(home, save)
     handler = type("BuildsmithHandler", (Handler,), {"home": Path(home), "runner": runner, "save": save,
-                                                     "steam_dirs": steam_dirs, "mapa": mapa or MapaVivo(home, save),
+                                                     "steam_dirs": steam_dirs, "mapa": mapa,
                                                      "cenas": Cenas(home, extrair_cena),
-                                                     "catalogo": catalogo or Catalogo(home)})
-    return ThreadingHTTPServer(("127.0.0.1", port), handler)
+                                                     "catalogo": catalogo or Catalogo(home),
+                                                     "vivo": vivo or FluxoVivo(area=mapa.area_por_nome)})
+    httpd = ThreadingHTTPServer(("127.0.0.1", port), handler)
+    desligar = httpd.shutdown
+
+    def shutdown():  # streams abertos param junto com o servidor
+        handler.vivo.parar.set()
+        desligar()
+    httpd.shutdown = shutdown
+    return httpd
 
 
 def running(port: int = PORT) -> bool:
@@ -1002,6 +1106,21 @@ def running(port: int = PORT) -> bool:
             return json.loads(resp.read()).get("app") == "buildsmith"
     except OSError:
         return False
+
+
+def slug_do_jogador(home: Path, vivo, save=None) -> str:
+    """Página do personagem carregado no jogo (nome lido da memória, cruzado com o save); sem leitura, a mais recente."""
+    nome = (vivo.atual() or {}).get("nome")
+    if nome:
+        try:
+            import ds2save
+            for p in ds2save.personagens(Path(save) if save else ds2save.find_save()):
+                if p["nome"] == nome and (Path(home) / "paginas" / "ds2" / p["slug"]).is_dir():
+                    return p["slug"]
+        except Exception:  # save sendo gravado: fica a página mais recente
+            pass
+    found = pages(home)
+    return principal(home, found)[1] if found else ""
 
 
 def latest_page_url(home: Path, port: int) -> str:
@@ -1017,6 +1136,7 @@ def main(argv=None) -> int:
     parser = argparse.ArgumentParser(prog="serve")
     parser.add_argument("--home", default=str(default_home()))
     parser.add_argument("--port", type=int, default=PORT)
+    parser.add_argument("--sem-overlay", action="store_true", help="não abre o minimapa por cima do jogo")
     parser.add_argument("--open", action="store_true",
                         help="atualiza (git pull, servidor e páginas: app/abrir.py) e abre a página mais recente")
     sub = parser.add_subparsers(dest="cmd")
@@ -1075,6 +1195,15 @@ def main(argv=None) -> int:
             webbrowser.open(latest_page_url(home, args.port))
         return 0
     httpd = make_server(home, args.port)
+    if not args.sem_overlay and os.name == "nt":  # minimapa e overlay grande por cima do jogo (app/overlay.py)
+        import overlay
+
+        def avisa(texto: str) -> None:
+            with (home / "execucoes" / "overlay.log").open("a", encoding="utf-8") as fh:
+                fh.write(f"{datetime.now():%Y-%m-%d %H:%M:%S}  {texto}\n")
+        (home / "execucoes").mkdir(parents=True, exist_ok=True)
+        vivo = httpd.RequestHandlerClass.vivo
+        overlay.iniciar(home, args.port, lambda: slug_do_jogador(home, vivo), avisa)
     if args.open:
         threading.Timer(0.6, lambda: webbrowser.open(latest_page_url(home, args.port))).start()
     try:

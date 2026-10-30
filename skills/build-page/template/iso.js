@@ -47,6 +47,12 @@
     return [alvo[0] - frente[0] * ch, alvo[1] + Math.sin(incl) * dist, alvo[2] - frente[1] * ch];
   }
   const angulo = (a) => { const r = a % (2 * Math.PI); return r < -Math.PI ? r + 2 * Math.PI : r > Math.PI ? r - 2 * Math.PI : r; };
+  // Minimapa (modo seguir): o giro vai para a yaw da câmera do jogo pelo caminho curto (não dá a volta inteira em ±π).
+  const giroDoMinimapa = (yaw, atual) => atual + angulo(yaw - atual);
+  // Andar do corte de interior pela altura do personagem: o teto e o andar de cima não cobrem ele.
+  const andarDoCorte = (y) => ({ min: y - 2.5, max: y, altura: y });
+  // Rotação da seta do personagem na tela (horário, radianos): direção dele menos o giro do mapa.
+  const rotacaoSeta = (dir, giro) => (dir == null ? null : angulo(dir - giro));
 
   // Matriz 4×4 (coluna a coluna) de uma entidade em coordenadas do jogo: T(pos) · Ry · Rz · Rx (rotação do MSB, em
   // graus, a mesma ordem das peças de mapa) · T(0, base·altura, 0) · S(dims), para uma forma de lado 1 centrada na
@@ -319,9 +325,11 @@ float bsAlturaCorte( vec3 g ) {
 
     async _iniciar() {
       await carregarThree();
-      const r = new THREE.WebGLRenderer({ antialias: true, powerPreference: "high-performance" });
+      // opcoes.fundo: "transparente" (fonte do OBS) ou uma cor (a cor-chave da janela do minimapa); padrão, o da página
+      const transp = this.opcoes.fundo === "transparente";
+      const r = new THREE.WebGLRenderer({ antialias: true, powerPreference: "high-performance", alpha: transp });
       r.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
-      r.setClearColor(FUNDO, 1);
+      r.setClearColor(transp ? 0x000000 : this.opcoes.fundo ?? FUNDO, transp ? 0 : 1);
       r.domElement.className = "mapa-iso-canvas";
       this.container.appendChild(r.domElement);
       this.renderer = r;
@@ -765,6 +773,18 @@ float bsAlturaCorte( vec3 g ) {
     }
     setFoco(on) { this.focoOn = !!on; this.sujo = true; }
 
+    // Modo seguir (minimapa): centro no personagem, giro = yaw da câmera do jogo, corte de interior pela altura dele.
+    // O corte só é refeito quando ele muda de andar (a grade de alturas custa caro).
+    seguir(estado) {
+      if (!estado || !estado.pos) return;
+      const p = estado.pos;
+      this.des.alvo = [p[0], p[1], p[2]];
+      if (estado.yaw_camera != null) this.des.giro = giroDoMinimapa(estado.yaw_camera, this.des.giro);
+      const andar = andarDoCorte(p[1]);
+      if (!this.corte || (!this.corte.grade && this.chao) || Math.abs(this.corte.andar.max - andar.max) > 1.5) this.setCorte(andar);
+      this.sujo = true;
+    }
+
     // Corte de interior pelo chão de um andar ({ min, max, altura }); null desliga.
     setCorte(andar) {
       if (this.corte && this.corte.textura) this.corte.textura.dispose();
@@ -1059,6 +1079,6 @@ float bsAlturaCorte( vec3 g ) {
   }
 
   MapaIsometrico._teste = { eixos, chaoDoPixel, posicaoCamera, gradeAlturas, dilatar, alturaNaGrade, lerDDS, angulo, matrizEntidade,
-    direcaoLivre, profundidadeDoPixel, distanciaDaProfundidade, atrasDoCenario };
+    direcaoLivre, profundidadeDoPixel, distanciaDaProfundidade, atrasDoCenario, giroDoMinimapa, andarDoCorte, rotacaoSeta };
   return MapaIsometrico;
 });

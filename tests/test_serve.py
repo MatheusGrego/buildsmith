@@ -751,3 +751,81 @@ def test_combat_error_is_503(server_combate):
     with pytest.raises(urllib.error.HTTPError) as err:
         get(f"{base}/api/ds2/personagem-teste/combate")
     assert err.value.code == 503
+
+
+class LeitorFalso:
+    def __init__(self, quebrar=False):
+        self.n, self.quebrar = 0, quebrar
+
+    def ler(self):
+        if self.quebrar:
+            raise RuntimeError("leitura quebrada")
+        self.n += 1
+        return {"ativo": True, "nome": "Personagem Um", "pos": [1.0, 2.0, float(self.n)], "yaw_camera": 0.5, "ts": self.n}
+
+
+@pytest.fixture
+def server_vivo(tmp_path):
+    leitor = LeitorFalso()
+    httpd = serve.make_server(tmp_path, port=0, runner=serve.Runner(command=lambda p: [sys.executable, "-c", "0"], cwd=tmp_path),
+                              vivo=serve.FluxoVivo(leitor, intervalo=0.05))
+    threading.Thread(target=httpd.serve_forever, daemon=True).start()
+    yield f"http://127.0.0.1:{httpd.server_address[1]}", leitor, httpd
+    httpd.shutdown()
+
+
+def test_live_state_once(server_vivo):
+    base, leitor, _ = server_vivo
+    r = json.loads(get(f"{base}/api/ds2/vivo")[2])
+    assert r["ativo"] and r["nome"] == "Personagem Um" and r["pos"][:2] == [1.0, 2.0]
+
+
+def test_live_stream_sends_events_and_survives_the_client_leaving(server_vivo):
+    import time
+    base, leitor, _ = server_vivo
+    resp = urllib.request.urlopen(f"{base}/api/ds2/vivo/stream", timeout=5)
+    assert resp.headers.get("Content-Type").startswith("text/event-stream")
+    eventos, inicio = [], time.time()
+    while len(eventos) < 3 and time.time() - inicio < 3:
+        linha = resp.readline().decode("utf-8").strip()
+        if linha.startswith("data: "):
+            eventos.append(json.loads(linha[6:]))
+    resp.close()
+    assert len(eventos) == 3 and eventos[0]["pos"][2] < eventos[2]["pos"][2]  # valores novos a cada leitura
+    time.sleep(0.3)
+    lidas = leitor.n
+    time.sleep(0.3)
+    assert leitor.n == lidas  # sem cliente, a thread para de ler o jogo
+    assert json.loads(get(f"{base}/api/ds2/vivo")[2])["ativo"]  # e o servidor segue respondendo
+
+
+def test_reader_failure_is_inactive_not_an_error(tmp_path):
+    fluxo = serve.FluxoVivo(LeitorFalso(quebrar=True))
+    assert fluxo.atual() == {"ativo": False, "motivo": "erro na leitura (RuntimeError)"}
+
+
+def test_minimap_page_gets_the_page_csp(server):
+    base, home = server
+    page = home / "paginas" / "ds2" / "personagem-um"
+    (page / "overlay.html").write_text("<title>Minimapa</title><p>m</p>", encoding="utf-8")
+    with urllib.request.urlopen(f"{base}/p/ds2/personagem-um/overlay.html", timeout=5) as resp:
+        body = resp.read()
+        assert resp.headers.get("Content-Security-Policy") == serve.CSP_PAGINA
+        assert body.startswith(b"<!doctype html>") and b"<title>Minimapa</title>" in body
+
+
+def test_overlay_page_follows_the_character_loaded_in_the_game(server):
+    base, home = server
+    save = home / "DS2SOFS0000.co2"
+    (home / "paginas" / "ds2" / "personagem-teste").mkdir(parents=True)
+
+    class Vivo:
+        def __init__(self, nome):
+            self.nome = nome
+
+        def atual(self):
+            return {"ativo": bool(self.nome), "nome": self.nome}
+
+    assert serve.slug_do_jogador(home, Vivo("Personagem (teste)"), save) == "personagem-teste"
+    assert serve.slug_do_jogador(home, Vivo("Personagem Um"), save) == "personagem-um"
+    assert serve.slug_do_jogador(home, Vivo(None), save) in ("personagem-um", "personagem-teste")  # sem jogo: a mais recente

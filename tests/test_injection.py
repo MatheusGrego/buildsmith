@@ -1,3 +1,4 @@
+import math
 """Prompt injection: cada caminho que um texto plantado (wiki, cache, fila, plano) usaria para virar ação.
 
 Um teste por ataque achado na auditoria. O texto de terceiros entra em: wiki/cache → modelo → arquivos que o
@@ -584,3 +585,70 @@ console.log(JSON.stringify({com: V.progressoAoVivo(plano, vivo), sem: V.progress
     assert r["velho"]["chefes"][0]["estado"] == "vivo"  # servidor antigo, sem a lista: fica o plano
     assert r["mapa"] == ["derrotado", "vivo", "vivo"]
     assert r["compras"] == [{"loja": {"nome": "Melentia"}, "item": {"nome": "Torch"}, "qtd": 2}]  # as do save, quando vieram
+
+
+@pytest.mark.skipif(shutil.which("node") is None, reason="sem node para rodar o JS da página")
+def test_iso_follow_mode_math(tmp_path):
+    """Minimapa: gira só com a câmera do jogo (pelo caminho curto), corte de andar pela altura e seta relativa à tela."""
+    script = tmp_path / "iso_seguir.js"
+    script.write_text(r"""
+const Iso = require(process.argv[2]);
+const t = Iso._teste;
+const r = (x) => Math.round(x * 1000) / 1000;
+console.log(JSON.stringify({
+  giro: [r(t.giroDoMinimapa(1.0, 0)), r(t.giroDoMinimapa(-3.1, 3.1)), r(t.giroDoMinimapa(0.2, 2 * Math.PI))],
+  andar: t.andarDoCorte(12.5),
+  seta: [r(t.rotacaoSeta(Math.PI / 2, 0)), r(t.rotacaoSeta(0, Math.PI / 2)), t.rotacaoSeta(null, 1)],
+}));
+""", encoding="utf-8")
+    out = json.loads(subprocess.run(["node", str(script), str(ROOT / "skills/build-page/template/iso.js")], capture_output=True,
+                                    text=True, encoding="utf-8", timeout=20, check=True).stdout)
+    assert out["giro"] == [1.0, round(3.1 + (2 * math.pi - 6.2), 3), round(2 * math.pi + 0.2, 3)]
+    assert out["andar"] == {"min": 10.0, "max": 12.5, "altura": 12.5}
+    assert out["seta"] == [round(math.pi / 2, 3), round(-math.pi / 2, 3), None]
+
+
+@pytest.mark.skipif(shutil.which("node") is None, reason="sem node para rodar o JS da página")
+def test_map_uses_the_live_position_only_for_this_character(tmp_path):
+    script = tmp_path / "mapa_vivo.js"
+    script.write_text(r"""
+global.window = {};
+eval(require("fs").readFileSync(process.argv[2], "utf8"));
+const t = window.buildsmithMapa._teste;
+const save = { area: "m10_04_00_00", pos: [1, 2, 3], fogueiras: [4650] };
+const vivo = { ativo: true, nome: "Personagem Um", area: "m10_04_00_00", pos: [10, 2, 30], yaw_camera: 1 };
+console.log(JSON.stringify([
+  t.escolherPosicao(vivo, save, "Personagem Um"),
+  t.escolherPosicao({ ...vivo, nome: "Outro" }, save, "Personagem Um"),
+  t.escolherPosicao({ ativo: false, motivo: "jogo fechado" }, save, "Personagem Um"),
+  t.escolherPosicao({ ...vivo, area: null }, save, "Personagem Um"),
+  t.escolherPosicao(null, null, "Personagem Um"),
+]));
+""", encoding="utf-8")
+    out = json.loads(subprocess.run(["node", str(script), str(ROOT / "skills/build-page/template/mapa.js")], capture_output=True,
+                                    text=True, encoding="utf-8", timeout=20, check=True).stdout)
+    assert out[0] == {"area": "m10_04_00_00", "pos": [10, 2, 30], "fogueiras": [4650], "fonte": "vivo"}
+    assert out[1] == {**{"area": "m10_04_00_00", "pos": [1, 2, 3], "fogueiras": [4650]}, "fonte": "save"}
+    assert out[2]["fonte"] == "save" and out[3]["fonte"] == "save" and out[4] is None
+
+
+@pytest.mark.skipif(shutil.which("node") is None, reason="sem node para rodar o JS da página")
+def test_follow_mode_opens_the_new_area_once(tmp_path):
+    script = tmp_path / "mapa_troca.js"
+    script.write_text(r"""
+global.window = {};
+eval(require("fs").readFileSync(process.argv[2], "utf8"));
+const t = window.buildsmithMapa._teste;
+const v = { ativo: true, nome: "Personagem Um", area: "m10_10_00_00", pos: [0, 0, 0] };
+const areas = ["m10_04_00_00", "m10_10_00_00"];
+console.log(JSON.stringify([
+  t.trocaDeArea(v, "m10_04_00_00", null, "Personagem Um", areas),
+  t.trocaDeArea(v, "m10_04_00_00", "m10_10_00_00", "Personagem Um", areas),
+  t.trocaDeArea(v, "m10_10_00_00", null, "Personagem Um", areas),
+  t.trocaDeArea({ ...v, nome: "Outro" }, "m10_04_00_00", null, "Personagem Um", areas),
+  t.trocaDeArea({ ...v, area: "m99_00_00_00" }, "m10_04_00_00", null, "Personagem Um", areas),
+]));
+""", encoding="utf-8")
+    out = json.loads(subprocess.run(["node", str(script), str(ROOT / "skills/build-page/template/mapa.js")], capture_output=True,
+                                    text=True, encoding="utf-8", timeout=20, check=True).stdout)
+    assert out == ["m10_10_00_00", None, None, None, None]  # abre uma vez; já abrindo, mesma área, outro personagem, área fora
