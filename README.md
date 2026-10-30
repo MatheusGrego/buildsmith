@@ -62,6 +62,8 @@ pip install pycryptodome
 python app/abrir.py
 ```
 
+No Linux (DS2 pela Steam com Proton) é o mesmo comando: o save e o jogo são achados nas bibliotecas da Steam (`~/.local/share/Steam`, `~/.steam/steam`, a do Flatpak e as do `libraryfolders.vdf` delas), com o save no prefixo do Proton. Se o Python do sistema não tem pip, use um venv (`python -m venv ~/.buildsmith/venv && ~/.buildsmith/venv/bin/pip install pycryptodome`) e rode `~/.buildsmith/venv/bin/python app/abrir.py`. Jogo em outra pasta: `BUILDSMITH_DS2_GAME=<pasta Game do DS2>`.
+
 `app/abrir.py` é o que o `Buildsmith.exe` roda: com o repositório, faz `git pull` (só avança; com alteração local, pula), reinicia o servidor se o código mudou, refaz as páginas a partir do `plano.json` de cada uma e cria a página sem IA de quem ainda não tem (sem Claude). `python app/instalar_atalho.py` (precisa de `pip install pillow`) cria o atalho apontando para o repositório.
 
 O mesmo código também é um plugin do Claude Code (`.claude-plugin/`, `skills/`): é assim que o plano é gerado. Para usar direto no Claude Code: `claude plugin marketplace add <pasta do repositório>`, `claude plugin install buildsmith@buildsmith` e `/buildsmith:build ds2`. Para ver no celular, publique no Artifact: `/buildsmith:build ds2 publicar`.

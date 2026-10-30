@@ -4,7 +4,6 @@ O índice .bhd vem cifrado com RSA: o jogo traz a chave pública em <Nome>KeyCod
 vira 255 bytes com `m = c^e mod n`. O índice (BHD5) lista os arquivos por hash do nome; alguns trechos de cada
 arquivo vêm em AES-128-ECB (chave e trechos no próprio índice) e o conteúdo costuma estar comprimido em DCX.
 """
-import os
 import struct
 import zlib
 from pathlib import Path
@@ -120,8 +119,6 @@ class Arquivo:
 
 
 def game_dir_padrao() -> Path | None:
-    env = os.environ.get("BUILDSMITH_DS2_GAME")
-    candidatos = [Path(env)] if env else []
-    candidatos += [Path(r"C:/Program Files (x86)/Steam/steamapps/common/Dark Souls II Scholar of the First Sin/Game"),
-                   Path(r"C:/Program Files/Steam/steamapps/common/Dark Souls II Scholar of the First Sin/Game")]
-    return next((p for p in candidatos if (p / "GameDataEbl.bhd").is_file()), None)
+    from ds2save import game_dirs  # BUILDSMITH_DS2_GAME e as bibliotecas da Steam (Windows e Linux)
+
+    return next((p for p in game_dirs() if (p / "GameDataEbl.bhd").is_file()), None)

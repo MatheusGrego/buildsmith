@@ -39,10 +39,25 @@ def test_no_executavel_o_claude_acha_o_python_da_pasta(monkeypatch, tmp_path):
 
 def test_fora_do_executavel_nada_muda(monkeypatch, tmp_path):
     monkeypatch.delattr(sys, "frozen", raising=False)
+    monkeypatch.setattr(sys, "prefix", sys.base_prefix)  # python instalado, fora de venv
     monkeypatch.setenv("PATH", "X")
     assert runner.child_env(tmp_path)["PATH"] == "X"
     programa, argumentos = instalar_atalho.alvo_do_atalho()
     assert argumentos.endswith('abrir.py"')
+
+
+def test_servidor_num_venv_o_claude_usa_o_python_do_venv(monkeypatch, tmp_path):
+    """Linux sem pycryptodome no sistema: o servidor roda do venv, e o `python "<script>"` do Claude caía no python do
+    sistema ("instale pycryptodome"). O PATH do Claude começa na pasta do venv, sem seguir o link do python dele."""
+    bin_ = tmp_path / "venv" / "bin"
+    bin_.mkdir(parents=True)
+    (bin_ / "python").symlink_to(sys.executable)  # como num venv: link para o python do sistema
+    monkeypatch.delattr(sys, "frozen", raising=False)
+    monkeypatch.setattr(sys, "prefix", str(tmp_path / "venv"))
+    monkeypatch.setattr(sys, "base_prefix", "/usr")
+    monkeypatch.setattr(sys, "executable", str(bin_ / "python"))
+    monkeypatch.setenv("PATH", "X")
+    assert runner.child_env(tmp_path)["PATH"] == str(bin_) + runner.os.pathsep + "X"
 
 
 def test_aberto_pelo_lancador_o_atalho_aponta_para_o_lancador(monkeypatch, tmp_path):

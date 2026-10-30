@@ -39,7 +39,7 @@ Script: `scripts/ds2save.py` nesta pasta. Precisa de Python 3 e `pycryptodome` (
 | `python "<pasta>/scripts/ds2esd.py" chaves --area m10_16_00_00` | qual chave cada porta da área pede, pelo script de evento do jogo (`/ezstate/event_<área>.esd` + `eventparam`): ref, parte do MSB, modelo e chave |
 | `python "<pasta>/scripts/ds2cena.py" extrair --area m10_16_00_00 [--forcar]` | cenário 3D da área para a vista 3D do mapa (peças de mapa FLVER, objetos do MSB com o modelo de `/model/obj/`, modelos dos inimigos de `/model/chr/`, texturas DDS até 512 px, instâncias do MSB e o navmesh para o corte de interior) em `~/.buildsmith/cache/ds2/cena/<area>/`; céu, cartões NoLit e caixas `dummy` ficam de fora; imprime o resumo. A página pede isso sozinha pelo servidor (`POST /api/ds2/cena/<area>/extrair`) |
 
-`<pasta>` é o diretório base desta skill. Sem `--save`, o script usa o save ativo: a extensão do `SeamlessCoop\ds2sc_settings.ini` (`save_file_extension`, ex.: `teste`) quando existir; senão o mais recente entre `DS2SOFS*.sl2` e `DS2SOFS*.co2` em `%APPDATA%\DarkSoulsII\*\`. O save nunca é alterado.
+`<pasta>` é o diretório base desta skill. Sem `--save`, o script usa o save ativo: a extensão do `SeamlessCoop\ds2sc_settings.ini` (`save_file_extension`, ex.: `teste`) quando existir; senão o mais recente entre `DS2SOFS*.sl2` e `DS2SOFS*.co2` em `%APPDATA%\DarkSoulsII\*\` e, no Linux (Proton), em `<biblioteca>/steamapps/compatdata/335300/pfx/drive_c/users/steamuser/AppData/Roaming/DarkSoulsII/*/` da biblioteca onde o jogo está. O save nunca é alterado.
 
 ## Regras
 
@@ -58,7 +58,7 @@ Script: `scripts/ds2save.py` nesta pasta. Precisa de Python 3 e `pycryptodome` (
 - `fogueiras`: IDs das fogueiras acesas (bloco de mundo: 256 IDs em 0x282CC e 1 byte de estado por fogueira logo depois; conferido em 11 backups de um save). É o que separa áreas liberadas e não liberadas no mapa da página.
 - Dois personagens com o mesmo nome: o de maior nível fica com o slug do nome (`pssk`) e os outros com o slot (`pssk-1`).
 - `eventos`: eventos aprendidos em `~/.buildsmith/flags/ds2.json` (`{"eventos": [{"nome": "...", "flags": [...], "data": "AAAA-MM-DD"}]}`) com `feito` true/false.
-- O regulation é procurado na pasta do Steam; outra pasta → variável `BUILDSMITH_DS2_GAME` (pasta `Game` do DS2).
+- A pasta do jogo (regulation, mapas, ini do Seamless) é procurada nas bibliotecas da Steam: as do `steamapps/libraryfolders.vdf` de `C:\Program Files (x86)\Steam` e `C:\Program Files\Steam` no Windows, de `~/.local/share/Steam`, `~/.steam/steam` e do Flatpak no Linux; outra pasta → variável `BUILDSMITH_DS2_GAME` (pasta `Game` do DS2).
 
 ## Dano
 

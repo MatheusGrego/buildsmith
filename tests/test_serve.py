@@ -86,6 +86,19 @@ def test_index_opens_latest_page_and_lists_on_request(server):
     assert b"/p/ds2/personagem-um/" in get(f"{base}/?lista=1")[2]
 
 
+def test_index_without_pages_says_why_the_save_did_not_open(tmp_path, monkeypatch):
+    import ds2save
+
+    monkeypatch.setattr(ds2save, "find_save", lambda: (_ for _ in ()).throw(ds2save.SaveError("nenhum save do DS2 encontrado em <aqui>")))
+    httpd = serve.make_server(tmp_path, port=0, steam_dirs=[tmp_path / "steam"])
+    threading.Thread(target=httpd.serve_forever, daemon=True).start()
+    try:
+        body = get(f"http://127.0.0.1:{httpd.server_address[1]}/")[2].decode("utf-8")
+    finally:
+        httpd.shutdown()
+    assert "Não li o save do DS2: nenhum save do DS2 encontrado em &lt;aqui&gt;" in body
+
+
 class NoRedirect(urllib.request.HTTPRedirectHandler):
     def redirect_request(self, *args, **kwargs):
         return None
