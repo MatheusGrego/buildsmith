@@ -1,5 +1,7 @@
 import json
 import struct
+import sys
+from pathlib import Path
 
 import pytest
 
@@ -192,6 +194,61 @@ def test_find_save_prefers_seamless_extension(tmp_path):
     assert ds2save.seamless_extension(game) == "teste"
 
 
+def biblioteca_linux(raiz):
+    """Biblioteca da Steam com o DS2 instalado e a pasta do save no prefixo do Proton. Devolve (Game, pasta do save)."""
+    game = raiz / "steamapps" / "common" / ds2save.DS2_PASTA / "Game"
+    game.mkdir(parents=True)
+    pasta = raiz / "steamapps" / ds2save.PROTON_APPDATA / "DarkSoulsII" / "0110000100000000"
+    pasta.mkdir(parents=True)
+    return game, pasta
+
+
+def test_steam_libraries_le_o_libraryfolders(tmp_path):
+    raiz, outro_disco = tmp_path / "Steam", tmp_path / "jogos"
+    (raiz / "steamapps").mkdir(parents=True)
+    (raiz / "steamapps" / "libraryfolders.vdf").write_text(
+        f'"libraryfolders"\n{{\n\t"0"\n\t{{\n\t\t"path"\t\t"{raiz}"\n\t}}\n'
+        f'\t"1"\n\t{{\n\t\t"path"\t\t"{outro_disco}"\n\t}}\n}}\n', encoding="utf-8")
+    (tmp_path / "link").symlink_to(raiz)  # ~/.steam/steam aponta para ~/.local/share/Steam
+    assert ds2save.steam_libraries([raiz, tmp_path / "link"]) == [raiz, outro_disco]
+    windows = tmp_path / "SteamWin"
+    (windows / "steamapps").mkdir(parents=True)
+    (windows / "steamapps" / "libraryfolders.vdf").write_text('"1" { "path" "D:\\\\SteamLibrary" }', encoding="utf-8")
+    assert ds2save.steam_libraries([windows]) == [windows, Path("D:\\SteamLibrary")]  # o vdf do Windows escapa a barra
+    assert ds2save.steam_libraries([tmp_path / "nada"]) == [tmp_path / "nada"]
+
+
+def test_find_save_acha_o_save_do_proton_sem_appdata(tmp_path, monkeypatch):
+    monkeypatch.delenv("APPDATA", raising=False)
+    monkeypatch.delenv("BUILDSMITH_DS2_GAME", raising=False)
+    monkeypatch.setattr(ds2save, "STEAM_DIRS", [tmp_path / "Steam"])
+    game, pasta = biblioteca_linux(tmp_path / "Steam")
+    sl2, co2 = pasta / "DS2SOFS0000.sl2", pasta / "DS2SOFS0000.co2"
+    sl2.write_bytes(b"s")
+    co2.write_bytes(b"c")
+    os.utime(co2, (1, 1))
+    assert ds2save.find_save() == sl2
+    (game / "SeamlessCoop").mkdir()
+    (game / "SeamlessCoop" / "ds2sc_settings.ini").write_text("save_file_extension = co2\n", encoding="utf-8")
+    assert ds2save.find_save() == co2  # o ini do Seamless vem da pasta do jogo achada na Steam
+
+
+def test_find_save_usa_o_proton_da_pasta_do_jogo_da_variavel(tmp_path, monkeypatch):
+    monkeypatch.delenv("APPDATA", raising=False)
+    monkeypatch.setattr(ds2save, "STEAM_DIRS", [tmp_path / "Steam"])
+    game, pasta = biblioteca_linux(tmp_path / "outro disco")
+    (pasta / "DS2SOFS0000.sl2").write_bytes(b"s")
+    monkeypatch.setenv("BUILDSMITH_DS2_GAME", str(game))
+    assert ds2save.find_save() == pasta / "DS2SOFS0000.sl2"
+    monkeypatch.delenv("BUILDSMITH_DS2_GAME")
+    with pytest.raises(ds2save.SaveError, match="não achei a pasta DarkSoulsII .* defina BUILDSMITH_DS2_GAME"):
+        ds2save.find_save()
+    (pasta / "DS2SOFS0000.sl2").unlink()
+    with pytest.raises(ds2save.SaveError) as err:  # a pasta existe, sem save: diz onde procurou
+        ds2save.find_save(game_dir=game)
+    assert str(err.value) == f"nenhum save do DS2 encontrado em {pasta.parent}"
+
+
 def test_armor_uses_item_ids(tmp_path):
     slot = make_slot(name="A")
     struct.pack_into("<4I", slot, ds2save.OFF_ARMOR, 12460100, 12460101, 12460102, 12460103)
@@ -311,3 +368,4 @@ def test_real_save_world_table_and_the_spike_door():
         assert 1004 in tabela and len(tabela) >= 10  # Majula sempre está lá; personagem novo ainda tem só ~13 áreas
         if s["name"] == "Personagem Um":  # o personagem do spike: cela da Bastille aberta com a Bastille Key
             assert ds2save.estado_mundo(entradas[f"USER_DATA{10 + s['slot']:03d}"], ["porta:10160432"]) == {"porta:10160432": True}
+

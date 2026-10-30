@@ -62,10 +62,14 @@ LOTE_PEGO = 0x1000000
 ESTADO_OBJETO = {"porta": {10: False, 20: True, 30: True}, "alavanca": {10: False, 20: True, 30: True},
                  "bau": {10: False, 20: False, 21: False, 24: False, 80: True, 84: True, 100: True}}
 LEARNED_DEFAULT = Path.home() / ".buildsmith" / "flags" / "ds2.json"
-GAME_DIRS = [
-    Path(r"C:\Program Files (x86)\Steam\steamapps\common\Dark Souls II Scholar of the First Sin\Game"),
-    Path(r"C:\Program Files\Steam\steamapps\common\Dark Souls II Scholar of the First Sin\Game"),
-]
+DS2_APP = "335300"
+DS2_PASTA = "Dark Souls II Scholar of the First Sin"
+# Linux: Steam nativa, o link antigo ~/.steam/steam e a do Flatpak
+STEAM_DIRS = ([Path(r"C:\Program Files (x86)\Steam"), Path(r"C:\Program Files\Steam")] if os.name == "nt" else
+              [Path.home() / ".local/share/Steam", Path.home() / ".steam/steam",
+               Path.home() / ".var/app/com.valvesoftware.Steam/.local/share/Steam"])
+# No Linux o jogo roda pelo Proton e grava no %APPDATA% do prefixo, que fica na biblioteca onde ele está instalado
+PROTON_APPDATA = Path("compatdata") / DS2_APP / "pfx" / "drive_c" / "users" / "steamuser" / "AppData" / "Roaming"
 
 
 class SaveError(Exception):
@@ -256,11 +260,37 @@ def load_learned(path=None) -> list[dict]:
     return json.loads(path.read_text(encoding="utf-8")).get("eventos", [])
 
 
+def steam_libraries(raizes=None) -> list[Path]:
+    """Bibliotecas da Steam: cada raiz e as do steamapps/libraryfolders.vdf dela (jogo em outro disco), sem repetir."""
+    vistas, out = set(), []
+    for raiz in map(Path, STEAM_DIRS if raizes is None else raizes):
+        try:
+            vdf = (raiz / "steamapps" / "libraryfolders.vdf").read_text(encoding="utf-8", errors="replace")
+        except OSError:
+            vdf = ""
+        for lib in [raiz] + [Path(p.replace("\\\\", "\\")) for p in re.findall(r'"path"\s+"([^"]+)"', vdf)]:
+            chave = os.path.normcase(os.path.realpath(lib))
+            if chave not in vistas:
+                vistas.add(chave)
+                out.append(lib)
+    return out
+
+
 def game_dirs(game_dir=None) -> list[Path]:
     if game_dir:
         return [Path(game_dir)]
     extra = [Path(os.environ["BUILDSMITH_DS2_GAME"])] if os.environ.get("BUILDSMITH_DS2_GAME") else []
-    return extra + GAME_DIRS
+    return extra + [lib / "steamapps" / "common" / DS2_PASTA / "Game" for lib in steam_libraries()]
+
+
+def save_dirs(appdata: str | None = None, game_dir=None) -> list[Path]:
+    """Pastas DarkSoulsII onde o jogo grava: a do %APPDATA% e a do prefixo do Proton ao lado de cada pasta do jogo
+    (<biblioteca>/steamapps/compatdata/335300/...). `appdata` explícito é a única pasta."""
+    if appdata:
+        return [Path(appdata) / "DarkSoulsII"]
+    bases = [Path(os.environ["APPDATA"]) / "DarkSoulsII"] if os.environ.get("APPDATA") else []
+    # pasta Game -> <jogo> -> common -> steamapps
+    return bases + [g.parents[2] / PROTON_APPDATA / "DarkSoulsII" for g in game_dirs(game_dir) if len(g.parents) > 2]
 
 
 def seamless_extension(game_dir=None) -> str | None:
@@ -275,12 +305,15 @@ def seamless_extension(game_dir=None) -> str | None:
 
 
 def find_save(appdata: str | None = None, game_dir=None) -> Path:
-    base = Path(appdata or os.environ.get("APPDATA", "")) / "DarkSoulsII"
+    bases = save_dirs(appdata, game_dir)
     ext = seamless_extension(game_dir)
-    active = list(base.glob(f"*/DS2SOFS*.{ext}")) if ext else []
-    files = active or list(base.glob("*/DS2SOFS*.sl2")) + list(base.glob("*/DS2SOFS*.co2"))
+    active = [p for base in bases for p in base.glob(f"*/DS2SOFS*.{ext}")] if ext else []
+    files = active or [p for base in bases for p in [*base.glob("*/DS2SOFS*.sl2"), *base.glob("*/DS2SOFS*.co2")]]
     if not files:
-        raise SaveError(f"nenhum save do DS2 encontrado em {base}")
+        existem = [b for b in bases if b.is_dir()]
+        raise SaveError(("nenhum save do DS2 encontrado em " + " nem em ".join(map(str, existem))) if existem else
+                        "nenhum save do DS2 encontrado: não achei a pasta DarkSoulsII no %APPDATA% nem no Proton da "
+                        "Steam (jogo em outra pasta: defina BUILDSMITH_DS2_GAME com a pasta Game do DS2)")
     return max(files, key=lambda p: p.stat().st_mtime)
 
 
