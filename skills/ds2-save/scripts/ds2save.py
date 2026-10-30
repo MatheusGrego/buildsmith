@@ -89,6 +89,14 @@ def _utf16z(data: bytes, off: int, max_chars: int) -> str:
     return "".join(chars)
 
 
+SEM_PYCRYPTODOME = "falta a biblioteca pycryptodome: rode 'pip install pycryptodome'"
+
+
+def erro_do_save(err: Exception) -> str:
+    """Mensagem para o usuário de um erro ao ler o save (sem pycryptodome, o import falha só na hora de decifrar)."""
+    return SEM_PYCRYPTODOME if isinstance(err, ImportError) else str(err)
+
+
 def _decrypt(blob: bytes) -> bytes:
     from Crypto.Cipher import AES
 
@@ -626,11 +634,8 @@ def main(argv=None) -> int:
                     out = {"slot": slot, "acesas": fogueiras_acesas(world)}
                 else:
                     out = snapshot(path, slot)
-    except SaveError as err:
-        print(json.dumps({"error": str(err)}, ensure_ascii=False))
-        return 1
-    except ImportError:
-        print(json.dumps({"error": "falta a biblioteca pycryptodome: rode 'pip install pycryptodome'"}, ensure_ascii=False))
+    except (SaveError, ImportError) as err:
+        print(json.dumps({"error": erro_do_save(err)}, ensure_ascii=False))
         return 1
     print(json.dumps(out, ensure_ascii=False, indent=2))
     return 0

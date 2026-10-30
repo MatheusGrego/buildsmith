@@ -369,3 +369,10 @@ def test_real_save_world_table_and_the_spike_door():
         if s["name"] == "Personagem Um":  # o personagem do spike: cela da Bastille aberta com a Bastille Key
             assert ds2save.estado_mundo(entradas[f"USER_DATA{10 + s['slot']:03d}"], ["porta:10160432"]) == {"porta:10160432": True}
 
+
+def test_sem_pycryptodome_vira_a_instrucao_de_instalar(save_file, monkeypatch, capsys):
+    assert ds2save.erro_do_save(ModuleNotFoundError("No module named 'Crypto'")) == ds2save.SEM_PYCRYPTODOME
+    assert ds2save.erro_do_save(ds2save.SaveError("save corrompido")) == "save corrompido"
+    monkeypatch.setitem(sys.modules, "Crypto.Cipher", None)  # import de Crypto.Cipher falha como sem a biblioteca
+    assert ds2save.main(["slots", "--save", str(save_file)]) == 1
+    assert json.loads(capsys.readouterr().out) == {"error": ds2save.SEM_PYCRYPTODOME}

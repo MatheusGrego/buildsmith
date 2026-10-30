@@ -197,7 +197,7 @@ def personagens(home: Path, jogo: str, save=None, steam_dirs=None) -> dict:
     try:
         lista = ds2save.personagens(Path(save) if save else ds2save.find_save())
     except (ds2save.SaveError, OSError, ImportError) as err:
-        return {"personagens": [], "erro": str(err), "print": False}
+        return {"personagens": [], "erro": ds2save.erro_do_save(err), "print": False}
     out = []
     for p in lista:
         slug_ = p["slug"]
@@ -975,7 +975,11 @@ class Handler(BaseHTTPRequestHandler):
     def _index(self):
         esc = html.escape
         items = "".join(f'<li><a href="/p/{esc(j)}/{esc(p)}/">{esc(p.replace("-", " ").title())}</a> <small>({esc(j)})</small></li>'
-                        for j, p, _ in pages(self.home)) or "<li>Nenhuma página ainda. Rode /buildsmith:build ds2.</li>"
+                        for j, p, _ in pages(self.home))
+        if not items:  # sem página: diz se é porque o save não abre (não achou, falta pycryptodome)
+            erro = personagens(self.home, "ds2", self.save, self.steam_dirs).get("erro")
+            items = (f"<li>Nenhuma página ainda. Não li o save do DS2: {esc(erro)}</li>" if erro else
+                     "<li>Nenhuma página ainda. Rode /buildsmith:build ds2.</li>")
         body = ("<title>Forja de Build</title><style>body{background:#101013;color:#b4b2b0;font:15px Helvetica,Arial,sans-serif;"
                 "padding:32px 16px}a{color:#ab966f}h1{color:#fff;font-family:Georgia,serif;font-weight:400}</style>"
                 f"<h1>Forja de Build</h1><ul>{items}</ul>")
