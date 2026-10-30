@@ -36,6 +36,14 @@ def area_dos_bytes(b: bytes) -> str | None:
     return f"m{aa:02d}_{bb:02d}_{dd:02d}_{cc:02d}"
 
 
+def numeros(floats, eixos=None) -> list | None:
+    """Floats da memória arredondados (na ordem dos eixos, se dados). None se algum não é número: NaN/inf, como a câmera
+    ainda vazia, não vão para o stream (NaN no JSON derruba o JSON.parse da página)."""
+    if not all(map(math.isfinite, floats)):
+        return None
+    return [round(floats[i], 3) for i in (eixos or range(len(floats)))]
+
+
 def yaw_da_camera(camera, pos) -> float | None:
     """Direção para onde a câmera olha no chão (da câmera para o personagem). None se ela está quase em cima dele."""
     dx, dz = pos[0] - camera[0], pos[2] - camera[2]
@@ -47,7 +55,7 @@ def yaw_da_camera(camera, pos) -> float | None:
 def direcao_do_quaternion(q) -> float | None:
     """Giro em torno do eixo vertical de um quaternion (w, x, y, z) com y para cima. None se não é uma rotação."""
     w, x, y, z = q
-    if abs(math.sqrt(w * w + x * x + y * y + z * z) - 1) > 0.2:
+    if numeros(q) is None or abs(math.sqrt(w * w + x * x + y * y + z * z) - 1) > 0.2:
         return None
     return math.atan2(2 * (w * y + x * z), 1 - 2 * (x * x + y * y))
 
@@ -96,12 +104,11 @@ class LeitorVivo:
             base_a = mem.u64(self._estatico)
             ctrl = ds2mem.cadeia(mem, base_a, OFF_CTRL) if base_a else None
             pos_ptr = ds2mem.cadeia(mem, ctrl, OFF_POS) if ctrl else None
-            if not pos_ptr:
+            pos = numeros(mem.f32s(pos_ptr + POS_XYZ, 3), EIXOS) if pos_ptr else None
+            if pos is None:
                 return {"ativo": False, "motivo": "carregando", "ts": ts}
-            bruto = mem.f32s(pos_ptr + POS_XYZ, 3)
-            pos = [round(bruto[i], 3) for i in EIXOS]
             cam_ptr = ds2mem.cadeia(mem, base_a, OFF_CAM)
-            camera = [round(mem.f32s(cam_ptr + CAM_XYZ, 3)[i], 3) for i in EIXOS] if cam_ptr else None
+            camera = numeros(mem.f32s(cam_ptr + CAM_XYZ, 3), EIXOS) if cam_ptr else None
             nome_ptr = ds2mem.cadeia(mem, base_a, OFF_NOME)
             nome = mem.utf16(nome_ptr + NOME) if nome_ptr else None
             area = area_dos_bytes(mem.ler(nome_ptr + AREA, 4)) if nome_ptr else None
