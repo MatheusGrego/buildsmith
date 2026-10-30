@@ -1,4 +1,5 @@
 import json
+import re
 import subprocess
 import sys
 from pathlib import Path
@@ -55,6 +56,7 @@ def test_skill_commands_are_allowed(check):
         f'ls -t "{home}/history"',
         "date +%Y-%m-%dT%H-%M",
         f'python "{SAVE}" slots 2> /dev/null',
+        f'python "{SAVE}" fogueiras --personagem Stacy',
     ):
         assert bash(check, command) == "allow", command
 
@@ -202,11 +204,38 @@ MAPA = (REPO / "skills" / "ds2-save" / "scripts" / "ds2mapa.py").as_posix()
 def test_map_commands_allowed_without_redirected_paths(check):
     for command in (f'python "{MAPA}" areas', f'python "{MAPA}" extrair --area m10_16_00_00',
                     f'python "{MAPA}" onde --item "Fragrant Branch of Yore" --area m10_16_00_00',
-                    f'python "{MAPA}" rota --area m10_16_00_00 --de fogueira:16675 --ate item:10165010'):
+                    f'python "{MAPA}" rota --area m10_16_00_00 --de fogueira:16675 --ate item:10165010',
+                    f'python "{MAPA}" inimigos --area m10_16_00_00'):
         assert bash(check, command) == "allow", command
     for command in (f'python "{MAPA}" apagar', f'python "{MAPA}" extrair --area m10_16_00_00 --cache "{check.tmp.as_posix()}/x"',
                     f'python "{MAPA}" areas --game "{check.tmp.as_posix()}"', f'python "{MAPA}" extrair --area ../x'):
         assert bash(check, command) != "allow", command
+
+
+ESD = (REPO / "skills" / "ds2-save" / "scripts" / "ds2esd.py").as_posix()
+
+
+def test_door_keys_allowed_only_for_a_map_of_the_installed_game(check):
+    assert bash(check, f'python "{ESD}" chaves --area m10_16_00_00') == "allow"
+    for command in (f'python "{ESD}" chaves --area ../x',
+                    f'python "{ESD}" chaves --area m10_16_00_00 --game "{check.tmp.as_posix()}"', f'python "{ESD}" outro'):
+        assert bash(check, command) != "allow", command
+
+
+# Ferramentas que a ds2-save documenta mas a execução sem janela não roda: quem roda é o servidor (cenário 3D, combate).
+SO_PELO_SERVIDOR = {"ds2cena.py", "ds2combate.py"}
+
+
+def test_every_command_the_skills_tell_to_run_passes_the_guard():
+    """Subcomando novo documentado sem entrar no guarda (o `ds2save.py fogueiras`) bloqueava a execução no meio."""
+    por_nome = {Path(rel).name: subs for rel, subs in guard.SCRIPTS.items()}
+    faltam = []
+    for md in sorted((REPO / "skills").rglob("SKILL.md")):
+        for script, sub in re.findall(r'python3? "<pasta>/scripts/(\w+\.py)"(?: ([a-z][\w-]*))?', md.read_text(encoding="utf-8")):
+            subs = por_nome.get(script, ())
+            if script not in SO_PELO_SERVIDOR and subs is not None and sub not in subs:
+                faltam.append(f"{md.parent.name}: {script} {sub}")
+    assert not faltam
 
 
 FONTES = (REPO / "skills" / "ds2-save" / "scripts" / "ds2fontes.py").as_posix()

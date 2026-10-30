@@ -31,12 +31,13 @@ REPO = Path(__file__).resolve().parents[1]
 
 # script (relativo ao repositório) → subcomandos aceitos (None = sem subcomando)
 SCRIPTS = {
-    "skills/ds2-save/scripts/ds2save.py": {"slots", "snapshot", "levels", "flags-diff", "posicao"},
+    "skills/ds2-save/scripts/ds2save.py": {"slots", "snapshot", "levels", "flags-diff", "posicao", "fogueiras"},
     "skills/ds2-save/scripts/ds2calc.py": {"ar", "catalisador", "feitico", "sintonia"},
     "skills/ds2-save/scripts/ds2perto.py": {"catalisadores", "armas", "armaduras", "feiticos"},
     "skills/ds2-save/scripts/ds2equip.py": None,
     "skills/ds2-save/scripts/ds2data.py": {"onde-comprar", "trocas", "custo-upgrade", "acesso"},
-    "skills/ds2-save/scripts/ds2mapa.py": {"areas", "extrair", "onde", "rota"},
+    "skills/ds2-save/scripts/ds2mapa.py": {"areas", "extrair", "onde", "rota", "inimigos"},
+    "skills/ds2-save/scripts/ds2esd.py": {"chaves"},
     "skills/ds2-save/scripts/ds2itens.py": {"montar", "item"},
     "skills/ds2-save/scripts/ds2fontes.py": {"fontes"},
     "skills/build-page/scripts/prepare_page.py": None,
@@ -45,7 +46,7 @@ SCRIPTS = {
 }
 SERVE_OPTS = {"--personagem", "--jogo", "--pedido", "--item", "--passo", "--resultado"}
 # ds2mapa sem --game/--cache: sem janela, só a instalação padrão e o cache de ~/.buildsmith.
-MAPA_OPTS = {"--area", "--item", "--de", "--ate"}
+MAPA_OPTS, ESD_OPTS = {"--area", "--item", "--de", "--ate"}, {"--area"}
 # ds2fontes/ds2itens também sem --game/--cache/--save: o save ativo, o jogo instalado e o cache de ~/.buildsmith.
 FONTES_OPTS, ITENS_OPTS = {"--item", "--personagem", "--slot"}, {"--item"}
 AREA = re.compile(r"^m\d\d_\d\d_\d\d_\d\d$")
@@ -200,8 +201,8 @@ def _script(rel: str, args: list[str], ctx: Context) -> None:
     subcommands = SCRIPTS[rel]
     if subcommands is not None and (not args or args[0] not in subcommands):
         raise Deny(f"{Path(rel).name}: subcomando precisa ser um de {sorted(subcommands)}")
-    if rel.endswith("ds2mapa.py"):
-        for name, value in _options(args[1:], MAPA_OPTS):
+    if rel.endswith(("ds2mapa.py", "ds2esd.py")):
+        for name, value in _options(args[1:], MAPA_OPTS if rel.endswith("ds2mapa.py") else ESD_OPTS):
             if name == "--area" and not AREA.match(value):
                 raise Deny("--area é um mapa como m10_16_00_00")
             if name in ("--de", "--ate") and not PONTO.match(value):
