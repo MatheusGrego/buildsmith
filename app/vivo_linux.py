@@ -7,6 +7,10 @@ comando do jogo como filho e vira "subreaper" (o processo do jogo, que o Wine so
 o DarkSoulsII.exe aparece, ele abre o /proc/<pid>/mem e entrega o descritor a quem pedir no socket do ds2mem (só o
 mesmo usuário). Nada é escrito no jogo; o servidor só lê.
 
+Com o Proton atual o ajudante sobra: o jogo roda no contêiner do Steam Linux Runtime (bwrap, um user namespace criado
+pelo usuário), e o Yama deixa ler quem tem CAP_SYS_PTRACE nesse namespace, o que o dono dele tem (conferido em
+2026-10-30: os processos de dentro do contêiner abrem direto, os de fora não). Ele fica para jogo fora do contêiner.
+
 Opções de inicialização da Steam (DS2 SotFS → Propriedades → Geral), na frente do que já estiver lá:
 
     python3 /caminho/do/buildsmith/app/vivo_linux.py %command%

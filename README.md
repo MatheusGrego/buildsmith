@@ -68,7 +68,7 @@ No Linux (DS2 pela Steam com Proton) é o mesmo comando: o save e o jogo são ac
 
 O minimapa por cima do jogo e o overlay grande também funcionam no Linux com Hyprland (config em Lua, 0.5x) e um navegador da família do Firefox (Zen, Firefox, LibreWolf, Floorp): cada janela é o navegador em modo quiosque, com perfil próprio em `~/.buildsmith/overlay-navegador/`, e as teclas `Ctrl+Shift+M` (overlay grande) e `Ctrl+Shift+N` (minimapa) viram binds do Hyprland enquanto o servidor roda (`Ctrl+Alt+…` se você já usa essas).
 
-Para o minimapa seguir você ao vivo o servidor lê a memória do jogo, e o Linux (`kernel.yama.ptrace_scope = 1`, o padrão) só deixa quem abriu o jogo fazer isso. Ponha o ajudante na frente das opções de inicialização do DS2 na Steam (Propriedades → Geral):
+Para o minimapa seguir você ao vivo o servidor lê a memória do jogo. Com o Proton atual isso já funciona sem nada: o jogo roda no contêiner do Steam Linux Runtime (pressure-vessel), um namespace do seu usuário, e o Linux deixa o seu usuário ler os processos de dentro dele. Sem o contêiner (Proton antigo, Wine direto), o Linux (`kernel.yama.ptrace_scope = 1`, o padrão) só deixa quem abriu o jogo ler: se o minimapa ficar em "sem leitura do jogo" e `http://127.0.0.1:8642/api/ds2/vivo` disser "sem permissão para ler a memória do jogo", ponha o ajudante na frente das opções de inicialização do DS2 na Steam (Propriedades → Geral):
 
 ```
 python3 /caminho/do/buildsmith/app/vivo_linux.py %command%
