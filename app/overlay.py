@@ -279,17 +279,25 @@ CLASSE_JOGO = "steam_app_335300"  # classe que o Proton dá à janela do jogo
 ESCONDIDO = "special:buildsmith"  # workspace especial onde a janela fica quando está escondida
 MOD_HYPR = {MOD_CONTROL: ("CTRL", 4), MOD_SHIFT: ("SHIFT", 1), MOD_ALT: ("ALT", 8)}  # nome no bind, bit no modmask
 # Perfil novo do navegador sem tela de boas-vindas e sem o tamanho mínimo da janela principal (sem isso a Zen não fica
-# menor que ~500 x 500 e o minimapa cobre meia tela de notebook).
+# menor que ~500 x 500 e o minimapa cobre meia tela de notebook). O --kiosk da Zen não esconde a barra lateral dela
+# (~185 px: no minimapa sobrava página nenhuma), nem a margem e o canto arredondado em volta da página: o CSS tira.
 USER_JS = """user_pref("browser.aboutwelcome.enabled", false);
 user_pref("browser.shell.checkDefaultBrowser", false);
 user_pref("browser.startup.homepage_override.mstone", "ignore");
+user_pref("browser.startup.page", 0);
 user_pref("datareporting.policy.dataSubmissionPolicyBypassNotification", true);
 user_pref("browser.sessionstore.resume_from_crash", false);
 user_pref("toolkit.legacyUserProfileCustomizations.stylesheets", true);
 """
 USER_CHROME = """:root, #main-window, #zen-main-app-wrapper, #browser, #tabbrowser-tabbox, #navigator-toolbox,
 #zen-appcontent-wrapper { min-width: 0 !important; min-height: 0 !important; }
+#navigator-toolbox, #zen-sidebar-splitter, #sidebar-box, #sidebar-splitter { display: none !important; }
+:root { --zen-element-separation: 0px !important; --zen-native-inner-radius: 0px !important; }
+#zen-tabbox-wrapper { margin: 0 !important; }
+.browserSidebarContainer { border-radius: 0 !important; box-shadow: none !important; }
 """
+# Sessão salva da Zen: com ela a abertura seguinte traz a aba velha ao lado da página pedida.
+SESSAO = ("sessionstore.jsonlz4", "sessionstore-backups", "zen-sessions.jsonlz4", "zen-sessions-backup")
 
 
 def _hyprctl(args: list[str]) -> str:
@@ -377,6 +385,12 @@ class Hyprland:
         return (m["x"], m["y"], round(m["width"] / escala), round(m["height"] / escala))
 
     def _preparar_perfil(self, perfil: Path) -> None:
+        for nome in SESSAO:  # só antes de abrir: com o navegador aberto o perfil não é mexido
+            alvo = perfil / nome
+            if alvo.is_dir():
+                shutil.rmtree(alvo, ignore_errors=True)
+            else:
+                alvo.unlink(missing_ok=True)
         (perfil / "chrome").mkdir(parents=True, exist_ok=True)
         (perfil / "user.js").write_text(USER_JS, encoding="utf-8")
         (perfil / "chrome" / "userChrome.css").write_text(USER_CHROME, encoding="utf-8")
@@ -416,10 +430,11 @@ class Hyprland:
         self._papel[endereco] = papel  # a regra de janela já fez o resto quando ela abriu
 
     def posicionar(self, endereco, rect):
-        janela = self._janela(endereco)
-        if (self._cliente(endereco) or {}).get("fullscreen"):
-            # o quiosque pede tela cheia e o Hyprland não redimensiona janela em tela cheia: sai dela só no Hyprland
-            # (o navegador continua achando que está em tela cheia, sem barra nem abas)
+        janela, c = self._janela(endereco), self._cliente(endereco) or {}
+        if c.get("fullscreen") or c.get("fullscreenClient") != 2:
+            # o quiosque pede tela cheia: o Hyprland não redimensiona janela em tela cheia, e quando ele recusa o pedido
+            # (o minimapa, no_focus e pin) a Zen fica esperando, sem aceitar tamanho nem pintar. Tela cheia só para o
+            # navegador, que fica sem barra nem abas e aceita o tamanho daqui
             self._dsp(f"hl.dsp.window.fullscreen_state({{ {janela}, internal = 0, client = 2 }})")
             self._rect.pop(endereco, None)
             self._cache = (0.0, [])

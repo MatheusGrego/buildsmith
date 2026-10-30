@@ -156,6 +156,10 @@ class HyprctlFalso:
                                               "activewindow": {"address": self.ativa},
                                               "activeworkspace": {"name": "3"}}[args[1]])
         (self.evals if args[0] == "eval" else self.dispatches).append(args[1])
+        if "fullscreen_state" in args[1]:  # como o Hyprland: sai da tela cheia e o navegador fica achando que está nela
+            for c in self.clientes:
+                if f'"address:{c["address"]}"' in args[1]:
+                    c.update(fullscreen=0, fullscreenClient=2)
         return "ok"
 
 
@@ -184,6 +188,10 @@ def test_hyprland_finds_the_game_and_its_monitor_in_logical_pixels(tmp_path):
 def test_hyprland_opens_a_kiosk_browser_with_its_own_profile_and_class(tmp_path, monkeypatch):
     win, h = hypr(tmp_path)
     abertos = []
+    antiga = tmp_path / "perfis" / "mini"  # sessão de uma abertura anterior: a Zen reabriria a aba velha ao lado da nova
+    (antiga / "sessionstore-backups").mkdir(parents=True)
+    (antiga / "zen-sessions.jsonlz4").write_bytes(b"x")
+    (antiga / "prefs.js").write_text("// fica", encoding="utf-8")
 
     class Popen:
         def __init__(self, args, **kwargs):
@@ -199,12 +207,16 @@ def test_hyprland_opens_a_kiosk_browser_with_its_own_profile_and_class(tmp_path,
     assert ["--name", "buildsmith-mini"] == args[args.index("--name"):args.index("--name") + 2] and "--kiosk" in args
     perfil = Path(args[args.index("--profile") + 1])
     assert perfil == tmp_path / "perfis" / "mini"
-    assert "min-width: 0" in (perfil / "chrome" / "userChrome.css").read_text(encoding="utf-8")
+    css = (perfil / "chrome" / "userChrome.css").read_text(encoding="utf-8")
+    assert "min-width: 0" in css and "#navigator-toolbox" in css  # o --kiosk da Zen não esconde a barra lateral
     assert "legacyUserProfileCustomizations" in (perfil / "user.js").read_text(encoding="utf-8")
-    assert h.dispatches == ['hl.dsp.window.resize({ window = "address:0xmini", x = 300, y = 300, relative = false })',
+    assert not (perfil / "sessionstore-backups").exists() and not (perfil / "zen-sessions.jsonlz4").exists()
+    assert (perfil / "prefs.js").exists()
+    assert h.dispatches == ['hl.dsp.window.fullscreen_state({ window = "address:0xmini", internal = 0, client = 2 })',
+                            'hl.dsp.window.resize({ window = "address:0xmini", x = 300, y = 300, relative = false })',
                             'hl.dsp.window.move({ window = "address:0xmini", x = 10, y = 20, relative = false })']
     win.posicionar("0xmini", (10, 20, 300, 300))
-    assert len(h.dispatches) == 2  # mesma geometria: nada de novo
+    assert len(h.dispatches) == 3  # mesma geometria: nada de novo
     assert win.abrir_janela("u", (10, 20, 300, 300), "mini") == "0xmini" and len(abertos) == 1  # já aberta: reusa
 
 
@@ -254,3 +266,15 @@ def test_hyprland_takes_the_kiosk_window_out_of_fullscreen_before_sizing_it(tmp_
     assert h.dispatches[0] == 'hl.dsp.window.fullscreen_state({ window = "address:0xgrande", internal = 0, client = 2 })'
     assert h.dispatches[1:] == ['hl.dsp.window.resize({ window = "address:0xgrande", x = 1093, y = 614, relative = false })',
                                 'hl.dsp.window.move({ window = "address:0xgrande", x = 136, y = 77, relative = false })']
+
+
+def test_hyprland_unblocks_the_kiosk_window_whose_fullscreen_was_refused(tmp_path):
+    # visto na Zen (2026-10-30): o Hyprland não dá a tela cheia do quiosque ao minimapa (no_focus/pin) e a Zen fica
+    # parada esperando, sem aceitar tamanho nem pintar a página; avisar que está em tela cheia a destrava
+    win, h = hypr(tmp_path)
+    h.clientes.append({"address": "0xmini", "class": "buildsmith-mini", "fullscreen": 0, "fullscreenClient": 0,
+                       "workspace": {"name": "3"}})
+    win.posicionar("0xmini", (1167, 15, 184, 184))
+    assert h.dispatches[0] == 'hl.dsp.window.fullscreen_state({ window = "address:0xmini", internal = 0, client = 2 })'
+    win.posicionar("0xmini", (1000, 15, 184, 184))
+    assert len(h.dispatches) == 5 and not any("fullscreen_state" in d for d in h.dispatches[3:])  # já destravada
