@@ -64,6 +64,24 @@ python app/abrir.py
 
 No Linux (DS2 pela Steam com Proton) é o mesmo comando: o save e o jogo são achados nas bibliotecas da Steam (`~/.local/share/Steam`, `~/.steam/steam`, a do Flatpak e as do `libraryfolders.vdf` delas), com o save no prefixo do Proton. Se o Python do sistema não tem pip, use um venv (`python -m venv ~/.buildsmith/venv && ~/.buildsmith/venv/bin/pip install pycryptodome`) e rode `~/.buildsmith/venv/bin/python app/abrir.py`. Jogo em outra pasta: `BUILDSMITH_DS2_GAME=<pasta Game do DS2>`.
 
+#### Overlay no Linux (Hyprland)
+
+O minimapa por cima do jogo e o overlay grande também funcionam no Linux com Hyprland (config em Lua, 0.5x) e um navegador da família do Firefox (Zen, Firefox, LibreWolf, Floorp): cada janela é o navegador em modo quiosque, com perfil próprio em `~/.buildsmith/overlay-navegador/`, e as teclas `Ctrl+Shift+M` (overlay grande) e `Ctrl+Shift+N` (minimapa) viram binds do Hyprland enquanto o servidor roda (`Ctrl+Alt+…` se você já usa essas).
+
+Para o minimapa seguir você ao vivo o servidor lê a memória do jogo, e o Linux (`kernel.yama.ptrace_scope = 1`, o padrão) só deixa quem abriu o jogo fazer isso. Ponha o ajudante na frente das opções de inicialização do DS2 na Steam (Propriedades → Geral):
+
+```
+python3 /caminho/do/buildsmith/app/vivo_linux.py %command%
+```
+
+Com o Seamless Co-op pelo truque do `bash -c`, o ajudante vem antes dele:
+
+```
+python3 /caminho/do/buildsmith/app/vivo_linux.py bash -c 'exec "${@/DarkSoulsII.exe/ds2sc_launcher.exe}"' -- %command%
+```
+
+O ajudante só abre a memória do jogo para leitura e entrega ao servidor por um socket do seu usuário; nada é escrito no jogo. Se algo falhar nele, o jogo abre igual e o motivo fica em `~/.buildsmith/execucoes/vivo_linux.log`.
+
 `app/abrir.py` é o que o `Buildsmith.exe` roda: com o repositório, faz `git pull` (só avança; com alteração local, pula), reinicia o servidor se o código mudou, refaz as páginas a partir do `plano.json` de cada uma e cria a página sem IA de quem ainda não tem (sem Claude). `python app/instalar_atalho.py` (precisa de `pip install pillow`) cria o atalho apontando para o repositório.
 
 O mesmo código também é um plugin do Claude Code (`.claude-plugin/`, `skills/`): é assim que o plano é gerado. Para usar direto no Claude Code: `claude plugin marketplace add <pasta do repositório>`, `claude plugin install buildsmith@buildsmith` e `/buildsmith:build ds2`. Para ver no celular, publique no Artifact: `/buildsmith:build ds2 publicar`.
