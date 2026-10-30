@@ -48,3 +48,13 @@ def test_latest_steam_print_of_ds2_only(tmp_path):
     (other / "z.jpg").write_bytes(JPG)
     assert retrato.ultimo_print([tmp_path]) == new
     assert retrato.ultimo_print([tmp_path / "nada"]) is None
+
+
+def test_ultimo_print_procura_nas_pastas_da_steam_do_ds2save(tmp_path, monkeypatch):
+    import ds2save
+
+    shots = tmp_path / "Steam" / "userdata" / "1" / "760" / "remote" / "335300" / "screenshots"
+    shots.mkdir(parents=True)
+    (shots / "a.jpg").write_bytes(JPG)
+    monkeypatch.setattr(ds2save, "STEAM_DIRS", [tmp_path / "nada", tmp_path / "Steam"])
+    assert retrato.ultimo_print() == shots / "a.jpg"

@@ -38,5 +38,10 @@ def test_failed_page_is_not_left_half_made(save_file, tmp_path):
     assert out == [] and not (home / "paginas" / "ds2" / "personagem-um" / "plano.json").exists()
 
 
-def test_no_save_creates_nothing(tmp_path):
-    assert plano_base.criar_paginas(tmp_path, tmp_path / "nao-existe.sl2", preparar=lambda p, j: {}) == []
+def test_no_save_creates_nothing_and_says_why(tmp_path, monkeypatch):
+    avisos = []
+    assert plano_base.criar_paginas(tmp_path, tmp_path / "nao-existe.sl2", preparar=lambda p, j: {}, avisa=avisos.append) == []
+    assert len(avisos) == 1 and avisos[0].startswith("não li o save do DS2") and "nao-existe.sl2" in avisos[0]
+    monkeypatch.setattr(ds2save, "find_save", lambda: (_ for _ in ()).throw(ModuleNotFoundError("No module named 'Crypto'")))
+    assert plano_base.criar_paginas(tmp_path, preparar=lambda p, j: {}, avisa=avisos.append) == []
+    assert avisos[1].endswith(ds2save.SEM_PYCRYPTODOME)

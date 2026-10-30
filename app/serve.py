@@ -197,7 +197,7 @@ def personagens(home: Path, jogo: str, save=None, steam_dirs=None) -> dict:
     try:
         lista = ds2save.personagens(Path(save) if save else ds2save.find_save())
     except (ds2save.SaveError, OSError, ImportError) as err:
-        return {"personagens": [], "erro": str(err), "print": False}
+        return {"personagens": [], "erro": ds2save.erro_do_save(err), "print": False}
     out = []
     for p in lista:
         slug_ = p["slug"]
@@ -789,6 +789,10 @@ class Handler(BaseHTTPRequestHandler):
         if (parts and len(parts) == 4 and parts[0] == "api" and parts[3] in ("retrato", "retrato-print", "retrato-limpar")
                 and all(SEGMENT.match(p) for p in parts[1:3])):
             return self._retrato(parts[1], parts[2], parts[3])
+        if parts and len(parts) == 3 and parts[:2] == ["api", "overlay"] and parts[2] in ("grande", "mini"):
+            import overlay  # tecla do overlay no Linux: o bind do Hyprland chama aqui
+
+            return self._json({"ok": overlay.disparar(parts[2])})
         if parts == ["api", "desligar"]:
             self._json({"ok": True})
             threading.Thread(target=self.server.shutdown, daemon=True).start()
@@ -1069,7 +1073,11 @@ class Handler(BaseHTTPRequestHandler):
     def _index(self):
         esc = html.escape
         items = "".join(f'<li><a href="/p/{esc(j)}/{esc(p)}/">{esc(p.replace("-", " ").title())}</a> <small>({esc(j)})</small></li>'
-                        for j, p, _ in pages(self.home)) or "<li>Nenhuma página ainda. Rode /buildsmith:build ds2.</li>"
+                        for j, p, _ in pages(self.home))
+        if not items:  # sem página: diz se é porque o save não abre (não achou, falta pycryptodome)
+            erro = personagens(self.home, "ds2", self.save, self.steam_dirs).get("erro")
+            items = (f"<li>Nenhuma página ainda. Não li o save do DS2: {esc(erro)}</li>" if erro else
+                     "<li>Nenhuma página ainda. Rode /buildsmith:build ds2.</li>")
         body = ("<title>Forja de Build</title><style>body{background:#101013;color:#b4b2b0;font:15px Helvetica,Arial,sans-serif;"
                 "padding:32px 16px}a{color:#ab966f}h1{color:#fff;font-family:Georgia,serif;font-weight:400}</style>"
                 f"<h1>Forja de Build</h1><ul>{items}</ul>")
@@ -1105,14 +1113,20 @@ def running(port: int = PORT) -> bool:
 
 
 def slug_do_jogador(home: Path, vivo, save=None) -> str:
-    """Página do personagem carregado no jogo (nome lido da memória, cruzado com o save); sem leitura, a mais recente."""
+    """Página do personagem carregado no jogo (nome lido da memória, cruzado com o save); sem leitura, a mais recente.
+    Dois personagens com o mesmo nome (a memória só dá o nome): a página principal entre as deles (plano da IA, a mais
+    recente)."""
     nome = (vivo.atual() or {}).get("nome")
     if nome:
         try:
             import ds2save
-            for p in ds2save.personagens(Path(save) if save else ds2save.find_save()):
-                if p["nome"] == nome and (Path(home) / "paginas" / "ds2" / p["slug"]).is_dir():
-                    return p["slug"]
+            dele = [p["slug"] for p in ds2save.personagens(Path(save) if save else ds2save.find_save())
+                    if p["nome"] == nome and (Path(home) / "paginas" / "ds2" / p["slug"]).is_dir()]
+            com_plano = [pg for pg in pages(home) if pg[0] == "ds2" and pg[1] in dele]
+            if com_plano:
+                return principal(home, com_plano)[1]
+            if dele:
+                return dele[0]
         except Exception:  # save sendo gravado: fica a página mais recente
             pass
     found = pages(home)
@@ -1191,7 +1205,7 @@ def main(argv=None) -> int:
             webbrowser.open(latest_page_url(home, args.port))
         return 0
     httpd = make_server(home, args.port)
-    if not args.sem_overlay and os.name == "nt":  # minimapa e overlay grande por cima do jogo (app/overlay.py)
+    if not args.sem_overlay:  # minimapa e overlay grande por cima do jogo (app/overlay.py: Windows ou Hyprland)
         import overlay
 
         def avisa(texto: str) -> None:

@@ -9,7 +9,7 @@ from Crypto.PublicKey import RSA
 
 import ds2arquivos
 
-GAME = Path(r"C:/Program Files (x86)/Steam/steamapps/common/Dark Souls II Scholar of the First Sin/Game")
+GAME = ds2arquivos.game_dir_padrao()  # o jogo instalado (Windows ou Linux); None sem ele
 
 
 def dcx(payload: bytes) -> bytes:
@@ -85,7 +85,7 @@ def test_signature_changes_with_the_index(jogo_falso, tmp_path):
         ds2arquivos.Arquivo(tmp_path, "GameData")
 
 
-@pytest.mark.skipif(not (GAME / "GameDataEbl.bhd").exists(), reason="DS2 SotFS não instalado")
+@pytest.mark.skipif(GAME is None, reason="DS2 SotFS não instalado")
 def test_real_game_map_file():
     assert ds2arquivos.Arquivo(GAME, "GameData").ler("/map/m10_16_00_00/m10_16_00_00.msb")[:4] == b"MSB "
 
@@ -104,3 +104,15 @@ def test_index_is_decrypted_once_per_process_until_the_game_updates(jogo_falso, 
     os.utime(bhd, (st.st_atime, st.st_mtime + 10))  # o jogo atualizou: índice novo
     ds2arquivos.Arquivo(pasta, "GameData")
     assert len(chamadas) == 2
+
+
+def test_game_dir_padrao_acha_o_jogo_numa_biblioteca_da_steam(tmp_path, monkeypatch):
+    import ds2save
+
+    monkeypatch.delenv("BUILDSMITH_DS2_GAME", raising=False)
+    monkeypatch.setattr(ds2save, "STEAM_DIRS", [tmp_path / "Steam"])
+    assert ds2arquivos.game_dir_padrao() is None
+    game = tmp_path / "Steam" / "steamapps" / "common" / ds2save.DS2_PASTA / "Game"
+    game.mkdir(parents=True)
+    (game / "GameDataEbl.bhd").write_bytes(b"")
+    assert ds2arquivos.game_dir_padrao() == game

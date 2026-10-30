@@ -107,6 +107,9 @@ def child_env(home: Path) -> dict:
     env = {**os.environ, "BUILDSMITH_HOME": str(home), "CLAUDE_CODE_DISABLE_CLAUDE_MDS": "1"}
     if getattr(sys, "frozen", False):  # executável: o `python "<script>"` do Claude é o python.exe da pasta (app/exe.py)
         env["PATH"] = str(Path(sys.executable).resolve().parent) + os.pathsep + env.get("PATH", "")
+    elif sys.prefix != sys.base_prefix:  # servidor num venv (Linux sem pycryptodome no sistema): o Claude usa o python
+        # do venv, com as dependências; sem resolve, que seguiria o link até o python do sistema
+        env["PATH"] = str(Path(sys.executable).parent) + os.pathsep + env.get("PATH", "")
     return env
 
 

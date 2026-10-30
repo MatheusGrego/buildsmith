@@ -135,3 +135,146 @@ def test_closed_window_is_recreated_and_game_closing_hides_all():
     win.pid = None
     ov.passo()
     assert not win.visiveis
+
+
+# ---- Linux com Hyprland ------------------------------------------------------------------------------------------------
+
+class HyprctlFalso:
+    """Responde como o hyprctl do Hyprland 0.56 (JSON de clients/monitors/binds) e guarda os eval e dispatch."""
+
+    def __init__(self):
+        self.clientes = [{"address": "0xjogo", "pid": 4242, "class": "steam_app_335300", "monitor": 1, "mapped": True,
+                          "workspace": {"name": "3"}}]
+        self.monitores = [{"id": 0, "x": 0, "y": 0, "width": 1366, "height": 768, "scale": 1.0},
+                          {"id": 1, "x": 1366, "y": 0, "width": 2560, "height": 1440, "scale": 1.25}]
+        self.binds = [{"modmask": 64, "key": "M"}]
+        self.ativa, self.evals, self.dispatches = "0xjogo", [], []
+
+    def __call__(self, args):
+        if args[0] == "-j":
+            return __import__("json").dumps({"clients": self.clientes, "monitors": self.monitores, "binds": self.binds,
+                                              "activewindow": {"address": self.ativa},
+                                              "activeworkspace": {"name": "3"}}[args[1]])
+        (self.evals if args[0] == "eval" else self.dispatches).append(args[1])
+        if "fullscreen_state" in args[1]:  # como o Hyprland: sai da tela cheia e o navegador fica achando que está nela
+            for c in self.clientes:
+                if f'"address:{c["address"]}"' in args[1]:
+                    c.update(fullscreen=0, fullscreenClient=2)
+        return "ok"
+
+
+def hypr(tmp_path, **kw):
+    falso = HyprctlFalso()
+    return overlay.Hyprland(tmp_path / "perfis", 8642, navegador="/usr/bin/zen-browser", hyprctl=falso, **kw), falso
+
+
+def test_hyprland_sets_window_rules_for_both_windows(tmp_path):
+    _, h = hypr(tmp_path)
+    mini, grande = h.evals
+    assert 'class = "^buildsmith-mini$"' in mini and "no_focus = true" in mini and "pin = true" in mini
+    assert 'class = "^buildsmith-grande$"' in grande and "float = true" in grande and "no_focus" not in grande
+
+
+def test_hyprland_finds_the_game_and_its_monitor_in_logical_pixels(tmp_path):
+    win, h = hypr(tmp_path, pid_do_jogo=lambda: 4242)
+    assert win.pid_do_jogo() == 4242 and win.janela_do_jogo(4242) == "0xjogo"
+    assert win.monitor("0xjogo") == (1366, 0, 2048, 1152)  # 2560 x 1440 com escala 1,25
+    h.clientes[0]["pid"] = 1  # o pid da janela não bate (XWayland): acha pela classe do Proton
+    win._cache = (0.0, [])
+    assert win.janela_do_jogo(4242) == "0xjogo"
+    assert win.em_primeiro_plano() == "0xjogo"
+
+
+def test_hyprland_opens_a_kiosk_browser_with_its_own_profile_and_class(tmp_path, monkeypatch):
+    win, h = hypr(tmp_path)
+    abertos = []
+    antiga = tmp_path / "perfis" / "mini"  # sessão de uma abertura anterior: a Zen reabriria a aba velha ao lado da nova
+    (antiga / "sessionstore-backups").mkdir(parents=True)
+    (antiga / "zen-sessions.jsonlz4").write_bytes(b"x")
+    (antiga / "prefs.js").write_text("// fica", encoding="utf-8")
+
+    class Popen:
+        def __init__(self, args, **kwargs):
+            abertos.append(args)
+            h.clientes.append({"address": "0xmini", "pid": 77, "class": "buildsmith-mini", "workspace": {"name": "3"}})
+
+        def poll(self):
+            return None
+    monkeypatch.setattr(overlay.subprocess, "Popen", Popen)
+    assert win.abrir_janela("http://127.0.0.1:8642/p/ds2/x/overlay.html", (10, 20, 300, 300), "mini") == "0xmini"
+    args = abertos[0]
+    assert args[0] == "/usr/bin/zen-browser" and args[-1].endswith("overlay.html")
+    assert ["--name", "buildsmith-mini"] == args[args.index("--name"):args.index("--name") + 2] and "--kiosk" in args
+    perfil = Path(args[args.index("--profile") + 1])
+    assert perfil == tmp_path / "perfis" / "mini"
+    css = (perfil / "chrome" / "userChrome.css").read_text(encoding="utf-8")
+    assert "min-width: 0" in css and "#navigator-toolbox" in css  # o --kiosk da Zen não esconde a barra lateral
+    assert "legacyUserProfileCustomizations" in (perfil / "user.js").read_text(encoding="utf-8")
+    assert not (perfil / "sessionstore-backups").exists() and not (perfil / "zen-sessions.jsonlz4").exists()
+    assert (perfil / "prefs.js").exists()
+    assert h.dispatches == ['hl.dsp.window.fullscreen_state({ window = "address:0xmini", internal = 0, client = 2 })',
+                            'hl.dsp.window.resize({ window = "address:0xmini", x = 300, y = 300, relative = false })',
+                            'hl.dsp.window.move({ window = "address:0xmini", x = 10, y = 20, relative = false })']
+    win.posicionar("0xmini", (10, 20, 300, 300))
+    assert len(h.dispatches) == 3  # mesma geometria: nada de novo
+    assert win.abrir_janela("u", (10, 20, 300, 300), "mini") == "0xmini" and len(abertos) == 1  # já aberta: reusa
+
+
+def test_hyprland_hides_in_a_special_workspace_and_shows_pinned_over_the_game(tmp_path):
+    win, h = hypr(tmp_path)
+    win.mostrar("0xmini", False)
+    assert h.dispatches == ['hl.dsp.window.pin({ window = "address:0xmini", action = "disable" })',
+                            'hl.dsp.window.move({ window = "address:0xmini", workspace = "special:buildsmith", follow = false })']
+    win.mostrar("0xmini", False)
+    assert len(h.dispatches) == 2
+    win.mostrar("0xmini", True)
+    assert h.dispatches[2:] == ['hl.dsp.window.move({ window = "address:0xmini", workspace = "3", follow = false })',
+                                'hl.dsp.window.pin({ window = "address:0xmini", action = "enable" })',
+                                'hl.dsp.window.alter_zorder({ window = "address:0xmini", mode = "top" })']
+    win.focar("0xmini")
+    assert h.dispatches[-1] == 'hl.dsp.focus({ window = "address:0xmini" })'
+
+
+def test_hyprland_keys_call_the_server_and_skip_combos_the_user_has(tmp_path):
+    win, h = hypr(tmp_path)
+    h.binds.append({"modmask": 5, "key": "M"})  # Ctrl+Shift+M já é do usuário
+    chamadas = []
+    teclas = win.ouvir_teclas({"grande": lambda: chamadas.append("grande"), "mini": lambda: chamadas.append("mini")})
+    assert teclas == {"grande": "Ctrl+Alt+M", "mini": "Ctrl+Shift+N"}
+    binds = h.evals[2:]
+    assert binds[0].startswith('hl.bind("CTRL + ALT + M", hl.dsp.exec_cmd([[curl ') and "/api/overlay/grande" in binds[0]
+    assert binds[1].startswith('hl.bind("CTRL + SHIFT + N"') and "/api/overlay/mini" in binds[1]
+    assert "X-Buildsmith: 1" in binds[0]
+    assert overlay.disparar("grande") and chamadas == ["grande"] and not overlay.disparar("nada")
+    win2, h2 = hypr(tmp_path)  # servidor reiniciado: tira os binds que deixou antes de pôr de novo
+    win2.ouvir_teclas({"grande": lambda: None, "mini": lambda: None})
+    assert h2.evals[2:4] == ['hl.unbind("CTRL + ALT + M")', 'hl.unbind("CTRL + SHIFT + N")']
+
+
+def test_overlay_does_not_start_outside_windows_and_hyprland(tmp_path, monkeypatch):
+    monkeypatch.setattr(overlay.sys, "platform", "linux")
+    monkeypatch.delenv("HYPRLAND_INSTANCE_SIGNATURE", raising=False)
+    avisos = []
+    assert overlay.iniciar(tmp_path, 8642, lambda: "x", avisos.append) is None
+    assert avisos == ["overlay: só no Windows e no Linux com Hyprland"]
+
+
+def test_hyprland_takes_the_kiosk_window_out_of_fullscreen_before_sizing_it(tmp_path):
+    win, h = hypr(tmp_path)
+    h.clientes.append({"address": "0xgrande", "class": "buildsmith-grande", "fullscreen": 2, "workspace": {"name": "3"}})
+    win.posicionar("0xgrande", (136, 77, 1093, 614))
+    assert h.dispatches[0] == 'hl.dsp.window.fullscreen_state({ window = "address:0xgrande", internal = 0, client = 2 })'
+    assert h.dispatches[1:] == ['hl.dsp.window.resize({ window = "address:0xgrande", x = 1093, y = 614, relative = false })',
+                                'hl.dsp.window.move({ window = "address:0xgrande", x = 136, y = 77, relative = false })']
+
+
+def test_hyprland_unblocks_the_kiosk_window_whose_fullscreen_was_refused(tmp_path):
+    # visto na Zen (2026-10-30): o Hyprland não dá a tela cheia do quiosque ao minimapa (no_focus/pin) e a Zen fica
+    # parada esperando, sem aceitar tamanho nem pintar a página; avisar que está em tela cheia a destrava
+    win, h = hypr(tmp_path)
+    h.clientes.append({"address": "0xmini", "class": "buildsmith-mini", "fullscreen": 0, "fullscreenClient": 0,
+                       "workspace": {"name": "3"}})
+    win.posicionar("0xmini", (1167, 15, 184, 184))
+    assert h.dispatches[0] == 'hl.dsp.window.fullscreen_state({ window = "address:0xmini", internal = 0, client = 2 })'
+    win.posicionar("0xmini", (1000, 15, 184, 184))
+    assert len(h.dispatches) == 5 and not any("fullscreen_state" in d for d in h.dispatches[3:])  # já destravada

@@ -1,3 +1,4 @@
+import json
 import math
 import struct
 
@@ -68,6 +69,15 @@ def test_live_state_from_memory():
     assert r["pos"] == [10.0, 2.0, -5.0] and r["camera"] == [10.0, 4.0, -1.0]
     assert abs(abs(r["yaw_camera"]) - math.pi) < 1e-6 and abs(r["dir_personagem"]) < 1e-6
     assert r["area"] == "m10_04_00_00" and r["area_fonte"] == "memoria"
+
+
+def test_non_numbers_in_memory_never_reach_the_stream():
+    # visto no jogo (Proton, 2026-10-30): a câmera em [BaseA+0xB0]+0x1E0 com (0, NaN, 0); NaN no JSON derruba o JSON.parse
+    r = leitor(jogo(camera=(0.0, math.nan, 0.0), quat=(math.nan, 0.0, 0.0, 0.0))).ler()
+    assert r["ativo"] and r["pos"] == [10.0, 2.0, -5.0]
+    assert r["camera"] is None and r["yaw_camera"] is None and r["dir_personagem"] is None
+    json.loads(json.dumps(r), parse_constant=lambda c: pytest.fail(f"{c} no JSON"))
+    assert leitor(jogo(pos=(math.inf, 2.0, -5.0))).ler()["motivo"] == "carregando"
 
 
 def test_null_pointers_mean_loading():

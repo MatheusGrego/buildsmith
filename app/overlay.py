@@ -11,11 +11,18 @@ programa já usa, Ctrl+Alt+M / Ctrl+Alt+N.
 
 O `Overlay` só decide (criar, mostrar, esconder, focar); quem fala com o Windows é o `Win32`, trocável nos testes.
 Roda numa thread do servidor (serve.py), que já fica aberto enquanto se joga.
+
+No Linux com Hyprland o `Hyprland` faz o papel do `Win32` pelo hyprctl: as janelas são de um navegador da família do
+Firefox (Zen, Firefox) em modo quiosque, com perfil próprio e classe `buildsmith-<papel>`; as teclas viram binds do
+Hyprland que chamam o servidor (POST /api/overlay/<ação>).
 """
+import json
 import os
+import shutil
 import subprocess
 import sys
 import threading
+import time
 import urllib.parse
 from pathlib import Path
 
@@ -265,6 +272,242 @@ class Win32:
         return escolhidas
 
 
+# ---- Linux com Hyprland (hyprctl) ---------------------------------------------------------------------------------------
+
+NAVEGADORES = ("zen-browser", "zen", "firefox", "librewolf", "floorp")  # família do Firefox: --kiosk, --name, --profile
+CLASSE_JOGO = "steam_app_335300"  # classe que o Proton dá à janela do jogo
+ESCONDIDO = "special:buildsmith"  # workspace especial onde a janela fica quando está escondida
+MOD_HYPR = {MOD_CONTROL: ("CTRL", 4), MOD_SHIFT: ("SHIFT", 1), MOD_ALT: ("ALT", 8)}  # nome no bind, bit no modmask
+# Perfil novo do navegador sem tela de boas-vindas e sem o tamanho mínimo da janela principal (sem isso a Zen não fica
+# menor que ~500 x 500 e o minimapa cobre meia tela de notebook). O --kiosk da Zen não esconde a barra lateral dela
+# (~185 px: no minimapa sobrava página nenhuma), nem a margem e o canto arredondado em volta da página: o CSS tira.
+USER_JS = """user_pref("browser.aboutwelcome.enabled", false);
+user_pref("browser.shell.checkDefaultBrowser", false);
+user_pref("browser.startup.homepage_override.mstone", "ignore");
+user_pref("browser.startup.page", 0);
+user_pref("datareporting.policy.dataSubmissionPolicyBypassNotification", true);
+user_pref("browser.sessionstore.resume_from_crash", false);
+user_pref("toolkit.legacyUserProfileCustomizations.stylesheets", true);
+"""
+USER_CHROME = """:root, #main-window, #zen-main-app-wrapper, #browser, #tabbrowser-tabbox, #navigator-toolbox,
+#zen-appcontent-wrapper { min-width: 0 !important; min-height: 0 !important; }
+#navigator-toolbox, #zen-sidebar-splitter, #sidebar-box, #sidebar-splitter { display: none !important; }
+:root { --zen-element-separation: 0px !important; --zen-native-inner-radius: 0px !important; }
+#zen-tabbox-wrapper { margin: 0 !important; }
+.browserSidebarContainer { border-radius: 0 !important; box-shadow: none !important; }
+"""
+# Sessão salva da Zen: com ela a abertura seguinte traz a aba velha ao lado da página pedida.
+SESSAO = ("sessionstore.jsonlz4", "sessionstore-backups", "zen-sessions.jsonlz4", "zen-sessions-backup")
+
+
+def _hyprctl(args: list[str]) -> str:
+    try:
+        return subprocess.run(["hyprctl", *args], capture_output=True, text=True, timeout=5).stdout
+    except (OSError, subprocess.TimeoutExpired):
+        return ""
+
+
+def achar_navegador() -> str | None:
+    return next((caminho for nome in NAVEGADORES if (caminho := shutil.which(nome))), None)
+
+
+def classe(papel: str) -> str:
+    return f"buildsmith-{papel}"
+
+
+class Hyprland:
+    """As chamadas do `Win32` pelo hyprctl (Hyprland com config em Lua, `hl.dsp.*`). Janela = endereço do Hyprland.
+    Conferido à mão no Hyprland 0.56 com a Zen: a regra de janela faz flutuar (e tira o quiosque da tela cheia), o
+    workspace especial esconde sem trocar o workspace de quem joga, e `pin` põe a janela por cima do jogo."""
+
+    def __init__(self, perfis: Path, porta: int, navegador: str | None = None, hyprctl=None, pid_do_jogo=None):
+        self.perfis, self.porta = Path(perfis), porta
+        self.navegador = navegador or achar_navegador()
+        self._hyprctl = hyprctl or _hyprctl
+        self._pid_do_jogo = pid_do_jogo
+        self._procs, self._papel, self._rect, self._visivel = {}, {}, {}, {}
+        self._cache = (0.0, [])
+        for papel in ("mini", "grande"):
+            self._lua("hl.window_rule(" + self._regra(papel) + ")")
+
+    def _regra(self, papel: str) -> str:
+        efeitos = 'float = true, no_focus = true, pin = true, opacity = 0.92' if papel == "mini" else "float = true"
+        return f'{{ name = "{classe(papel)}", match = {{ class = "^{classe(papel)}$" }}, {efeitos} }}'
+
+    def _lua(self, codigo: str) -> None:
+        self._hyprctl(["eval", codigo])
+
+    def _dsp(self, codigo: str) -> None:
+        self._hyprctl(["dispatch", codigo])
+
+    def _json(self, *args):
+        try:
+            return json.loads(self._hyprctl(["-j", *args]) or "null")
+        except ValueError:
+            return None
+
+    def _clientes(self) -> list[dict]:
+        quando, lista = self._cache
+        if time.monotonic() - quando > 0.3:
+            lista = self._json("clients") or []
+            self._cache = (time.monotonic(), lista)
+        return lista
+
+    def _cliente(self, endereco):
+        return next((c for c in self._clientes() if c.get("address") == endereco), None)
+
+    @staticmethod
+    def _janela(endereco) -> str:
+        return f'window = "address:{endereco}"'
+
+    def pid_do_jogo(self):
+        if self._pid_do_jogo:
+            return self._pid_do_jogo()
+        sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "skills" / "ds2-save" / "scripts"))
+        import ds2mem
+
+        return ds2mem.pid_de(JOGO)
+
+    def janela_do_jogo(self, pid):
+        clientes = [c for c in self._clientes() if c.get("mapped", True)]
+        por_pid = [c for c in clientes if c.get("pid") == pid]
+        por_classe = [c for c in clientes if c.get("class") == CLASSE_JOGO]
+        achada = (por_pid or por_classe or [None])[0]
+        return achada["address"] if achada else None
+
+    def monitor(self, endereco):
+        c = self._cliente(endereco) or {}
+        monitores = self._json("monitors") or []
+        m = next((m for m in monitores if m.get("id") == c.get("monitor")), monitores[0] if monitores else None)
+        if m is None:
+            return (0, 0, 1280, 720)
+        escala = m.get("scale") or 1
+        return (m["x"], m["y"], round(m["width"] / escala), round(m["height"] / escala))
+
+    def _preparar_perfil(self, perfil: Path) -> None:
+        for nome in SESSAO:  # só antes de abrir: com o navegador aberto o perfil não é mexido
+            alvo = perfil / nome
+            if alvo.is_dir():
+                shutil.rmtree(alvo, ignore_errors=True)
+            else:
+                alvo.unlink(missing_ok=True)
+        (perfil / "chrome").mkdir(parents=True, exist_ok=True)
+        (perfil / "user.js").write_text(USER_JS, encoding="utf-8")
+        (perfil / "chrome" / "userChrome.css").write_text(USER_CHROME, encoding="utf-8")
+
+    def abrir_janela(self, url, rect, papel):
+        if not self.navegador:
+            return None
+        nome = classe(papel)
+        sobra = next((c for c in self._clientes() if c.get("class") == nome), None)  # de um servidor anterior
+        if sobra is None:
+            perfil = self.perfis / papel
+            self._preparar_perfil(perfil)
+            proc = subprocess.Popen([self.navegador, "--profile", str(perfil), "--no-remote", "--new-instance", "--kiosk",
+                                     "--name", nome, url], stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL,
+                                    stderr=subprocess.DEVNULL, start_new_session=True)
+            self._procs[papel] = proc
+            for _ in range(60):  # até ~15 s: o navegador abre a janela
+                self._cache = (0.0, [])
+                sobra = next((c for c in self._clientes() if c.get("class") == nome), None)
+                if sobra is not None or proc.poll() is not None:
+                    break
+                time.sleep(0.25)
+        if sobra is None:
+            return None
+        endereco = sobra["address"]
+        self._papel[endereco] = papel
+        self.posicionar(endereco, rect)
+        return endereco
+
+    def existe(self, endereco):
+        return self._cliente(endereco) is not None
+
+    def em_primeiro_plano(self):
+        return (self._json("activewindow") or {}).get("address")
+
+    def estilizar(self, endereco, papel):
+        self._papel[endereco] = papel  # a regra de janela já fez o resto quando ela abriu
+
+    def posicionar(self, endereco, rect):
+        janela, c = self._janela(endereco), self._cliente(endereco) or {}
+        if c.get("fullscreen") or c.get("fullscreenClient") != 2:
+            # o quiosque pede tela cheia: o Hyprland não redimensiona janela em tela cheia, e quando ele recusa o pedido
+            # (o minimapa, no_focus e pin) a Zen fica esperando, sem aceitar tamanho nem pintar. Tela cheia só para o
+            # navegador, que fica sem barra nem abas e aceita o tamanho daqui
+            self._dsp(f"hl.dsp.window.fullscreen_state({{ {janela}, internal = 0, client = 2 }})")
+            self._rect.pop(endereco, None)
+            self._cache = (0.0, [])
+        if self._rect.get(endereco) == tuple(rect):
+            return
+        x, y, w, h = rect
+        self._dsp(f"hl.dsp.window.resize({{ {janela}, x = {w}, y = {h}, relative = false }})")
+        self._dsp(f"hl.dsp.window.move({{ {janela}, x = {x}, y = {y}, relative = false }})")
+        self._rect[endereco] = tuple(rect)
+
+    def mostrar(self, endereco, on):
+        if self._visivel.get(endereco) == on:
+            return
+        janela = self._janela(endereco)
+        if on:
+            jogo = next((c for c in self._clientes() if c.get("class") == CLASSE_JOGO), None)
+            destino = (jogo or {}).get("workspace", {}).get("name") or (self._json("activeworkspace") or {}).get("name")
+            if destino:
+                self._dsp(f'hl.dsp.window.move({{ {janela}, workspace = "{destino}", follow = false }})')
+            self._dsp(f'hl.dsp.window.pin({{ {janela}, action = "enable" }})')  # por cima até do jogo em tela cheia
+            self._dsp(f'hl.dsp.window.alter_zorder({{ {janela}, mode = "top" }})')
+            self._rect.pop(endereco, None)  # voltar do workspace especial pode mexer na posição
+        else:
+            self._dsp(f'hl.dsp.window.pin({{ {janela}, action = "disable" }})')  # janela fixa não muda de workspace
+            self._dsp(f'hl.dsp.window.move({{ {janela}, workspace = "{ESCONDIDO}", follow = false }})')
+        self._visivel[endereco] = on
+        self._cache = (0.0, [])
+
+    def focar(self, endereco):
+        self._dsp(f"hl.dsp.focus({{ {self._janela(endereco)} }})")
+
+    def ouvir_teclas(self, acoes: dict) -> dict:
+        """Binds do Hyprland que chamam o servidor (POST /api/overlay/<ação>, ver `disparar`). Antes, tira os binds que
+        um servidor anterior deixou (lista em <perfis>/teclas.json); combinação que o usuário já usa fica de fora."""
+        ACOES.update(acoes)
+        anotadas = self.perfis / "teclas.json"
+        try:
+            antigas = json.loads(anotadas.read_text(encoding="utf-8"))
+        except (OSError, ValueError):
+            antigas = []
+        for combo in antigas if isinstance(antigas, list) else []:
+            self._lua(f'hl.unbind("{combo}")')
+        usadas = {(b.get("modmask"), str(b.get("key", "")).upper()) for b in self._json("binds") or []}
+        feitas, escolhidas = [], {}
+        for acao, opcoes in TECLAS.items():
+            escolhidas[acao] = None
+            for mods, letra in opcoes:
+                nomes = [n for bit, (n, _) in MOD_HYPR.items() if mods & bit]
+                if (sum(m for bit, (_, m) in MOD_HYPR.items() if mods & bit), letra) in usadas:
+                    continue
+                combo = " + ".join(nomes + [letra])
+                cmd = (f"curl -s -m 2 -X POST -H 'X-Buildsmith: 1' -H 'Content-Type: application/json' -d '{{}}' "
+                       f"http://127.0.0.1:{self.porta}/api/overlay/{acao}")
+                self._lua(f'hl.bind("{combo}", hl.dsp.exec_cmd([[{cmd}]]))')
+                feitas.append(combo)
+                escolhidas[acao] = _nome_tecla(mods, letra)
+                break
+        self.perfis.mkdir(parents=True, exist_ok=True)
+        anotadas.write_text(json.dumps(feitas), encoding="utf-8")
+        return escolhidas
+
+
+ACOES: dict = {}  # ação da tecla -> função (Linux: o bind do Hyprland chama o servidor, que chama isto)
+
+
+def disparar(acao: str) -> bool:
+    funcao = ACOES.get(acao)
+    if funcao is None:
+        return False
+    funcao()
+    return True
+
+
 def achar_edge() -> str | None:
     for base in (os.environ.get("ProgramFiles(x86)"), os.environ.get("ProgramFiles"), os.environ.get("LOCALAPPDATA")):
         if base:
@@ -275,12 +518,20 @@ def achar_edge() -> str | None:
 
 
 def iniciar(home: Path, port: int, slug_do_jogador, avisa=lambda texto: None) -> Overlay | None:
-    """Sobe o overlay numa thread (só no Windows, com Edge). slug_do_jogador() -> pasta da página do personagem no jogo."""
-    if sys.platform != "win32":
-        return None
-    win = Win32(Path(home) / "overlay-edge")
-    if not win.edge:
-        avisa("overlay: Edge não encontrado; o minimapa por cima do jogo fica desligado")
+    """Sobe o overlay numa thread (Windows com Edge, ou Linux com Hyprland e um navegador da família do Firefox).
+    slug_do_jogador() -> pasta da página do personagem no jogo."""
+    if sys.platform == "win32":
+        win = Win32(Path(home) / "overlay-edge")
+        if not win.edge:
+            avisa("overlay: Edge não encontrado; o minimapa por cima do jogo fica desligado")
+            return None
+    elif os.environ.get("HYPRLAND_INSTANCE_SIGNATURE") and shutil.which("hyprctl"):
+        win = Hyprland(Path(home) / "overlay-navegador", port)
+        if not win.navegador:
+            avisa(f"overlay: nenhum navegador entre {', '.join(NAVEGADORES)}; o minimapa por cima do jogo fica desligado")
+            return None
+    else:
+        avisa("overlay: só no Windows e no Linux com Hyprland")
         return None
     base, teclas = f"http://127.0.0.1:{port}", {}
     dica = lambda: urllib.parse.quote(teclas.get("grande") or "")  # noqa: E731 (o minimapa mostra a tecla que valeu)

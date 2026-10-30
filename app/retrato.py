@@ -10,7 +10,6 @@ from pathlib import Path
 MAX_RETRATO = 2 * 1024 * 1024
 SEGMENT = re.compile(r"^[a-z0-9][a-z0-9._-]{0,180}$")
 DS2_APP = 335300
-STEAM_DIRS = [Path("C:/Program Files (x86)/Steam"), Path("C:/Program Files/Steam")]
 TIPOS = {"png": "image/png", "jpg": "image/jpeg"}
 
 
@@ -63,7 +62,11 @@ def limpar(home, jogo: str, slug: str) -> None:
 
 def ultimo_print(steam_dirs=None, app: int = DS2_APP) -> Path | None:
     """Print mais recente do jogo na Steam (F12): <steam>/userdata/<conta>/760/remote/<app>/screenshots/*.jpg."""
+    if steam_dirs is None:
+        import ds2save  # as pastas da Steam do Windows e do Linux
+
+        steam_dirs = ds2save.STEAM_DIRS
     found = []
-    for raiz in steam_dirs if steam_dirs is not None else STEAM_DIRS:
+    for raiz in steam_dirs:
         found += [p for p in Path(raiz).glob(f"userdata/*/760/remote/{app}/screenshots/*.jpg") if p.is_file()]
     return max(found, key=lambda p: p.stat().st_mtime) if found else None

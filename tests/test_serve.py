@@ -86,6 +86,19 @@ def test_index_opens_latest_page_and_lists_on_request(server):
     assert b"/p/ds2/personagem-um/" in get(f"{base}/?lista=1")[2]
 
 
+def test_index_without_pages_says_why_the_save_did_not_open(tmp_path, monkeypatch):
+    import ds2save
+
+    monkeypatch.setattr(ds2save, "find_save", lambda: (_ for _ in ()).throw(ds2save.SaveError("nenhum save do DS2 encontrado em <aqui>")))
+    httpd = serve.make_server(tmp_path, port=0, steam_dirs=[tmp_path / "steam"])
+    threading.Thread(target=httpd.serve_forever, daemon=True).start()
+    try:
+        body = get(f"http://127.0.0.1:{httpd.server_address[1]}/")[2].decode("utf-8")
+    finally:
+        httpd.shutdown()
+    assert "Não li o save do DS2: nenhum save do DS2 encontrado em &lt;aqui&gt;" in body
+
+
 class NoRedirect(urllib.request.HTTPRedirectHandler):
     def redirect_request(self, *args, **kwargs):
         return None
@@ -816,3 +829,34 @@ def test_overlay_page_follows_the_character_loaded_in_the_game(server):
     assert serve.slug_do_jogador(home, Vivo("Personagem (teste)"), save) == "personagem-teste"
     assert serve.slug_do_jogador(home, Vivo("Personagem Um"), save) == "personagem-um"
     assert serve.slug_do_jogador(home, Vivo(None), save) in ("personagem-um", "personagem-teste")  # sem jogo: a mais recente
+
+
+def test_same_name_in_the_game_opens_the_main_page_of_those_characters(tmp_path):
+    save = tmp_path / "DS2SOFS0000.co2"
+    save.write_bytes(build_bnd4({"USER_DATA001": bytes(make_slot(name="Stacy", level=12)),
+                                 "USER_DATA002": bytes(make_slot(name="Stacy", level=39)),
+                                 "USER_DATA011": bytes(0x30000), "USER_DATA012": bytes(0x30000)}))
+    for slug, plano in (("stacy-1", {"sem_ia": True}), ("stacy", {"objetivo": "hex"})):
+        page = tmp_path / "paginas" / "ds2" / slug
+        page.mkdir(parents=True)
+        (page / "plano.json").write_text(json.dumps(plano), encoding="utf-8")
+
+    class Vivo:
+        def atual(self):
+            return {"ativo": True, "nome": "Stacy"}
+
+    assert serve.slug_do_jogador(tmp_path, Vivo(), save) == "stacy"  # a do plano da IA, não a primeira do save
+
+
+def test_overlay_key_route_calls_the_overlay_action(server, monkeypatch):
+    import overlay
+
+    base, _ = server
+    chamadas = []
+    monkeypatch.setitem(overlay.ACOES, "grande", lambda: chamadas.append("grande"))
+    assert post(f"{base}/api/overlay/grande", {}) == {"ok": True} and chamadas == ["grande"]
+    monkeypatch.delitem(overlay.ACOES, "mini", raising=False)
+    assert post(f"{base}/api/overlay/mini", {}) == {"ok": False}
+    with pytest.raises(urllib.error.HTTPError) as err:  # sem o cabeçalho próprio: recusado como todo POST
+        urllib.request.urlopen(urllib.request.Request(f"{base}/api/overlay/grande", data=b"{}", method="POST"), timeout=5)
+    assert err.value.code == 403 and chamadas == ["grande"]

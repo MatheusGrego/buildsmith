@@ -58,7 +58,8 @@ def criar_paginas(home, save=None, preparar=None, regulation=None, avisa=lambda 
     try:
         save = Path(save) if save else ds2save.find_save()
         lista = ds2save.personagens(save)
-    except (ds2save.SaveError, OSError, ImportError):  # sem save (ou sem pycryptodome): nada a criar
+    except (ds2save.SaveError, OSError, ImportError) as err:  # sem save (ou sem pycryptodome): nada a criar
+        avisa(f"não li o save do DS2, nenhuma página nova: {ds2save.erro_do_save(err)}")
         return []
     criadas = []
     for p in lista:
