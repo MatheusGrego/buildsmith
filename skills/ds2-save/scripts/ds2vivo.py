@@ -56,7 +56,7 @@ class LeitorVivo:
     """Uma leitura por chamada de `ler()`. Abre o processo na primeira vez e de novo quando o jogo fecha e reabre."""
 
     def __init__(self, abrir=None, relogio=time.time, area=None):
-        self._abrir = abrir or (lambda: ds2mem.ProcessoWin.abrir(EXE))
+        self._abrir = abrir or (lambda: ds2mem.abrir(EXE))
         self._relogio = relogio
         self._area = area  # nome do personagem -> área (do save) ou None
         self._mem = None

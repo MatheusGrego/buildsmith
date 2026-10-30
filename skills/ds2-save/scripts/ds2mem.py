@@ -5,11 +5,17 @@ Nada é escrito no jogo e nada é injetado: OpenProcess com PROCESS_VM_READ | PR
 pelo ctypes (sem dependência). Os endereços do DS2 SotFS vêm do DS2S-META (MIT, © 2021 Nordgaren): o ponteiro estático
 `BaseA` se acha pelo padrão AOB_BASE_A (instrução `mov rax, [rip+rel32]`) e o resto é cadeia de ponteiros a partir dele.
 
+No Linux o jogo roda pelo Proton com os mesmos endereços e a leitura é pelo /proc/<pid>/mem (ProcessoLinux).
+
   MemoriaFalsa: regiões em dicionário, para testes sem o jogo.
 """
+import json
+import os
 import re
+import socket
 import struct
 import sys
+from pathlib import Path
 
 AOB_BASE_A = "48 8B 05 ? ? ? ? 48 8B 58 38 48 85 DB 74 ? F6"  # DS2S-META: rel32 na posição 3, instrução de 7 bytes
 
@@ -181,3 +187,150 @@ class ProcessoWin(Memoria):
         if self.handle:
             self._k32.CloseHandle(self.handle)
             self.handle = None
+
+
+# ---- Linux (Proton) ----------------------------------------------------------------------------------------------------
+# O Proton roda o jogo como um processo do Linux com os endereços do Windows: lê-se o /proc/<pid>/mem. Com
+# kernel.yama.ptrace_scope = 1 (o padrão) só um processo ancestral do jogo abre esse arquivo; o ajudante
+# (app/vivo_linux.py, posto nas opções de inicialização da Steam) abre e entrega o descritor pelo socket_ajudante().
+# A permissão é conferida na abertura: com o descritor em mãos, o servidor lê sem ser ancestral.
+
+SEM_PERMISSAO_LINUX = ("sem permissão para ler a memória do jogo: abra o DS2 pela Steam com o app/vivo_linux.py nas "
+                       "opções de inicialização (README, Overlay no Linux)")
+
+
+def socket_ajudante() -> Path:
+    base = os.environ.get("XDG_RUNTIME_DIR") or f"/tmp/buildsmith-{os.getuid()}"
+    return Path(base) / "buildsmith" / "ds2-mem.sock"
+
+
+def pid_de(exe: str, proc_dir="/proc") -> int | None:
+    """Pid do processo do Linux com esse nome (o mais novo se houver mais de um). Não precisa de permissão de leitura."""
+    pids = pids_de(exe, proc_dir)
+    return max(pids) if pids else None
+
+
+def pids_de(exe: str, proc_dir="/proc") -> list[int]:
+    """Pids dos processos com esse nome (o comm do kernel vem cortado em 15 caracteres; o cmdline confirma o resto)."""
+    alvo = exe.lower()
+    achados = []
+    for d in Path(proc_dir).iterdir():
+        if not d.name.isdigit():
+            continue
+        try:
+            if (d / "comm").read_text(encoding="utf-8", errors="replace").strip().lower() != alvo[:15]:
+                continue
+            if len(alvo) > 15 and alvo.encode() not in (d / "cmdline").read_bytes().lower():
+                continue
+        except OSError:  # processo saiu no meio da busca
+            continue
+        achados.append(int(d.name))
+    return achados
+
+
+def modulo_linux(pid: int, exe: str, proc_dir="/proc") -> tuple[int, int]:
+    """(início, fim) dos mapeamentos do arquivo `exe` no processo (o Proton mapeia a imagem PE a partir do arquivo)."""
+    regioes = []
+    try:
+        linhas = (Path(proc_dir) / str(pid) / "maps").read_text(encoding="utf-8", errors="replace").splitlines()
+    except OSError as err:
+        raise ErroMemoria(f"{exe} não está aberto") from err
+    for linha in linhas:
+        partes = linha.split(maxsplit=5)
+        if len(partes) == 6 and partes[5].replace("\\", "/").rsplit("/", 1)[-1].lower() == exe.lower():
+            inicio, fim = (int(x, 16) for x in partes[0].split("-"))
+            regioes.append((inicio, fim))
+    if not regioes:
+        raise ErroMemoria(f"não achei o {exe} na memória do processo {pid}")
+    return min(r[0] for r in regioes), max(r[1] for r in regioes)
+
+
+def receber_fd(pid: int, caminho=None, timeout: float = 2.0) -> int | None:
+    """Descritor do /proc/<pid>/mem entregue pelo ajudante; None sem ajudante ou se ele está com outro processo."""
+    caminho = Path(caminho) if caminho else socket_ajudante()
+    try:
+        with socket.socket(socket.AF_UNIX, socket.SOCK_STREAM) as s:
+            s.settimeout(timeout)
+            s.connect(str(caminho))
+            msg, fds, _, _ = socket.recv_fds(s, 4096, 1)
+    except OSError:
+        return None
+    try:
+        dono = json.loads(msg or b"{}").get("pid")
+    except ValueError:
+        dono = None
+    if dono == pid and fds:
+        return fds[0]
+    for fd in fds:
+        os.close(fd)
+    return None
+
+
+class ProcessoLinux(Memoria):
+    """Processo aberto só para leitura pelo /proc/<pid>/mem. `base_modulo`/`tamanho_modulo` = o executável principal."""
+
+    def __init__(self, fd: int, pid: int, base: int, tamanho: int, comm: str, proc_dir="/proc"):
+        self.fd, self.pid, self.base_modulo, self.tamanho_modulo = fd, pid, base, tamanho
+        self._comm, self._proc_dir = comm, proc_dir
+
+    @classmethod
+    def abrir(cls, exe: str, proc_dir="/proc", ajudante=None) -> "ProcessoLinux":
+        pid = pid_de(exe, proc_dir)
+        if pid is None:
+            raise ErroMemoria(f"{exe} não está aberto")
+        inicio, fim = modulo_linux(pid, exe, proc_dir)
+        try:
+            fd = os.open(f"{proc_dir}/{pid}/mem", os.O_RDONLY | os.O_CLOEXEC)
+        except PermissionError:
+            fd = receber_fd(pid, ajudante)
+            if fd is None:
+                raise ErroMemoria(SEM_PERMISSAO_LINUX) from None
+        except OSError as err:
+            raise ErroMemoria(f"{exe} não está aberto") from err
+        proc = cls(fd, pid, inicio, fim - inicio, exe.lower()[:15], proc_dir)
+        proc.tamanho_modulo = proc._tamanho_pe() or proc.tamanho_modulo
+        return proc
+
+    def _tamanho_pe(self) -> int | None:
+        """SizeOfImage do cabeçalho PE na memória (os mapeamentos do arquivo podem não cobrir as seções)."""
+        try:
+            cab = self.ler(self.base_modulo, 0x400)
+        except ErroMemoria:
+            return None
+        if cab[:2] != b"MZ":
+            return None
+        nt = struct.unpack_from("<I", cab, 0x3C)[0]
+        if nt + 0x54 > len(cab) or cab[nt:nt + 4] != b"PE\0\0":
+            return None
+        return struct.unpack_from("<I", cab, nt + 0x50)[0] or None
+
+    def ler(self, endereco: int, n: int) -> bytes:
+        try:
+            dados = os.pread(self.fd, n, endereco)
+        except (OSError, OverflowError, ValueError) as err:
+            raise ErroMemoria(f"leitura falhou em {endereco:#x} (+{n})") from err
+        if len(dados) != n:
+            raise ErroMemoria(f"leitura falhou em {endereco:#x} (+{n})")
+        return dados
+
+    def vivo(self) -> bool:
+        """O processo ainda é o jogo (o pid pode ter sido reusado depois que ele fechou)."""
+        try:
+            comm = (Path(self._proc_dir) / str(self.pid) / "comm").read_text(encoding="utf-8", errors="replace")
+        except OSError:
+            return False
+        return comm.strip().lower() == self._comm
+
+    def fechar(self) -> None:
+        if self.fd is not None:
+            os.close(self.fd)
+            self.fd = None
+
+
+def abrir(exe: str):
+    """O processo do jogo para leitura, no Windows ou no Linux (Proton)."""
+    if sys.platform == "win32":
+        return ProcessoWin.abrir(exe)
+    if not os.path.isdir("/proc"):
+        raise ErroMemoria("leitura de memória só no Windows e no Linux")
+    return ProcessoLinux.abrir(exe)
